@@ -53,6 +53,12 @@ function NavLinks({ hasPlan }: { hasPlan: boolean }) {
       {hasPlan ? (
         <>
           <Link
+            href="/weekly"
+            className="inline-flex min-h-[34px] items-center rounded-lg px-2 transition hover:text-text"
+          >
+            This week
+          </Link>
+          <Link
             href="/ideas"
             className="inline-flex min-h-[34px] items-center rounded-lg px-2 transition hover:text-text"
           >

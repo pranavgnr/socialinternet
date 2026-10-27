@@ -3,6 +3,7 @@ import path from "node:path";
 // Type-only, so this never becomes a runtime cycle between the store and the
 // module that builds the plan being stored.
 import type { RoomPlan } from "./newcomer";
+import type { WeeklyDigest } from "./weekly";
 import type {
   ConvergenceCluster,
   GrowthPlan,
@@ -39,6 +40,9 @@ export interface Store {
    */
   getRoom: () => Promise<RoomPlan | null>;
   saveRoom: (p: RoomPlan) => Promise<void>;
+  /** this week's digest is the last one written; history is newest-first */
+  getWeekly: () => Promise<WeeklyDigest[]>;
+  saveWeekly: (w: WeeklyDigest[]) => Promise<void>;
   updateIdea: (id: string, patch: Partial<Idea>) => Promise<Idea | null>;
 }
 
@@ -88,6 +92,10 @@ export function createStore(dir: string): Store {
 
     getRoom: () => readJson<RoomPlan | null>("room.json", null),
     saveRoom: (p) => writeJson("room.json", p),
+
+    getWeekly: () => readJson<WeeklyDigest[]>("weekly.json", []),
+    /** a year of Mondays is plenty; the page only ever shows the last few */
+    saveWeekly: (w) => writeJson("weekly.json", w.slice(0, 52)),
 
     async updateIdea(id, patch) {
       const ideas = await readJson<Idea[]>("ideas.json", []);

@@ -155,6 +155,55 @@ export default function NicheSearch({
             </p>
           </div>
 
+          {/**
+           * What the two gates did, before the reader trusts a number.
+           *
+           * A covers search answered with reels in five languages looks like a
+           * broken search until you say what was thrown out and why. Silence
+           * here reads as "we found 83 reels", which is the one thing this page
+           * must not imply when the median came from 33.
+           */}
+          {view.scanned > view.reels || view.subject.dropped > 0 ? (
+            <div className="rounded-xl border border-line/70 bg-surface/40 px-3.5 py-3 text-[12.5px] leading-relaxed text-muted">
+              <p>
+                Checked {view.scanned} reel{view.scanned === 1 ? "" : "s"}.{" "}
+                <span className="text-text">
+                  {view.language.kept}
+                  {view.language.name ? ` were in ${view.language.name}` : " were usable"}
+                </span>
+                ; the rest were another language.
+              </p>
+              {view.language.leftOut.length ? (
+                <p className="mt-1.5">
+                  Left out as another language:{" "}
+                  {view.language.leftOut
+                    .map((l) => `${l.language} ${l.reels}`)
+                    .join(" · ")}
+                  .
+                </p>
+              ) : null}
+              {view.subject.dropped > 0 ? (
+                <p className="mt-1.5">
+                  Dropped {view.subject.dropped} of those{" "}
+                  {view.language.kept} as off-topic — fit checks, transitions,
+                  memes — leaving {view.reels}.
+                </p>
+              ) : null}
+              {view.subject.judged.of > 0 && view.subject.judged.scored === 0 ? (
+                <p className="mt-1.5 text-muted/80">
+                  The off-topic check had no second opinion here: none of these
+                  reels carried a provider relevance score.
+                </p>
+              ) : null}
+              {view.language.confirmed !== null ? (
+                <p className="mt-1.5 text-muted/80">
+                  {Math.round(view.language.confirmed * 100)}% of the kept reels
+                  were confirmed by more than a caption.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {view.top.length ? (
             <div>
               <h3 className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted">

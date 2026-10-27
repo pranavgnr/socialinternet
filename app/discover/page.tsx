@@ -75,7 +75,14 @@ export default async function DiscoverPage({
                     {n.query}
                   </span>
                   <span className="mono shrink-0 text-[11px] text-muted">
-                    {n.reels} reels · {age(n.ageHours)}
+                    {/**
+                     * "checked", not "reels": this count is the whole pull,
+                     * before the language and subject gates. Calling it reels
+                     * would promise a room size the page does not have without
+                     * rebuilding it, and this list is built from stored files
+                     * on purpose — it must stay free.
+                     */}
+                    {n.reels} checked · {age(n.ageHours)}
                     {n.stale ? " · re-pull" : " · free"}
                   </span>
                 </Link>

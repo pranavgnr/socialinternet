@@ -15,6 +15,7 @@ import {
   explicitLanguage,
   inLanguage,
   isSuspect,
+  languageName,
   roomLanguage,
 } from "./lang";
 import { platformOn } from "./platform";
@@ -163,6 +164,16 @@ export interface NicheResearch {
     labelled?: number;
     /** share of those that agreed */
     share?: number;
+    /**
+     * Reels that survived this gate.
+     *
+     * Reported separately from the final room because the subject gate runs
+     * after it: without this number the page says "kept 18, dropped 50" of a
+     * pull of 83, and a reader who adds them up finds fifteen reels missing.
+     * `kept` here + `dropped` here = the pull; the subject gate's own drop is
+     * counted on its own block.
+     */
+    kept: number;
     dropped: number;
     by: Record<string, number>;
     /**
@@ -1042,6 +1053,8 @@ function shape(
       word: room.word,
       labelled: room.labelled,
       share: room.share,
+      /** the language gate's survivors — before the subject gate runs */
+      kept: kept.length,
       dropped,
       by,
       evidence,
@@ -1183,16 +1196,72 @@ export interface NicheView {
   cached: boolean;
   ageHours: number;
   credits: { spent: number; calls: number; remaining: number | null };
+  /**
+   * Reels the numbers were actually computed on — the room after both gates.
+   *
+   * This used to be `totalReels`, the count of everything the search returned,
+   * so a pull of 83 that both gates cut to 33 printed "83 reels" above a median
+   * taken from 33. The figure is a claim about the sample; it has to be the
+   * sample.
+   */
   reels: number;
+  /** everything the search returned, before either gate — the honest denominator */
+  scanned: number;
   accountCount: number;
   /** the niche's own baseline: what a typical reel here gets */
   nicheMedianViews: number;
   top: NicheAccount[];
   hashtags: { tag: string; count: number }[];
   errors: string[];
+  /**
+   * What the language gate did, in the caller's language.
+   *
+   * Not a debug field: a "covers" search that returns a thin room is explained
+   * by this line, and without it the reader has no way to tell a strict gate
+   * from a broken search.
+   */
+  language: {
+    /** the room the search was asked for, e.g. "English"; null when undecided */
+    name: string | null;
+    /** how that was decided: named in the phrase, off the creator, off the pull */
+    basis: "query" | "own" | "pull" | "none";
+    kept: number;
+    dropped: number;
+    /** share of the room confirmed by something harder than a caption */
+    confirmed: number | null;
+    /** the languages that were left out, commonest first */
+    leftOut: { language: string; reels: number }[];
+  };
+  /** What the subject gate did — language-clean reels that were about something else. */
+  subject: {
+    applied: boolean;
+    dropped: number;
+    /** how many reels the vendor's own judge scored, and out of how many */
+    judged: { scored: number; of: number };
+    reason?: string;
+  };
 }
 
 export function nicheView(research: NicheResearch, limit = 8): NicheView {
+  /**
+   * Which rooms were left out, in words.
+   *
+   * `by` counts verdicts by the evidence that produced them ("tag:es",
+   * "script:ja", "account:te"), because that is what the gate acted on. A
+   * reader does not care which witness fired; they care that 17 Spanish reels
+   * and 6 Japanese ones were not in their English room. The code is the same
+   * one either way, so it is peeled off and counted by language.
+   */
+  const leftOutByCode = new Map<string, number>();
+  for (const [why, n] of Object.entries(research.language.by)) {
+    const code = why.includes(":") ? why.slice(why.indexOf(":") + 1) : "";
+    if (!code) continue;
+    leftOutByCode.set(code, (leftOutByCode.get(code) ?? 0) + n);
+  }
+  const leftOut = [...leftOutByCode.entries()]
+    .map(([code, reels]) => ({ language: languageName(code), reels }))
+    .sort((a, b) => b.reels - a.reels);
+
   return {
     query: research.query,
     fetchedAt: research.fetchedAt,
@@ -1202,12 +1271,31 @@ export function nicheView(research: NicheResearch, limit = 8): NicheView {
         ((Date.now() - new Date(research.fetchedAt).getTime()) / 36e5) * 10,
       ) / 10,
     credits: research.credits,
-    reels: research.totalReels,
+    /**
+     * The room, not the pull. These two numbers differ by however much the
+     * gates threw out, and it is the room every figure below was computed on.
+     */
+    reels: research.reels,
+    scanned: research.totalReels,
     accountCount: research.accounts.length,
     nicheMedianViews: research.nicheMedianViews,
     top: research.accounts.slice(0, limit),
     hashtags: research.hashtags,
     errors: research.errors,
+    language: {
+      name: languageName(research.language.wanted),
+      basis: research.language.basis,
+      kept: research.language.kept,
+      dropped: research.language.dropped,
+      confirmed: research.language.evidence?.share ?? null,
+      leftOut,
+    },
+    subject: {
+      applied: Boolean(research.subject?.applied),
+      dropped: research.subject?.dropped ?? 0,
+      judged: research.subject?.judged ?? { scored: 0, of: 0 },
+      reason: research.subject?.reason,
+    },
   };
 }
 

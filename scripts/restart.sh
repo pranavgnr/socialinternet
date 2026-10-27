@@ -16,8 +16,30 @@ PORT="${PORT:-3000}"
 LOG="${LOG:-/tmp/reel-prod.log}"
 
 echo "== stopping anything on :$PORT"
-lsof -ti:"$PORT" -sTCP:LISTEN | xargs -r kill 2>/dev/null || true
-sleep 1
+# `xargs -r` is GNU-only: on macOS it errors out, the pipe swallows the error,
+# and the old server keeps the port — then `next start` dies on "port in use"
+# while this script reports success, which is the stale-server trap again.
+OLD_PIDS=$(lsof -ti:"$PORT" -sTCP:LISTEN 2>/dev/null || true)
+if [ -n "$OLD_PIDS" ]; then
+  # shellcheck disable=SC2086
+  kill $OLD_PIDS 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    lsof -ti:"$PORT" -sTCP:LISTEN > /dev/null 2>&1 || break
+    sleep 0.25
+  done
+  # still holding it: it is wedged, not merely slow
+  STILL=$(lsof -ti:"$PORT" -sTCP:LISTEN 2>/dev/null || true)
+  if [ -n "$STILL" ]; then
+    # shellcheck disable=SC2086
+    kill -9 $STILL 2>/dev/null || true
+    sleep 1
+  fi
+fi
+if lsof -ti:"$PORT" -sTCP:LISTEN > /dev/null 2>&1; then
+  echo "   could not free port $PORT — refusing to start a second server"
+  exit 1
+fi
+echo "   port free"
 
 if [ "${1:-}" != "--fast" ]; then
   echo "== building"

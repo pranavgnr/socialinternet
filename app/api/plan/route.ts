@@ -127,7 +127,7 @@ export async function POST(req: Request) {
      */
     after(async () => {
       try {
-        await runPipeline({ profile, seedReels, db: account.store });
+        await runPipeline({ profile, seedReels, db: account.store, ownHandle: handle });
       } catch (err) {
         console.error("[plan] idea feed failed:", (err as Error).message);
       }

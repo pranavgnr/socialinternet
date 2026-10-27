@@ -57,9 +57,19 @@ export async function call(
   if (!res.ok || json.success === false) {
     const err = obj(json.error);
     const message = String(err.message ?? err.type ?? `HTTP ${res.status}`);
-    // 402 / insufficient credits means "this vendor is spent — try another".
+    /**
+     * 402 / insufficient credits means "this vendor is spent — try another".
+     *
+     * A 5xx means the same thing for the rest of this run. SocialCrawl's origin
+     * has been returning **525** (Cloudflare cannot reach it) while the account
+     * still held credits, and because that was not `exhausted` the router kept
+     * picking it first on price and re-failing on every single call in the plan.
+     * A vendor whose origin is unreachable is not going to recover inside one
+     * creator's request, so it is benched like any other outage.
+     */
     const exhausted =
       res.status === 402 ||
+      res.status >= 500 ||
       /insufficient|credit/i.test(message) ||
       (typeof json.credits_remaining === "number" && json.credits_remaining < 1);
     throw new ProviderUnavailable("socialcrawl", message, exhausted);

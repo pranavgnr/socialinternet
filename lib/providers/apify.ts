@@ -5,34 +5,41 @@
  * Unused credit expires at the end of the cycle, so the honest way to run this
  * product is to spend it every month rather than hoard it.
  *
- * Which actor matters more than which vendor, and by an order of magnitude:
+ * Which actor matters more than which vendor, and by an order of magnitude. The
+ * three real options, by advertised price per 1,000 results:
  *
- *   apify/instagram-scraper          $1.50–2.70 / 1,000 results   (~1,850 free)
- *   hpix/ig-reels-scraper            $0.20 / 1,000 results        (~25,000 free)
- *   apidojo/instagram-scraper-api    $0.50 / 1,000 + free posts   (~10,000 free)
+ *   hpix/ig-reels-scraper            $0.20 / 1,000   (~25,000 free)
+ *   apidojo/instagram-scraper-api    $0.50 / 1,000   (~10,000 free)
+ *   apify/instagram-scraper          $2.30 / 1,000   ( ~2,170 free)
  *
- * This adapter uses **apidojo**, which is not the absolute cheapest per result
- * but is the cheapest one that can answer every call the pipeline makes. The
- * hpix actor cannot do keyword search at all — only named profiles — so it
- * cannot price a niche for a creator who has no handle yet, which is the whole
- * `/start` flow. Paying $0.50 instead of $0.20 buys the product's front door.
+ * The two cheap ones were tried live and both fail on **data**, not on price:
  *
- * Apify also bills **per event, per query type**, not a flat per-result rate,
- * and each query type bundles free posts before per-item charges start:
+ *   - hpix cannot do anything but named profiles, so it cannot price a niche
+ *     for a creator with no handle yet — the whole `/start` flow.
+ *   - apidojo returns **no view counts at all**, and views are the entire
+ *     ranking. It also ignores `resultsLimit` and uses different field names
+ *     (`likeCount`, not `likesCount`).
  *
- *   user query     $0.005  + 10 free posts, then $0.0005 each
- *   search query   $0.015  + 20 free posts, then $0.0005 each
- *   single post    $0.005  flat
+ * This adapter therefore uses the canonical, most expensive-per-result actor,
+ * because it is the only one of the three that returns `videoPlayCount` on a
+ * reel and honours the limit it is given. $2.30/1,000 sounds like the worst
+ * deal here and is in fact the cheapest *working* one: the others are free data
+ * that cannot price anything.
  *
- * So one full plan is 5 user queries (~12 posts each) + 3 searches (~20 posts
- * each) ≈ $0.075. The $5 monthly credit is therefore **about 66 plans every
- * month, free** — against SocialCrawl's 100 credits, once, ever.
+ * Billing is a flat **$0.0023 per result** (`PRICE_PER_DATASET_ITEM`, read from
+ * the actor's own pricing table) with no per-query fee, so cost is linear. The
+ * $5 monthly credit is **~2,170 results** — about 90 profile pulls of 24, or
+ * roughly 20 complete plans a month, free.
  *
- * VERIFIED AGAINST: the actor's published input schema (`startUrls`, `keywords`,
- * `maxItems`, `getReels`, `until`) and its documented event pricing. NOT yet
- * exercised against a live token: run `npx tsx --env-file=.env.local
- * scripts/probe-vendor.ts --live` once APIFY_TOKEN is set. The free monthly
- * credit is exactly what that probe should be spent on.
+ * VERIFIED LIVE against a real token on 2026-10-27, not just against docs:
+ *
+ *   resultsType "posts"    -> likesCount, commentsCount, videoPlayCount,
+ *                             displayUrl, shortCode, timestamp, videoDuration;
+ *                             reels arrive as productType "clips"; `owner` is
+ *                             EMPTY, so no follower count is present.
+ *   resultsType "details"  -> followersCount 268,267,261 for @natgeo, plus
+ *                             biography, verified, businessCategoryName.
+ *   resultsLimit           -> honoured exactly (asked 8, got 8; asked 3, got 3).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -46,32 +53,45 @@ import {
 
 const BASE = "https://api.apify.com/v2";
 
-/** `apidojo/instagram-scraper-api`. `/` must become `~` in the path. */
-const ACTOR = "apidojo~instagram-scraper-api";
+/**
+ * `apify/instagram-scraper` — the official, canonical Apify actor. `/` becomes `~`.
+ *
+ * Chosen after running the alternative live. The cheap third-party actor
+ * (`apidojo/instagram-scraper-api`, $0.50/1,000) was tried first and rejected on
+ * measured evidence, not on price:
+ *
+ *   - it returns **no view count of any kind**. There is no `videoPlayCount`,
+ *     `videoViewCount` or `views` on a reel, so every reel scores 0 views and the
+ *     entire outlier ranking — the product — collapses to noise;
+ *   - its field names are `likeCount` / `commentCount` / `owner.followerCount`,
+ *     none of which any other vendor uses, so a shared adapter would need a
+ *     second parser for it alone;
+ *   - it ignores `maxItems` (asked for 3 results, billed for 10).
+ *
+ * This actor returns `likesCount`, `commentsCount`, `videoPlayCount`,
+ * `displayUrl`, `shortCode`, `timestamp` and `videoDuration` — the names the
+ * code below was already written against — and it honours `resultsLimit`
+ * exactly (asked 3, returned 3). It costs $2.30/1,000 rather than $0.50/1,000,
+ * and it is still by far the cheapest option that can actually price a niche.
+ *
+ * VERIFIED LIVE against a real token on 2026-10-27. See the notes on `profile()`
+ * for the one place its payload is thinner than expected.
+ */
+const ACTOR = "apify~instagram-scraper";
 
 /**
- * Event prices, USD, from the actor's published table.
+ * `PRICE_PER_DATASET_ITEM`, read from the actor's own pricing table:
+ * **$0.0023 per result**.
  *
- * Kept as named constants rather than a single "per result" number because the
- * query fee dominates at small sizes: a 12-post user pull is mostly the $0.005
- * query fee, while a 200-post pull is mostly items. One blended rate would
- * misprice both ends.
+ * Unlike the previous actor there is no per-query fee, so cost is linear in the
+ * number of results and one constant is the honest model. $5 of monthly credit
+ * therefore buys **~2,170 results**, i.e. about 90 profile pulls of 24 reels, or
+ * roughly 20 complete plans a month for nothing.
  */
-const QUERY_USD = {
-  user: 0.005,
-  search: 0.015,
-  post: 0.005,
-} as const;
+const ITEM_USD = Number(process.env.APIFY_ITEM_USD ?? 0.0023);
 
-/** Free posts bundled with each query type before per-item charges apply. */
-const FREE_ITEMS = {
-  user: 10,
-  search: 20,
-  post: 0,
-} as const;
-
-/** Charged for each post beyond the bundled free allowance. */
-const ITEM_USD = 0.0005;
+/** Query kinds. Only used to pick a default `resultsLimit`; there is no fee. */
+type QueryKind = "user" | "search" | "post";
 
 /** Free usage included with the account each month. Set 0 on a paid plan. */
 const monthlyFree = (): number => Number(process.env.APIFY_MONTHLY_FREE_USD ?? 5);
@@ -150,10 +170,9 @@ function addSpend(usd: number, results: number): Ledger {
   return next;
 }
 
-/** What this call would cost on a paid plan, from the actor's own event table. */
-function price(kind: keyof typeof QUERY_USD, items: number): number {
-  const extra = Math.max(0, items - FREE_ITEMS[kind]);
-  return QUERY_USD[kind] + extra * ITEM_USD;
+/** What this call costs on the actor's per-result price. */
+function price(_kind: QueryKind, items: number): number {
+  return items * ITEM_USD;
 }
 
 /**
@@ -163,7 +182,7 @@ function price(kind: keyof typeof QUERY_USD, items: number): number {
  * vendor rather than after: until the monthly $5 is spent, the marginal price
  * of a pull is genuinely zero, which no paid vendor can match.
  */
-function effectiveUsd(kind: keyof typeof QUERY_USD, items: number): number {
+function effectiveUsd(kind: QueryKind, items: number): number {
   const led = readLedger();
   if (led.usd >= monthlyFree()) return price(kind, items);
   return 0;
@@ -354,7 +373,7 @@ async function runActor(input: Record<string, unknown>): Promise<{
 }
 
 async function pull(
-  kind: keyof typeof QUERY_USD,
+  kind: QueryKind,
   input: Record<string, unknown>,
   fallbackAccount?: string,
 ): Promise<PullResult> {
@@ -370,85 +389,144 @@ async function pull(
   };
 }
 
+/**
+ * The actor's input for "read this account's recent posts".
+ *
+ * `directUrls` rather than `startUrls`, and `resultsLimit` rather than
+ * `maxItems` — the previous adapter spoke the third-party actor's dialect. This
+ * one has been checked against the live API: a profile URL with
+ * `resultsType: "posts"` returns that account's own posts, reels included
+ * (`productType: "clips"`), and `resultsLimit: 8` returned exactly 8.
+ */
+const postsInput = (url: string, limit: number): Record<string, unknown> => ({
+  directUrls: [url],
+  resultsType: "posts",
+  resultsLimit: limit,
+});
+
 export const apify: DataProvider = {
   id: "apify",
-  name: "Apify (Instagram Scraper API)",
+  name: "Apify (Instagram Scraper)",
   /**
    * Representative cost of one pull, used by the router for ordering only.
    * Real money is recorded per call from the result count, not from this.
    */
   cost: {
     usdPerCall: price("user", resultsLimit()),
-    label: `$0.50 / 1,000 results · $${monthlyFree().toFixed(0)} free each month`,
+    label: `$2.30 / 1,000 results · ${monthlyFree().toFixed(0)} free each month`,
   },
   configured: () => Boolean(key()),
 
+  /**
+   * The account's recent posts.
+   *
+   * The plain profile URL, not `/reels/`. Instagram's reels tab is served by a
+   * different internal query that this actor does not follow from a bare URL;
+   * the profile's post grid does contain the reels (`productType: "clips"`)
+   * alongside images, and images carry likes and comments but no view count.
+   * The pipeline's outlier maths only counts rows with views, so the images are
+   * harmless — they are simply not rankable — and asking for more results than
+   * reels are needed is cheaper than a second call.
+   */
   profileReels: (handle) =>
     pull(
       "user",
-      {
-        startUrls: [`https://www.instagram.com/${handle.replace(/^@/, "")}/reels/`],
-        maxItems: resultsLimit(),
-      },
+      postsInput(
+        `https://www.instagram.com/${handle.replace(/^@/, "")}/`,
+        resultsLimit(),
+      ),
       handle.replace(/^@/, ""),
     ),
 
   /**
-   * Keyword discovery — a real keyword search, not a hashtag lookup.
+   * No keyword search — and that is a deliberate refusal, not an omission.
    *
-   * The old adapter reduced a phrase to its longest word and searched `#that`,
-   * which is why "kannada song covers" became "#kannadasongcovers" and found
-   * nothing. Instagram's keyword search understands the phrase as typed, and
-   * the phrase is exactly what a niche is, so it is passed through intact.
+   * This actor takes `search` + `searchType` (`user` | `hashtag` | `place`): it
+   * can find *accounts* and *hashtags*, but not "reels matching this phrase".
+   * The obvious substitute — pulling `explore/tags/<phrase>/` — was measured and
+   * is junk: five posts for `#sourdough` came from accounts with 0, 2, 18 likes
+   * and no play counts at all, because the hashtag page is ranked by recency for
+   * an anonymous visitor, not by performance. Feeding that into the room would
+   * replace "no data" with confidently wrong data.
+   *
+   * So discovery stays on the free YouTube reader, which the router already
+   * prefers for `/search/` paths (`youtubeweb` returns -2 there, this returns
+   * nothing), and which measures real view counts for nothing. Apify is the
+   * *measurement* vendor: named accounts, real numbers.
    */
-  searchReels: (query) =>
-    pull("search", {
-      keywords: [query],
-      maxItems: resultsLimit(),
-    }),
+  searchReels: () => {
+    throw new ProviderUnavailable(
+      "apify",
+      "apify/instagram-scraper has no keyword search; discovery runs on the free YouTube reader",
+    );
+  },
 
+  /**
+   * One post, in full.
+   *
+   * A post URL with `resultsType: "posts"` returns that one post, with
+   * `latestComments` attached — which is the comment mining the enrichment step
+   * wants, without a second paid call.
+   */
   post: (url) =>
-    pull("post", {
-      startUrls: [url],
-      maxItems: 1,
-    }),
+    pull("post", postsInput(url, 1)),
 
+  /**
+   * Who the account is — and the one place this actor needs a different call.
+   *
+   * A `resultsType: "posts"` pull returns posts whose `owner` object is
+   * **empty** (verified live: `owner` was `{}` on all three items), so there is
+   * no follower count anywhere in that payload. Reading it off a post — which is
+   * what the old adapter did — silently produces `followers: 0`, and a zero here
+   * is worse than a miss: the identity check treats an unreadable account as a
+   * mismatch and the headroom maths divides by it.
+   *
+   * `resultsType: "details"` is the call that answers this. Live, for `@natgeo`,
+   * it returned `followersCount: 268267261` — the real figure, against the 435
+   * that a YouTube fallback once printed. Costs one result, i.e. $0.0023.
+   */
   profile: async (handle) => {
     const clean = handle.replace(/^@/, "");
-    /**
-     * Two items rather than one: this actor returns posts, not a profile
-     * object, so the follower count has to be read off a post's owner. Two
-     * makes the mapping survive an account whose newest post is pinned or
-     * otherwise skipped.
-     */
     const { items } = await runActor({
-      startUrls: [`https://www.instagram.com/${clean}/`],
-      maxItems: 2,
+      directUrls: [`https://www.instagram.com/${clean}/`],
+      resultsType: "details",
+      resultsLimit: 1,
     });
     const real = price("user", items.length);
     const charged = effectiveUsd("user", items.length);
     addSpend(real, items.length);
 
-    const first = items[0] ?? {};
-    const owner = obj(first.owner ?? first.user ?? first.author);
+    const p = items[0] ?? {};
     const followers = pick(
-      first.ownerFollowersCount,
-      owner.followersCount,
-      owner.follower_count,
-      obj(owner.edge_followed_by).count,
-      first.followers,
+      p.followersCount,
+      p.followerCount,
+      obj(p.edge_followed_by).count,
+      p.followers,
     );
+
+    /**
+     * No followers AND no bio means the actor could not read the account at all
+     * — private, deleted, or a name that is not a handle. Returning a hollow
+     * object here is how "435 followers" got printed for a 268M account, so this
+     * reports the failure instead and lets the caller say it could not read it.
+     */
+    if (!followers && !str(p.biography)) {
+      throw new ProviderUnavailable(
+        "apify",
+        `@${clean} could not be read (private, missing, or not a handle)`,
+      );
+    }
 
     return {
       data: {
         user: {
-          username: str(first.ownerUsername) ?? str(owner.username) ?? clean,
+          username: str(p.username) ?? clean,
           followers,
-          posts: pick(owner.postsCount, owner.media_count),
-          biography: str(owner.biography) ?? str(first.biography),
-          category: str(owner.category) ?? str(first.category),
-          verified: Boolean(owner.is_verified ?? first.verified),
-          url: `https://www.instagram.com/${clean}/`,
+          posts: pick(p.postsCount, p.mediaCount, p.postCount),
+          biography: str(p.biography),
+          category: str(p.businessCategoryName) ?? str(p.category),
+          verified: Boolean(p.verified ?? p.isVerified),
+          url: str(p.url) ?? `https://www.instagram.com/${clean}/`,
         },
       },
       usd: charged,

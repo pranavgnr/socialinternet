@@ -67,6 +67,14 @@ export async function runPipeline(
     seedCredits?: { spent: number; calls: number };
     /** whose plan/ideas this belongs to; defaults to the drive-wide store */
     db?: Store;
+    /**
+     * The account this run is for, when there is one.
+     *
+     * `Profile` describes a space, not a person, so the handle cannot be read
+     * off it. It is needed to keep the creator's own posts out of the niche
+     * relevance filter — see the note at `keepRelevant` below.
+     */
+    ownHandle?: string;
   } = {},
 ): Promise<RunResult> {
   const db = runningWith.db ?? store;
@@ -162,8 +170,31 @@ export async function runPipeline(
    * it. Keeping them because the maths works is how a packing-machine reel ends
    * up as advice for someone posting AI agent demos.
    */
-  const qualifying = keepRelevant(cleared, nicheVocab(profile));
-  steps[steps.length - 1].detail = `${cleared.length} outliers cleared the gate, ${qualifying.length} in this space`;
+  /**
+   * The creator's own posts are in their space by definition, so they are never
+   * put through the niche filter.
+   *
+   * They used to be, and the filter is a two-word bar on a caption. A real
+   * account with long, well-written captions says "destinations" once in eleven
+   * lines of prose about Patagonia, scores 1, and is dropped from its own space.
+   * Measured on @natgeotravel: 2 own outliers cleared the gate, the relevance
+   * filter removed both, convergence had no accounts left, and the plan shipped
+   * with **zero ideas** for an account it had just read correctly.
+   *
+   * The filter exists to keep *other people's* unrelated posts out (a packing
+   * machine reel as advice for an AI creator). It was never meant to be a
+   * judgement on whether a creator belongs in their own niche, so it is applied
+   * to the rest of the pool only.
+   */
+  const ownHandle = (runningWith.ownHandle ?? "").replace(/^@/, "").toLowerCase();
+  const isOwn = (s: { account: string }) =>
+    Boolean(ownHandle) && s.account.replace(/^@/, "").toLowerCase() === ownHandle;
+  const own = cleared.filter(isOwn);
+  const others = keepRelevant(cleared.filter((s) => !isOwn(s)), nicheVocab(profile));
+  const qualifying = [...own, ...others];
+  steps[steps.length - 1].detail =
+    `${cleared.length} outliers cleared the gate, ` +
+    `${qualifying.length} in this space (${own.length} your own posts kept unconditionally)`;
 
   // Validate demand beyond one account: cluster outliers by theme, then count
   // how many INDEPENDENT accounts the theme shows up on.

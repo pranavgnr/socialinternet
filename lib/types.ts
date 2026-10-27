@@ -494,7 +494,18 @@ export interface CohortFit {
    * unrelated one. 0.5 means there was nothing to compare, not a tie.
    */
   agreement: number;
-  verdict: "matches" | "mixed" | "wrong";
+  /**
+   * `unknown` means the check could not be run at all, which is different from
+   * running it and getting a bad answer.
+   *
+   * It exists because a creator whose own account was never read has no
+   * captions to compare against, and scoring the cohort anyway turned every
+   * account into a mismatch ("nothing in common with the creator's captions" —
+   * 15 of 15, all exactly 0.65). The room was then pruned down to nothing and a
+   * correct wildlife cohort was thrown out. Reporting silence as a verdict is
+   * how a right answer gets deleted.
+   */
+  verdict: "matches" | "mixed" | "wrong" | "unknown";
   ok: boolean;
   accounts: AccountFit[];
   /** handles left out of the benchmark */
@@ -575,6 +586,29 @@ export interface GrowthPlan {
     vsNiche: number;
     /** share of the cohort this account out-performs, 0..1 */
     percentile: number;
+    /**
+     * Whether the follower count came from reading this account itself.
+     *
+     * False means nobody ever read the account: the reels came from another
+     * network answering the same name. The page must then say "we could not read
+     * your account" instead of printing a stranger's size, because a confident
+     * number on the wrong account is worse than an admitted gap.
+     */
+    accountRead: boolean;
+    /**
+     * Whether we hold this creator's own posts, on the same network as their
+     * identity.
+     *
+     * Distinct from `accountRead`: an account can be identified while its feed
+     * stays out of reach, in which case the page may name them but must not
+     * measure them. Without this the follower count and the post medians could
+     * come from two different creators.
+     */
+    postsRead?: boolean;
+    /** plain-language reason the account could not be read, when it could not */
+    unreadReason?: string;
+    /** the network the measured posts actually came from */
+    readFrom?: "instagram" | "youtube";
   };
   /** two or three sentences, honest about what is a hunch */
   diagnosis: string;
@@ -713,7 +747,20 @@ export interface NextMove {
   evidence: PlanEvidence[];
   /** 0..1 */
   confidence: number;
-  basis: "your own posts" | "accounts your size" | "your own posts + accounts your size";
+  /**
+   * What the advice stands on.
+   *
+   * `"the room"` exists because "accounts your size" is a claim about the
+   * creator, and it can only be made once we have read them. A plan built from
+   * a namesake's rows said "accounts your size · 60% confident" to someone whose
+   * size we never learned — the same wrong-join as a borrowed follower count,
+   * just in a sentence instead of a number.
+   */
+  basis:
+    | "your own posts"
+    | "accounts your size"
+    | "your own posts + accounts your size"
+    | "the room";
   /** how they will know in seven days whether it worked */
   checkOn: string;
 }

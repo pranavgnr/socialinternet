@@ -49,6 +49,21 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
     };
 
   const pct = Math.round(plan.standing.percentile * 100);
+  /**
+   * Two separate questions, and the page must not answer them as one.
+   *
+   * `identified` — do we know who this creator is? Decides whether a follower
+   * count may be printed at all.
+   * `mine` — do we hold their own posts? Decides whether "your usual post" and
+   * "of accounts you beat" may be printed.
+   *
+   * They come apart when the account is known but its feed is out of reach:
+   * @natgeo used to show a real 268M follower count above post figures taken
+   * from a YouTube channel of the same name. Stored plans predate both fields,
+   * hence `!== false`.
+   */
+  const identified = plan.standing.accountRead !== false;
+  const mine = identified && plan.standing.postsRead !== false;
   const usual = plan.standing.medianViews;
   const best = plan.standing.bestViews;
   const spread = usual > 0 ? best / usual : 0;
@@ -86,9 +101,42 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
         </a>
         <p className="mt-1 text-[12.5px] text-muted">
           {shape}
-          {plan.standing.followers ? ` · ${fmtViews(plan.standing.followers)} followers` : ""}
-          {plan.platform ? ` · posts read from ${platformName(plan.platform)}` : ""}
+          {identified && plan.standing.followers
+            ? ` · ${fmtViews(plan.standing.followers)} followers`
+            : ""}
+          {mine && plan.platform ? ` · posts read from ${platformName(plan.platform)}` : ""}
         </p>
+        {identified && !mine ? (
+          /* Identified, but the feed is out of reach. The follower count above is
+             genuinely theirs; nothing below it is, so say which is which before
+             the numbers start. */
+          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-relaxed">
+            <strong className="font-semibold">
+              We could read @{plan.handle}, but not their recent posts.
+            </strong>{" "}
+            So the follower count is yours and the post numbers below are the
+            room&rsquo;s, not yours.{" "}
+            {plan.standing.unreadReason ? (
+              <span className="text-muted">{plan.standing.unreadReason}.</span>
+            ) : null}{" "}
+            Connect an Instagram source to measure your own posts.
+          </div>
+        ) : null}
+        {plan.standing.accountRead === false ? (
+          /* We never read this account. Printing a size here anyway means
+             printing someone else's, so the page says what is missing and what
+             the rest of it is still worth. */
+          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-relaxed">
+            <strong className="font-semibold">
+              We could not read @{plan.handle}.
+            </strong>{" "}
+            So there is no follower count or profile here — the numbers below
+            describe the niche, not your account.{" "}
+            {plan.standing.readFrom && plan.standing.readFrom !== "instagram"
+              ? `The posts we measured came from ${platformName(plan.standing.readFrom)}, which found a channel of the same name; that is a different creator and we have not used it as yours.`
+              : "Connect an Instagram source to get your own standing."}
+          </div>
+        ) : null}
         {plan.accountPlatform &&
         plan.platform &&
         !sameNetwork(plan.accountPlatform, plan.platform) ? (
@@ -114,43 +162,78 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
           </p>
         ) : null}
 
-        <div className="mt-4 grid grid-cols-3 divide-x divide-line/70 rounded-xl border border-line bg-panel">
-          <div className="px-3 py-3">
-            <div className="text-[19px] font-medium leading-none tabular-nums">
-              {fmtViews(usual)}
+        {mine ? (
+          <div className="mt-4 grid grid-cols-3 divide-x divide-line/70 rounded-xl border border-line bg-panel">
+            <div className="px-3 py-3">
+              <div className="text-[19px] font-medium leading-none tabular-nums">
+                {fmtViews(usual)}
+              </div>
+              <div className="mt-1.5 text-[11px] leading-tight text-muted">your usual post</div>
             </div>
-            <div className="mt-1.5 text-[11px] leading-tight text-muted">your usual post</div>
-          </div>
-          <div className="px-3 py-3">
-            <div className="text-[19px] font-medium leading-none tabular-nums">
-              {fmtViews(best)}
+            <div className="px-3 py-3">
+              <div className="text-[19px] font-medium leading-none tabular-nums">
+                {fmtViews(best)}
+              </div>
+              <div className="mt-1.5 text-[11px] leading-tight text-muted">your best</div>
             </div>
-            <div className="mt-1.5 text-[11px] leading-tight text-muted">your best</div>
-          </div>
-          <div className="px-3 py-3">
-            <div className="text-[19px] font-medium leading-none tabular-nums">{pct}%</div>
-            <div className="mt-1.5 text-[11px] leading-tight text-muted">
-              of accounts you beat
+            <div className="px-3 py-3">
+              <div className="text-[19px] font-medium leading-none tabular-nums">{pct}%</div>
+              <div className="mt-1.5 text-[11px] leading-tight text-muted">
+                of accounts you beat
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          /* No account, so no personal figures. Show only what was genuinely
+             measured — the room — rather than leave a gap that reads as zero. */
+          <div className="mt-4 grid grid-cols-2 divide-x divide-line/70 rounded-xl border border-line bg-panel">
+            <div className="px-3 py-3">
+              <div className="text-[19px] font-medium leading-none tabular-nums">
+                {fmtViews(plan.cohort.nicheMedianViews)}
+              </div>
+              <div className="mt-1.5 text-[11px] leading-tight text-muted">
+                typical post in this niche
+              </div>
+            </div>
+            <div className="px-3 py-3">
+              <div className="text-[19px] font-medium leading-none tabular-nums">{accounts}</div>
+              <div className="mt-1.5 text-[11px] leading-tight text-muted">
+                accounts measured here
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="card px-4 py-4">
         <p className="text-[14.5px] leading-relaxed">{plain(arch.blurb)}</p>
         <p className="mt-2.5 border-t border-line/60 pt-2.5 text-[13px] leading-relaxed text-muted">
-          You usually get around {fmtViews(usual)} views a post
-          {peerTypical ? `, against ${peerTypical} for accounts your size` : ""}. {tone(pct)}
+          {mine ? (
+            <>
+              You usually get around {fmtViews(usual)} views a post
+              {peerTypical ? `, against ${peerTypical} for accounts your size` : ""}. {tone(pct)}
+            </>
+          ) : (
+            <>
+              {identified
+                ? "Once we can read your recent posts"
+                : "Once we can read your account"}{" "}
+              this line becomes your own numbers against the{" "}
+              {fmtViews(plan.cohort.nicheMedianViews)} a post that is normal in
+              this niche.
+            </>
+          )}
         </p>
-        {spread >= 3 ? (
+        {mine && spread >= 3 ? (
           <p className="mt-2 text-[13px] leading-relaxed text-muted">
             Your best did {times(spread)} your usual, so the ceiling is clearly there — it just
             has not happened twice.
           </p>
         ) : null}
         <p className="mt-3 border-t border-line/60 pt-2.5 text-[11.5px] leading-relaxed text-muted/70">
-          Built from {plan.standing.reelsRead} of your posts and {accounts} accounts your size in
-          the same space.
+          {mine
+            ? `Built from ${plan.standing.reelsRead} of your posts and ${accounts} accounts your size in the same space.`
+            : `Built from ${accounts} accounts in this space. Your own posts are not in here yet.`}
           {plan.nicheFit && !plan.nicheFit.ok
             ? plan.nicheFit.verdict === "wrong"
               ? ` That group may be the wrong room — we searched “${plan.nicheFit.searched}” — so treat the numbers as provisional.`
@@ -165,7 +248,13 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">This week, do one thing</h2>
             <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
-              Chosen because of what your own posts show — not what works for someone else.
+              {mine
+                ? "Chosen because of what your own posts show — not what works for someone else."
+                : /*
+                   * "accounts your size" is a claim about the creator, and we
+                   * have not read them here. The room is the only honest subject.
+                   */
+                  "Chosen from what broke out in this room — not from your account, which we have not read, and not matched to your size."}
             </p>
           </div>
           <article className="card overflow-hidden border-accent/30">
@@ -242,8 +331,8 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
         </section>
       ) : null}
 
-      {/* The account read against itself: winners vs losers. */}
-      {plan.audit && plan.audit.gaps.length ? (
+      {/* The account read against itself: winners vs losers. Needs an account. */}
+      {mine && plan.audit && plan.audit.gaps.length ? (
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">Your own posts, compared</h2>

@@ -385,6 +385,40 @@ function median(values: number[]): number {
   return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
 }
 
+/** Linear-interpolated quantile. p is 0..1. */
+function quantile(values: number[], p: number): number {
+  if (!values.length) return 0;
+  const s = [...values].sort((a, b) => a - b);
+  const pos = (s.length - 1) * Math.min(1, Math.max(0, p));
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return lo === hi ? s[lo] : Math.round(s[lo] + (s[hi] - s[lo]) * (pos - lo));
+}
+
+/**
+ * Below this many views on its own median, an account is not competing here.
+ *
+ * This is a platform fact rather than a niche one: neither YouTube nor
+ * Instagram distributes an upload to almost nobody and then a normal number to
+ * everybody else. A median of four views across five videos means the videos
+ * were never shown to an audience at all — an abandoned or spam channel that a
+ * search happened to return, not a creator in the room.
+ */
+const ROOM_FLOOR_VIEWS = 250;
+
+/**
+ * …and this is the same judgement, scaled to the room.
+ *
+ * An absolute floor cannot do the job alone: a small room's real accounts may
+ * live at 400 views, and dropping them would describe a room nobody is in. So
+ * an account also has to clear 1% of the room's own upper quartile. In the
+ * sourdough pull this joined the two halves of a bimodal sample exactly — 7
+ * accounts between 14k and 1.06M on one side, 8 between 4 and 664 on the other
+ * — and every threshold from 700 to 14,000 produced the same answer, which is
+ * what makes the rule safe rather than arbitrary.
+ */
+const ROOM_FLOOR_SHARE = 0.01;
+
 function cleanHandle(h: string): string {
   return h.trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
 }
@@ -476,9 +510,29 @@ function summariseAccounts(reels: RawReel[]): {
     .map(([handle, list]) => ({ handle, list, own: median(list.map((r) => r.views)) }))
     .filter((a) => a.list.length >= 3);
 
+  /**
+   * The baseline counts the accounts that are *in* the room, not the wrecks.
+   *
+   * Measured-then-median fixed one bias and left another: a search page always
+   * carries a tail of channels with a handful of views, and median-of-medians
+   * is only robust while that tail is the minority. Sourdough returned 15
+   * described accounts — seven real ones (14k to 1.06M) and eight dormant ones
+   * (median 4, 12, 30, 32, 139, 408, 512, 664). The room's "typical post" came
+   * out at 664 views against a visible top of a million, so every verdict built
+   * on it was wrong in the discouraging direction: real creators were told the
+   * room was hopeless because the denominator was scraped off abandoned
+   * uploads. See ROOM_FLOOR_VIEWS for why those rows are not competitors.
+   */
+  const q75 = quantile(described.map((a) => a.own), 0.75);
+  const viable = described.filter(
+    (a) => a.own >= ROOM_FLOOR_VIEWS && a.own >= q75 * ROOM_FLOOR_SHARE,
+  );
+  /** Never trim a room down to nothing: three survivors is the minimum. */
+  const sample = viable.length >= 3 ? viable : described;
+
   const nicheMedianViews =
-    described.length >= 3
-      ? median(described.map((a) => a.own))
+    sample.length >= 3
+      ? median(sample.map((a) => a.own))
       : median(reels.filter((r) => r.views > 0).map((r) => r.views));
 
   const accounts: NicheAccount[] = [...byAccount.entries()].map(([handle, list]) => {

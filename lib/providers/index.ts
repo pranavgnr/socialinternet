@@ -20,6 +20,7 @@
  */
 import { apify } from "./apify";
 import { hikerapi } from "./hikerapi";
+import { scrapecreators } from "./scrapecreators";
 import { call as socialcrawlCall, socialcrawl } from "./socialcrawl";
 import { youtube } from "./youtube";
 import { youtubeweb } from "./youtubeweb";
@@ -40,7 +41,14 @@ import {
  * expensive one for a new account. Sorting on the effective rate means the
  * choice is made by real money, not by marketing.
  */
-const ALL: DataProvider[] = [youtubeweb, apify, hikerapi, socialcrawl, youtube];
+const ALL: DataProvider[] = [
+  youtubeweb,
+  scrapecreators,
+  apify,
+  hikerapi,
+  socialcrawl,
+  youtube,
+];
 
 /** Vendors that failed this run, with the reason, so we stop retrying them. */
 const benched = new Map<ProviderId, string>();

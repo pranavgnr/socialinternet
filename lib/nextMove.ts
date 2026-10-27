@@ -45,6 +45,16 @@ export function buildNextMove({ plan, audit, comments }: NextMoveInput): NextMov
   const gap = audit?.gaps[0];
   const bestMove: PlanMove | undefined = [...plan.moves].sort((a, b) => a.priority - b.priority)[0];
 
+  /**
+   * May we say "accounts your size"?
+   *
+   * Only if the creator was actually read. Without that, the peer set is a room
+   * of strangers of unknown size relative to them, and claiming a size match is
+   * the same borrowed-identity error as printing a namesake's follower count.
+   */
+  const sizeBasis: NextMove["basis"] =
+    plan.standing.accountRead === false ? "the room" : "accounts your size";
+
   /* 1. The account's own evidence, when it is strong enough to stand on. */
   if (audit && gap && gap.support >= 2 && gap.strength >= 0.34) {
     const fromOwn = !bestMove || gap.strength >= 0.5;
@@ -73,7 +83,7 @@ export function buildNextMove({ plan, audit, comments }: NextMoveInput): NextMov
 
   /* 2. A peer-backed move from the playbook. */
   if (bestMove) {
-    return merge(plan, bestMove, audit, comments, audit ? "your own posts + accounts your size" : "accounts your size");
+    return merge(plan, bestMove, audit, comments, audit ? "your own posts + accounts your size" : sizeBasis);
   }
 
   /* 3. Nothing measured — say so, and give the audit as the task. */
@@ -86,7 +96,7 @@ export function buildNextMove({ plan, audit, comments }: NextMoveInput): NextMov
       "Publish five posts this fortnight in the same shape. Then come back — the plan will be about you instead of the niche.",
     evidence: [],
     confidence: 0.4,
-    basis: audit ? "your own posts" : "accounts your size",
+    basis: audit ? "your own posts" : sizeBasis,
     checkOn: "After five posts, compare the best and the worst. The difference is your first real answer.",
   };
 }

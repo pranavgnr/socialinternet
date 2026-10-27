@@ -14,6 +14,7 @@
 
 export type ProviderId =
   | "socialcrawl"
+  | "scrapecreators"
   | "hikerapi"
   | "apify"
   | "youtube"

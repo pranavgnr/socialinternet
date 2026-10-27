@@ -552,7 +552,20 @@ export interface AccountProfile {
  * positioning than any caption does.
  */
 export async function fetchInstagramProfile(handle: string): Promise<AccountProfile | null> {
-  const { data } = await socialcrawl("/instagram/profile", { handle: handle.replace(/^@/, "") }, 1);
+  /**
+   * Through the router, not straight to SocialCrawl.
+   *
+   * This call used to be pinned to one vendor, so a spent balance here failed
+   * the identity read while the *reels* call right beside it failed over
+   * happily — and the plan then fell back to a stranger's follower count. Asking
+   * the router for `platform: "instagram"` means every configured Instagram
+   * vendor gets a turn and none of them can be the single point of failure.
+   */
+  const { data } = await request({
+    path: "/instagram/profile",
+    handle: handle.replace(/^@/, ""),
+    platform: "instagram",
+  });
   const user = obj(data.user ?? data.author ?? data);
   const followers = num(user.followers ?? user.follower_count) || undefined;
   if (!followers && !str(user.biography)) return null;

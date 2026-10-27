@@ -65,6 +65,17 @@ export function cohortFitness(opts: {
   creator: RawReel[];
   cohort: RawReel[];
   shape?: ArchetypeGuess;
+  /**
+   * The creator's own account was never read, so `creator` holds some other
+   * creator's posts (or nothing).
+   *
+   * Every signal below compares the cohort *to the creator*, so with the wrong
+   * creator in hand the comparison is not a weak check — it is a confident wrong
+   * answer. It never fails loudly: the cohort just shares no vocabulary with a
+   * stranger, every account is marked off, the room is pruned to nothing, and
+   * the plan loses the evidence it was built from.
+   */
+  creatorUnread?: boolean;
 }): CohortFit {
   const creatorShape = opts.shape ?? detectArchetype(opts.creator);
   const creatorWords = vocabulary(opts.creator);
@@ -77,6 +88,40 @@ export function cohortFitness(opts: {
     const list = byAccount.get(key);
     if (list) list.push(r);
     else byAccount.set(key, [r]);
+  }
+
+  /**
+   * No creator, no comparison.
+   *
+   * Reported as `unknown` rather than skipped silently, so the page can say
+   * "we could not check this against your posts" instead of either implying the
+   * room was verified or claiming it was wrong. Nothing is marked off: an
+   * account is not "in another space" just because we never saw the space the
+   * creator is in.
+   */
+  if (opts.creatorUnread) {
+    const accounts: AccountFit[] = [...byAccount.entries()].map(([handle, reels]) => ({
+      handle,
+      reels: reels.length,
+      fit: 0.5,
+      off: false,
+    }));
+    accounts.sort((a, b) => b.fit - a.fit);
+    return {
+      searched: opts.query,
+      score: 0.5,
+      agreement: 0.5,
+      verdict: "unknown",
+      ok: true,
+      accounts,
+      off: [],
+      creatorShape: creatorShape.label,
+      creatorLanguage: creatorLang,
+      reasons: [
+        "We could not read your account, so there was nothing to check this room against. " +
+          "The accounts below are shown as they were found, not filtered.",
+      ],
+    };
   }
 
   const weights = creatorShape.songLed

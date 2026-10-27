@@ -495,6 +495,27 @@ export interface PlanInput {
   nicheFit?: CohortFit;
 }
 
+/**
+ * Did we actually read this account, or only find posts carrying its name?
+ *
+ * One definition on purpose. Two call sites depend on this answer and they must
+ * never disagree: the page uses it to decide whether to print a follower count,
+ * and the cohort check uses it to decide whether it has anything to compare a
+ * room against. A page that admits "we could not read you" above a cohort that
+ * was judged as if we had read you is the same lie in two halves.
+ */
+function accountWasRead(account?: { handle?: string; followers?: number; bio?: string } | null): boolean {
+  /**
+   * A handle in hand is proof of a successful read, on its own.
+   *
+   * Without it, a brand-new account with 0 followers and an empty bio looked
+   * exactly like a failed call, and the page told a real creator "we could not
+   * read you" while holding their profile. Absence of a number is not absence
+   * of an account.
+   */
+  return Boolean(account?.handle || account?.followers || account?.bio);
+}
+
 export function buildPlan({
   handle,
   research,
@@ -505,16 +526,95 @@ export function buildPlan({
   nicheFit,
 }: PlanInput): GrowthPlan {
   const clean = cleanHandle(handle);
-  const ownViews = ownReels.map((r) => r.views).filter((v) => v > 0);
-  const reportedBaseline = ownReels.find((r) => r.baselineMedianViews)?.baselineMedianViews;
+
+  /**
+   * Three separate questions, answered separately.
+   *
+   *  1. Who is this creator?          → `accountRead`
+   *  2. Do we have their own posts?   → `postsRead`
+   *  3. Are those posts on the same network as the identity?
+   *
+   * They used to be one question, and that is how @natgeo came out as
+   * "268M followers · your usual post 349k": the follower count was genuinely
+   * Instagram's, while the posts printed beside it belonged to a YouTube
+   * channel of the same name. Both numbers were real. The sentence joining them
+   * was not, and no amount of care further down the page can fix a wrong join.
+   */
+  const sameHandle = ownReels.filter(
+    (r) => r.account?.replace(/^@/, "").toLowerCase() === clean.toLowerCase(),
+  );
+
+  /**
+   * The network the creator is on.
+   *
+   * A submitted handle is an Instagram handle, and the only profile reader here
+   * reads Instagram, so a profile in hand means Instagram — including cached
+   * copies written before profiles carried a platform stamp.
+   */
+  const identityPlatform: Platform | undefined =
+    account?.platform ?? (account ? "instagram" : undefined);
+
+  /**
+   * Did we actually read this account, or only find posts carrying its name?
+   *
+   * Answered before anything is attributed to the creator, because every later
+   * decision depends on it: which posts count as theirs, whether a follower
+   * count exists, and whether a cohort may be size-matched at all.
+   */
+  const accountRead = accountWasRead(account);
+
+  /**
+   * The network their posts are on.
+   *
+   * When the identity is known, the posts must match it. A same-named channel
+   * on another network is a different creator, and is not allowed to stand in —
+   * not even as a fallback, because that fallback is precisely what produced
+   * "@natgeotravel · 435 followers".
+   *
+   * So when the identity read failed, there is no network to match against and
+   * no posts of theirs to measure. The namesake's rows stay in `ownReels` only
+   * to be named as somebody else in `unreadReason`; they are never adopted.
+   * The previous version fell back to the namesake's platform here, which left
+   * 435 followers flowing into peer matching while the page above it said the
+   * account had not been read — the same lie in two halves.
+   */
+  const postsPlatform: Platform | undefined =
+    identityPlatform ??
+    (accountRead ? sameHandle.find((r) => r.platform)?.platform : undefined);
+  const mineReels =
+    postsPlatform ? sameHandle.filter((r) => r.platform === postsPlatform) : [];
+
+  const ownViews = mineReels.map((r) => r.views).filter((v) => v > 0);
+  const reportedBaseline = mineReels.find((r) => r.baselineMedianViews)?.baselineMedianViews;
   const ownMedian = reportedBaseline || median(ownViews);
   const ownBest = Math.max(0, ...ownViews);
-  // A profile call beats a reel payload: the payload only carries followers when
-  // the platform happened to include them, so the cohort was sometimes banded on
-  // a number from one lucky post.
-  const followers = account?.followers ?? ownReels.find((r) => r.followers)?.followers;
 
-  const shape = archetype ?? detectArchetype(ownReels, research.query);
+  /**
+   * Followers belong to the identity, never to a row from another network.
+   *
+   * `mineReels` is already filtered to the identity's network, so its follower
+   * field is this account's by construction. `account` still wins: a profile
+   * call is the number itself rather than one post's snapshot of it.
+   *
+   * Gated on `accountRead` because a follower count is the single number most
+   * likely to be believed at a glance. A namesake's 435 printed next to a real
+   * handle is worse than printing nothing at all.
+   */
+  const followers = accountRead
+    ? (account?.followers ?? mineReels.find((r) => r.followers)?.followers)
+    : undefined;
+
+  const postsRead = mineReels.length > 0;
+  const elsewhere = ownReels.filter((r) => r.platform !== postsPlatform);
+  const unreadReason = accountRead
+    ? postsRead
+      ? undefined
+      : `we know who @${clean} is, but could not read their recent ${identityPlatform ?? "instagram"} posts`
+    : elsewhere.length
+      ? `we could not read @${clean} on instagram; the ${elsewhere[0]?.platform ?? "other"} posts under that name belong to a different creator and were not used as yours`
+      : `we could not read @${clean} on instagram`;
+
+  const shape = archetype ?? detectArchetype(mineReels, research.query);
 
   const others = research.accounts.filter(
     (a) => a.handle.toLowerCase() !== clean.toLowerCase(),
@@ -582,7 +682,7 @@ export function buildPlan({
   const beat = reference.filter((a) => ownMedian > 0 && a.medianViews < ownMedian).length;
   const percentile = reference.length ? beat / reference.length : 0;
 
-  const ownGap = medianGapDays(ownReels);
+  const ownGap = medianGapDays(mineReels);
   const peerGaps = peers
     .map((p) =>
       medianGapDays(workingRows.filter((r) => r.account === p.handle).map((r) => r.reel)),
@@ -596,7 +696,7 @@ export function buildPlan({
     handle: clean,
     archetype: shape,
     rows: workingRows,
-    own: ownReels,
+    own: mineReels,
     ownMedian,
     ownBest,
     nicheMedian,
@@ -605,8 +705,13 @@ export function buildPlan({
     peerGapDays: peerGapMedian,
   });
 
+  /**
+   * A gap needs two sides. Every row below is "you" against the cohort, and
+   * "you" here would be the same-named stranger, so an unread account gets no
+   * gap table rather than a table of someone else's numbers.
+   */
   const gaps: PlanGap[] = [];
-  if (referenceMedian > 0 && ownMedian > 0) {
+  if (postsRead && referenceMedian > 0 && ownMedian > 0) {
     gaps.push({
       label: "your usual post",
       you: fmt(ownMedian),
@@ -617,14 +722,14 @@ export function buildPlan({
   const peerSpreads = peers
     .map((p) => (p.medianViews > 0 ? p.bestViews / p.medianViews : 0))
     .filter((x) => x > 0);
-  if (ownSpread > 0 && peerSpreads.length) {
+  if (postsRead && ownSpread > 0 && peerSpreads.length) {
     gaps.push({
       label: "your best vs your usual",
       you: times(ownSpread),
       cohort: times(median(peerSpreads)),
     });
   }
-  if (ownGap !== null && peerGapMedian !== null) {
+  if (postsRead && ownGap !== null && peerGapMedian !== null) {
     gaps.push({
       label: "days between posts",
       you: ownGap.toFixed(1),
@@ -721,22 +826,45 @@ export function buildPlan({
 
   /* ---------------------------- diagnosis ---------------------------- */
 
+  /**
+   * The first sentence is the one a reader believes, so it may only claim what
+   * was measured.
+   *
+   * When the account was never read, every figure in the old opener —
+   * "you usually get", "accounts your size", "ahead of 67% of them" — was
+   * describing a stranger who shares the handle. The fix above stopped the page
+   * printing that stranger's follower count; leaving the same claim here would
+   * have restated it in prose, which is worse, because prose is what gets read.
+   */
+  const roomLine = `a post that does well in “${research.query}” is getting around ${fmt(
+    nicheMedian,
+  )} views`;
+
   const diagnosis: string[] = [
-    `You usually get around ${fmt(ownMedian)} views a post. Accounts your size get about ${fmt(
-      referenceMedian,
-    )}. That puts you ahead of ${Math.round(percentile * 100)}% of them.`,
+    postsRead
+      ? `You usually get around ${fmt(ownMedian)} views a post. Accounts your size get about ${fmt(
+          referenceMedian,
+        )}. That puts you ahead of ${Math.round(percentile * 100)}% of them.`
+      : accountRead
+        ? /**
+           * Identified, but the feed is unreadable. Saying "you usually get" here
+           * would be quoting whatever rows happened to be lying around — for
+           * @natgeo that was a different creator's YouTube channel.
+           */
+          `We know @${clean} — ${fmt(followers ?? 0)} followers — but we could not read their recent posts, so there is nothing here that says how those posts perform. What we can say is that ${roomLine}.`
+        : `We could not read @${clean}, so nothing here describes your account. What we can say is that ${roomLine}.`,
   ];
 
   /* ---------------- the account read against itself ---------------- */
 
   const audit = buildAudit({
-    reels: ownReels,
+    reels: mineReels,
     peerMedian: sizeMatched ? peersMed : undefined,
     nicheMedian,
   });
-  const hookRead = hookVerdict(ownReels);
+  const hookRead = hookVerdict(mineReels);
   const comments = mineComments(
-    [...ownReels, ...(research.payload ?? [])].map((r) => ({
+    [...mineReels, ...(research.payload ?? [])].map((r) => ({
       url: r.url,
       comments: r.topComments,
     })),
@@ -782,12 +910,18 @@ export function buildPlan({
     diagnosis.push(
       nicheFit.verdict === "wrong"
         ? `The group we compared you with was not your room (we searched “${nicheFit.searched}”), so read the numbers below as provisional.`
-        : `Some accounts that were not your kind of account were left out of the numbers.`,
+        : nicheFit.verdict === "unknown"
+          ? // Silence, said out loud. Anything more confident here would be
+            // describing a check that never ran.
+            `We could not check this room against your own posts, so the numbers below describe “${nicheFit.searched}” rather than how you compare with it.`
+          : `Some accounts that were not your kind of account were left out of the numbers.`,
     );
   }
 
   diagnosis.push(
-    `Everything below comes from ${ownReels.length} of your posts and ${workingRows.length} posts from accounts your size.`,
+    postsRead
+      ? `Everything below comes from ${mineReels.length} of your posts and ${workingRows.length} posts from accounts your size.`
+      : `Everything below comes from ${workingRows.length} posts by other accounts in this room. None of your own posts are in it.`,
   );
 
   /**
@@ -851,10 +985,13 @@ export function buildPlan({
      * fallback for the case where the account's own feed was cached without a
      * platform stamp.
      */
-    platform: ownReels.find((r) => r.platform)?.platform ?? research.accounts[0]?.platform,
+    platform: postsPlatform ?? research.accounts[0]?.platform,
     /* Where the account lives, which is not always where its posts were read
        from once a fallback vendor answers the reels call. */
-    accountPlatform: account?.platform,
+    /* The reader only reads Instagram, so a cached profile without a stamp is
+       still an Instagram profile. Left unset, the mixed-network warning on the
+       page never fires even when the two do not match. */
+    accountPlatform: account ? (account.platform ?? "instagram") : undefined,
     nicheSource,
     nicheFit,
     generatedAt: new Date().toISOString(),
@@ -889,9 +1026,30 @@ export function buildPlan({
       followers,
       medianViews: ownMedian,
       bestViews: ownBest,
-      reelsRead: ownReels.length,
+      reelsRead: mineReels.length,
       vsNiche: Number(vsNiche.toFixed(2)),
       percentile: Number(percentile.toFixed(2)),
+      /** true only when this account itself was read, not a same-named stranger */
+      accountRead,
+      /** true only when we hold their own posts, on the same network as them */
+      postsRead,
+      unreadReason,
+      /**
+       * Which network the posts we measured actually came from.
+       *
+       * Defaulting to "instagram" was wrong in the one case that matters: when
+       * the account could not be read and the only rows we hold are a namesake's
+       * on another network. The page then told the creator to "connect an
+       * Instagram source" while sitting on YouTube rows it had just refused to
+       * use — true that the account was unread, but silent about the fact that
+       * we were looking at somebody else. `elsewhere` is exactly those rows, so
+       * naming its network is the honest answer, and `undefined` when there were
+       * none at all (nothing was measured, so there is nothing to attribute).
+       */
+      readFrom: (postsPlatform ?? elsewhere[0]?.platform) as
+        | "instagram"
+        | "youtube"
+        | undefined,
     },
     diagnosis: diagnosis.join(" "),
     gaps,
@@ -901,8 +1059,8 @@ export function buildPlan({
     nextMove: buildNextMove({
       plan: { handle: clean, moves: play.moves, standing: {
         followers, medianViews: ownMedian, bestViews: ownBest,
-        reelsRead: ownReels.length, vsNiche: Number(vsNiche.toFixed(2)),
-        percentile: Number(percentile.toFixed(2)),
+        reelsRead: mineReels.length, vsNiche: Number(vsNiche.toFixed(2)),
+        percentile: Number(percentile.toFixed(2)), accountRead, postsRead, unreadReason,
       } },
       audit: audit ?? undefined,
       comments,
@@ -954,6 +1112,8 @@ export function ownWinnerCaptions(reels: RawReel[], limit = 3): string[] {
  * only a real improvement is allowed to replace evidence already paid for.
  */
 const VERDICT_RANK: Record<CohortFit["verdict"], number> = {
+  // No evidence at all, so any real check is an improvement on it.
+  unknown: -1,
   wrong: 0,
   mixed: 1,
   matches: 2,
@@ -1061,11 +1221,35 @@ export async function analyseHandle(
   const cohortReels = (research.payload ?? []).filter(
     (r) => (r.account ?? "").toLowerCase() !== ownKey,
   );
+
+  /**
+   * The creator's own posts, on the creator's own network — the same rule
+   * `buildPlan` applies, so the room is never judged against posts that belong
+   * to someone else.
+   *
+   * Without this, @natgeo was identified on Instagram and then had its YouTube
+   * namesake's feed used as "its posts" for the room check: the room came back
+   * "matches" against a channel that was not the account.
+   */
+  const identityPlatform: Platform | undefined =
+    account?.platform ?? (account ? "instagram" : undefined);
+  const creatorPosts = own.reels.filter(
+    (r) =>
+      (r.account ?? "").toLowerCase() === ownKey &&
+      (identityPlatform ? r.platform === identityPlatform : true),
+  );
+
   const checked = cohortFitness({
     query: guess.query,
-    creator: own.reels,
+    creator: creatorPosts,
     cohort: cohortReels,
     shape: firstPass,
+    /**
+     * Only compare against the creator when the creator's own posts are in
+     * hand. Judging a room against a stranger marked all 15 wildlife accounts
+     * as "nothing in common" — then pruned a correct cohort to nothing.
+     */
+    creatorUnread: creatorPosts.length === 0,
   });
   let nicheFit: CohortFit = checked;
 
@@ -1194,7 +1378,13 @@ export async function analyseHandle(
     }
   }
 
-  const archetype = detectArchetype(ownReels, guess.query);
+  /* Only their own posts may name the account's shape; a same-named channel on
+     another network was producing a confident "wildlife documentary" from
+     someone else's feed. Falls back to the niche when there are no own posts. */
+  const archetype = detectArchetype(
+    ownReels.filter((r) => r.account?.replace(/^@/, "").toLowerCase() === own.handle.toLowerCase()),
+    guess.query,
+  );
 
   /**
    * Remember the inferred niche so a re-run needs no inference step — with its
@@ -1245,6 +1435,9 @@ export async function analyseHandle(
 export function archetypeLine(plan: GrowthPlan): string {
   const bits = [titleCase(plan.archetype.label)];
   if (plan.archetype.language) bits.push(titleCase(plan.archetype.language));
-  if (plan.standing.followers) bits.push(`${fmt(plan.standing.followers)} followers`);
+  // Only when we actually read the account — see `standing.accountRead`.
+  if (plan.standing.accountRead !== false && plan.standing.followers) {
+    bits.push(`${fmt(plan.standing.followers)} followers`);
+  }
   return bits.join(" · ");
 }

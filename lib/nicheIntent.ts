@@ -45,8 +45,16 @@ const CACHE_PATH = path.join(process.cwd(), "data", "_intent_cache.json");
  * Version 5 ranks interests by match quality instead of declaration order and
  * chooses the room inside a group by overlap with what was typed. Every cached
  * room list before it is the old one, where "dog training" answered with a gym.
+ *
+ * Version 6 sends a text the taxonomy cannot fully explain to the model instead
+ * of rounding it down to a broad category, so every cached "sourdough baking"
+ * -> "quick recipes" is retired.
+ *
+ * Version 7 retires cached adjacent suggestions that said nothing: "same world
+ * (food), a different room" is true of every room in the group and therefore
+ * tells a creator nothing about why they should try that one next.
  */
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 7;
 
 /** One room, ready to become a vendor search. */
 export interface Room {
@@ -93,6 +101,93 @@ const STOPWORDS = new Set(
     .split(/\s+/)
     .filter(Boolean),
 );
+
+/**
+ * Words that describe *how* someone wants a room, not *which* room.
+ *
+ * Kept separate from STOPWORDS because these carry real intent about the shape
+ * of the niche but name no subject, so they must not count as evidence that the
+ * taxonomy failed to understand the text.
+ */
+const MODIFIERS = new Set(
+  `beginner beginners starter starters newbie newbies easy simple quick fast cheap budget
+   free tips tip ideas idea hacks hack tutorial tutorials guide guides basics beginner-friendly
+   daily weekly busy people person small tiny solo home-made homemade diy aesthetic
+   inspirational inspiration motivation motivated lifestyle routine`
+    .split(/\s+/)
+    .filter(Boolean),
+);
+
+/**
+ * Reasons that fit every room equally well, and so explain nothing.
+ *
+ * "Another room in food, usually less crowded" was returned for a pastry chef,
+ * a bodybuilder and a woodworker alike. The suggestion may still be a good
+ * room; the sentence is what has to go, because a creator choosing where to
+ * spend a month needs to know what they would *carry over*, not that the room
+ * is a neighbouring one.
+ */
+const GENERIC_WHY =
+  /(less crowded|less competition|competition is thinner|different room|another room|same world|neighbouring room|neighboring room|its own niche|untapped|big opportunity|similar niche)/i;
+
+/**
+ * Units of knowledge a content niche actually uses. Two rooms sharing one of
+ * these is a real, explainable next step; two rooms sharing only a category is
+ * not, and that is the difference the old wording hid.
+ */
+const CRAFT: Record<string, string> = {
+  food: "kitchen skill",
+  fitness: "training knowledge",
+  music: "instrument",
+  travel: "travel eye",
+  tech: "tool knowledge",
+  craft: "hand skills",
+  art: "drawing hand",
+  finance: "money knowledge",
+  fashion: "styling eye",
+  home: "home making",
+  beauty: "styling eye",
+  pet: "animal handling",
+};
+
+/**
+ * A concrete reason, or one derived from the two rooms themselves.
+ *
+ * Kept pure and deterministic on purpose: the fallback must read sensibly for
+ * every room in a group, and a model asked to fix its own filler will happily
+ * produce new filler.
+ */
+function concreteWhy(
+  query: string,
+  why: string | undefined,
+  core: Room[],
+  groupLabel?: string,
+): string {
+  const given = (why ?? "").trim();
+  if (given && !GENERIC_WHY.test(given)) return given.slice(0, 90);
+
+  /**
+   * Prefer a word the two rooms genuinely share — "sourdough starter" between
+   * "sourdough baking" and "sourdough starter keeping" is the reason itself.
+   */
+  const words = new Set(query.toLowerCase().match(/[a-z]{4,}/g) ?? []);
+  for (const room of core) {
+    for (const w of room.query.toLowerCase().match(/[a-z]{4,}/g) ?? []) {
+      if (words.has(w)) {
+        return `shares “${w}” with ${room.query} — narrower subject`.slice(0, 90);
+      }
+    }
+  }
+
+  const craft = groupLabel ? CRAFT[groupLabel.toLowerCase()] : undefined;
+  const anchor = core[0]?.query;
+  if (craft && anchor) {
+    return `same ${craft} as ${anchor}, thinner subject`.slice(0, 90);
+  }
+  return anchor
+    ? `carries over from ${anchor}`.slice(0, 90)
+    : "a neighbouring subject";
+}
 
 interface CacheRow {
   version: number;
@@ -203,6 +298,8 @@ Rules for every room you return:
 2. A concrete subject, not a feeling and not a platform word.
 3. Specific enough that its winners have something in common, broad enough that more than a handful of accounts post in it.
 4. Rooms must be distinct from each other, not four synonyms of one idea.
+5. If they describe two unrelated things ("a dentist who loves pottery"), say so in "note" and return rooms for BOTH — a person is allowed two rooms, and picking one silently is how a dentist got handed pottery advice as if it were a career.
+6. Use their specific word when it names a real room. "Sourdough baking" is a room; "quick recipes" is not a substitute for it.
 
 Return JSON exactly:
 {
@@ -213,7 +310,7 @@ Return JSON exactly:
 }
 
 "rooms": 3-4 rooms that directly match what they described.
-"adjacent": 2-3 neighbouring rooms where the same knowledge is valuable but the competition is thinner — this is for someone with no audience yet.
+"adjacent": 2-3 neighbouring rooms where the same knowledge is valuable but the competition is thinner — this is for someone with no audience yet. Each adjacent "why" must name what carries over (a skill, ingredient, format or audience) in under 12 words, e.g. "same starter, no 24-hour bake". Never write "less crowded", "different room", "same world" or "neighbouring niche": those are true of every room in the group, so they explain nothing.
 "words": the vocabulary of their knowledge, used to score how well a room fits them.`;
 
 /**
@@ -237,6 +334,8 @@ async function llmIntent(text: string): Promise<ResolvedIntent | null> {
     list: { query?: string; why?: string }[] | undefined,
     source: "llm",
     max: number,
+    kind: "rooms" | "adjacent" = "rooms",
+    core: Room[] = [],
   ): Room[] => {
     const out: Room[] = [];
     const seen = new Set<string>();
@@ -246,7 +345,13 @@ async function llmIntent(text: string): Promise<ResolvedIntent | null> {
       seen.add(query);
       out.push({
         query,
-        why: (item?.why ?? "").trim().slice(0, 90),
+        /* Adjacent rooms get the filler check: their reason has to say what
+           carries over, and the model is no better at that than "less crowded"
+           unless it is made to be. */
+        why:
+          kind === "adjacent"
+            ? concreteWhy(query, item?.why, core)
+            : (item?.why ?? "").trim().slice(0, 90),
         source,
       });
       if (out.length >= max) break;
@@ -255,7 +360,7 @@ async function llmIntent(text: string): Promise<ResolvedIntent | null> {
   };
 
   const rooms = take(raw.rooms, "llm", 4);
-  const adjacent = take(raw.adjacent, "llm", 3);
+  const adjacent = take(raw.adjacent, "llm", 3, "adjacent", rooms);
   if (!rooms.length && !adjacent.length) return null;
 
   const words = (raw.words ?? [])
@@ -371,7 +476,44 @@ export async function resolveIntent(
     .filter((g) => ids.includes(g.id))
     .reduce((n, g) => n + g.hits, 0);
   const coverage = saidWords.size ? taxonomyHits / saidWords.size : 0;
-  const taxonomyWins = fromTaxonomy.length > 0 && coverage >= 0.5;
+
+  /**
+   * The word the taxonomy does not know is the most important word in the text.
+   *
+   * "sourdough baking for beginners" scored the food group off "baking" alone
+   * and won, because a generic word was enough to clear the coverage bar. The
+   * creator then got "quick recipes" and "street food" — two rooms that are the
+   * opposite of a 24-hour ferment. The giveaway was sitting right there:
+   * "sourdough" is a word this taxonomy has never heard of, and a match that
+   * cannot explain the *distinctive* word has not understood the sentence.
+   *
+   * So an unexplained subject word escalates to the model instead of being
+   * rounded down to the nearest broad category. Modifiers ("beginner", "easy",
+   * "ideas") are excluded — they say how someone wants a room, not which room.
+   */
+  const known = new Set(INTERESTS.flatMap((g) => g.words));
+  /**
+   * The harder case: the taxonomy *knows* the word but has no room for it.
+   *
+   * "sourdough" is listed as a food word, so the group fires — and then the
+   * rooms offered are "quick recipes" and "street food", neither of which
+   * contains a single syllable the creator said. Knowing a subject and being
+   * able to price it are different things, and this is where the two got
+   * confused.
+   *
+   * So a named subject that no candidate room explains sends the text to the
+   * model too — a room the taxonomy cannot name is a room it cannot honestly
+   * recommend.
+   */
+  const roomWords = new Set(
+    fromTaxonomy.flatMap((r) => r.query.toLowerCase().match(/[a-z]{3,}/g) ?? []),
+  );
+  const unexplained = [...saidWords].filter(
+    (w) => !MODIFIERS.has(w) && (!known.has(w) || !roomWords.has(w)),
+  );
+
+  const taxonomyWins =
+    fromTaxonomy.length > 0 && coverage >= 0.5 && unexplained.length === 0;
 
   if (taxonomyWins) {
     /**
@@ -389,7 +531,7 @@ export async function resolveIntent(
         if (!usableRoom(query)) continue;
         adjacent.push({
           query,
-          why: `another room in ${id} — usually less crowded`,
+          why: concreteWhy(query, undefined, fromTaxonomy, group?.label),
           source: "taxonomy",
         });
       }

@@ -104,6 +104,20 @@ export interface DataProvider {
   profileReels(handle: string): Promise<PullResult>;
   /** reels matching a keyword — the cheap way to discover accounts */
   searchReels(query: string, opts?: SearchOptions): Promise<PullResult>;
+  /**
+   * *Accounts* matching a phrase, with their follower counts.
+   *
+   * Optional because it exists to solve one specific, measured problem: keyword
+   * search is served by the free YouTube reader, so an Instagram creator's
+   * "accounts your size" cohort was made of YouTube channels — a 44M-follower
+   * Instagram account was benchmarked against a Baltimore news station. Building
+   * the cohort needs to ask *Instagram* who else is in this space, which is a
+   * different question from "which reels match this phrase".
+   *
+   * Vendors that can only serve reels simply do not implement it, and the router
+   * filters them out rather than retrying them.
+   */
+  searchAccounts?(query: string): Promise<PullResult>;
   /** one post in full (caption, metrics, comments, MP4 link) */
   post(url: string): Promise<PullResult>;
   /** follower count, bio, category — one call per handle */

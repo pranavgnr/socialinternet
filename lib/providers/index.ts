@@ -65,6 +65,18 @@ export interface CreditLedger {
   usd: number;
   /** which vendor served each logical call, for the audit line */
   servedBy: Record<string, number>;
+  /**
+   * Units spent *per vendor*.
+   *
+   * `spent` is a mixed pile: one Apify profile call bills ~24 results, one
+   * SocialCrawl call bills 1 credit, and summing them into a single counter let
+   * a $12 SocialCrawl allowance be consumed by Apify traffic. Measured on
+   * 2026-10-28: an account search plus six profile lookups put the counter at
+   * 26/12, and the very next SocialCrawl call was refused for a budget it had
+   * never touched — which is how an Instagram cohort silently failed to build.
+   * A vendor's own allowance may only be spent by that vendor.
+   */
+  byVendor: Record<string, number>;
 }
 
 const ledger: CreditLedger = {
@@ -75,6 +87,7 @@ const ledger: CreditLedger = {
   byEndpoint: {},
   usd: 0,
   servedBy: {},
+  byVendor: {},
 };
 
 export function creditLedger(): CreditLedger {
@@ -82,6 +95,7 @@ export function creditLedger(): CreditLedger {
     ...ledger,
     byEndpoint: { ...ledger.byEndpoint },
     servedBy: { ...ledger.servedBy },
+    byVendor: { ...ledger.byVendor },
   };
 }
 
@@ -91,6 +105,7 @@ export function resetCreditLedger(): void {
   ledger.byEndpoint = {};
   ledger.usd = 0;
   ledger.servedBy = {};
+  ledger.byVendor = {};
   benched.clear();
 }
 
@@ -224,10 +239,27 @@ const budgetUsd = (): number => Number(process.env.CREDIT_BUDGET_USD ?? 1);
  * written for. Money gates every vendor.
  */
 function assertBudget(provider: DataProvider, expectedCost: number, path: string): void {
-  if (provider.id === "socialcrawl" && ledger.spent + expectedCost > ledger.budget) {
-    throw new Error(
-      `credit budget reached (${ledger.spent}/${ledger.budget}) before ${path}`,
-    );
+  /**
+   * The unit allowance is per vendor, and refusing it is a *failover*, not a
+   * failure.
+   *
+   * Two bugs lived in the three lines this replaces. `ledger.spent` mixed every
+   * vendor's units, so Apify's 20-odd-result calls ate SocialCrawl's 12-credit
+   * allowance; and the error was a plain `Error`, which `request()` rethrows
+   * instead of continuing down the vendor list — so one vendor being out of
+   * allowance killed a call that a perfectly good vendor could have served.
+   * `ProviderUnavailable(..., exhausted)` benches that vendor for the run and
+   * lets the next one answer, which is what "out of credits" has always meant.
+   */
+  if (provider.id === "socialcrawl") {
+    const own = ledger.byVendor[provider.id] ?? 0;
+    if (own + expectedCost > ledger.budget) {
+      throw new ProviderUnavailable(
+        provider.id,
+        `credit budget reached (${own}/${ledger.budget}) before ${path}`,
+        true,
+      );
+    }
   }
 
   const estimate =
@@ -236,8 +268,11 @@ function assertBudget(provider: DataProvider, expectedCost: number, path: string
       : provider.cost.usdPerCall;
   const ceiling = budgetUsd();
   if (ledger.usd + estimate > ceiling) {
-    throw new Error(
+    /** Real money, so no vendor can serve it — still a failover, not a crash. */
+    throw new ProviderUnavailable(
+      provider.id,
       `spend ceiling reached (${ledger.usd.toFixed(3)} of ${ceiling.toFixed(2)}) before ${path}`,
+      true,
     );
   }
 }
@@ -246,6 +281,7 @@ export type LogicalCall =
   | { path: "/instagram/profile/reels"; handle: string }
   | { path: "/account/reels"; handle: string; platform: "instagram" | "youtube" }
   | { path: "/instagram/search/reels"; query: string }
+  | { path: "/instagram/search/accounts"; query: string }
   | { path: "/instagram/post"; url: string }
   | { path: "/instagram/profile"; handle: string }
   | { path: string; [k: string]: string };
@@ -280,6 +316,21 @@ export async function request(
     (params as unknown as Record<string, unknown>).platform ?? "",
   );
   let providers = availableProviders(path);
+  /**
+   * An account search can only be served by a vendor that implements it.
+   *
+   * Without this filter the router would happily hand the call to the first
+   * cheap vendor — the free YouTube reader — which has no notion of an
+   * Instagram account list and would throw its "no keyword search" error. The
+   * whole point of the call is to ask Instagram, so vendors that cannot answer
+   * are removed rather than tried.
+   */
+  if (path === "/instagram/search/accounts") {
+    providers = providers.filter((p) => typeof p.searchAccounts === "function");
+    if (!providers.length) {
+      throw new Error("no configured vendor can search Instagram accounts");
+    }
+  }
   if (platform) {
     providers = providers.filter((p) => readsPlatform(p, platform));
     // Free vendors are gated by their own switches; if filtering left nothing,
@@ -314,6 +365,7 @@ export async function request(
       ledger.usd += result.usd;
       ledger.byEndpoint[path] = (ledger.byEndpoint[path] ?? 0) + result.units;
       ledger.servedBy[provider.id] = (ledger.servedBy[provider.id] ?? 0) + 1;
+      ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + result.units;
       if (typeof result.remaining === "number") ledger.remaining = result.remaining;
 
       return result;
@@ -367,6 +419,20 @@ async function dispatch(
             ? Number(params.relevance_threshold)
             : undefined,
       });
+    case "/instagram/search/accounts":
+      /**
+       * Guaranteed present: `request()` filtered out every vendor without it
+       * before dispatch was reached. The guard is for `dispatch` being called
+       * directly, which the type system cannot rule out.
+       */
+      if (!provider.searchAccounts) {
+        throw new ProviderUnavailable(
+          provider.id,
+          `${provider.id} cannot search Instagram accounts`,
+          true,
+        );
+      }
+      return provider.searchAccounts(params.query ?? "");
     case "/instagram/post":
       return provider.post(params.url ?? "");
     case "/instagram/profile":

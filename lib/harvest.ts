@@ -568,6 +568,15 @@ export interface AccountProfile {
    * sentence.
    */
   platform?: "instagram" | "youtube" | "tiktok";
+  /**
+   * Instagram's own list of similar accounts, when the vendor returns one.
+   *
+   * Only Apify's `details` call does, and it arrives free with the follower
+   * count we were already buying. Handles only — the payload carries no follower
+   * count per related account, so a peer builder that needs a size band still
+   * has to read those profiles.
+   */
+  related?: string[];
 }
 
 /**
@@ -605,7 +614,42 @@ export async function fetchInstagramProfile(handle: string): Promise<AccountProf
     verified: Boolean(user.is_verified ?? user.verified),
     url: str(user.url ?? user.profile_url) ?? undefined,
     platform: "instagram",
+    related: Array.isArray(user.related)
+      ? (user.related as unknown[]).filter((h): h is string => typeof h === "string")
+      : undefined,
   };
+}
+
+/**
+ * Instagram accounts that match a phrase, with their follower counts.
+ *
+ * Deliberately separate from `harvestInstagramSearch`: that returns *reels*
+ * (which is how a niche is priced), this returns *accounts* (which is how a
+ * comparison cohort is built). They are different questions and only one of
+ * them can be asked of Instagram — see the note on `searchAccounts` in
+ * `providers/types.ts`.
+ *
+ * Goes through the router, so a vendor that cannot answer is skipped instead of
+ * being the single point of failure.
+ */
+export async function searchInstagramAccounts(
+  query: string,
+): Promise<{ handle: string; followers?: number; verified?: boolean; private?: boolean }[]> {
+  const { data } = await request({ path: "/instagram/search/accounts", query });
+  const rows = Array.isArray(data.users) ? (data.users as unknown[]) : [];
+  return rows
+    .map((r) => {
+      const u = obj(r);
+      const handle = str(u.username);
+      if (!handle) return null;
+      return {
+        handle,
+        followers: num(u.followers) || undefined,
+        verified: Boolean(u.verified),
+        private: Boolean(u.private),
+      };
+    })
+    .filter((u): u is NonNullable<typeof u> => Boolean(u));
 }
 
 /**

@@ -462,6 +462,71 @@ export const apify: DataProvider = {
   },
 
   /**
+   * Who else is in this space, on Instagram, with their real follower counts.
+   *
+   * This is the call that fixes the comparison cohort. Keyword search is
+   * answered by the free YouTube reader, so an Instagram creator's "accounts
+   * your size" were YouTube channels; measuring the right network can only
+   * start from asking the right network who is on it.
+   *
+   * VERIFIED LIVE 2026-10-28: `search` + `searchType: "user"` +
+   * `resultsType: "details"` returned 14 accounts for "travel", every one with a
+   * real `followersCount` (condenasttraveller 2,436,482 · travelandleisure
+   * 6,496,386 · haystravel 106,802). Two properties matter:
+   *
+   *   - follower counts come back **in the search itself**, so the size band can
+   *     be applied before anything is paid for a profile read;
+   *   - it **ignores `resultsLimit`** (asked 10, got 14), so the count of items
+   *     is what gets billed, not what was asked for. Cost is linear either way.
+   *
+   * The alternative was tried and is genuinely junk: `searchType: "hashtag"`
+   * returned **one** row for #travelphotography with no owner and no play
+   * count, because the hashtag page is served ranked-by-recency to anonymous
+   * visitors. It cannot price anything.
+   */
+  searchAccounts: async (query) => {
+    const { items } = await runActor({
+      search: query,
+      searchType: "user",
+      resultsType: "details",
+      resultsLimit: resultsLimit(),
+    });
+    const real = price("search", items.length);
+    const charged = effectiveUsd("search", items.length);
+    addSpend(real, items.length);
+
+    const users = items
+      .map((i) => {
+        const handle = str(i.username) ?? str(obj(i).ownerUsername);
+        if (!handle) return null;
+        return {
+          username: handle,
+          followers: pick(i.followersCount, i.followerCount),
+          posts: pick(i.postsCount, i.mediaCount),
+          biography: str(i.biography),
+          category: str(i.businessCategoryName) ?? str(i.category),
+          verified: Boolean(i.verified ?? i.isVerified),
+          private: Boolean(i.private),
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => Boolean(u));
+
+    if (!users.length) {
+      throw new ProviderUnavailable(
+        "apify",
+        `Instagram account search returned nothing for "${query}"`,
+      );
+    }
+
+    return {
+      data: { users },
+      usd: charged,
+      units: items.length,
+      remaining: null,
+    };
+  },
+
+  /**
    * One post, in full.
    *
    * A post URL with `resultsType: "posts"` returns that one post, with
@@ -527,6 +592,26 @@ export const apify: DataProvider = {
           category: str(p.businessCategoryName) ?? str(p.category),
           verified: Boolean(p.verified ?? p.isVerified),
           url: str(p.url) ?? `https://www.instagram.com/${clean}/`,
+          /**
+           * Instagram's own "similar accounts", free inside this same call.
+           *
+           * VERIFIED LIVE 2026-10-28: `relatedProfiles` arrives on the details
+           * payload as a list of accounts (nasa, oceana, underwater,
+           * unitednations, nasawebb, nasasolarsystem for @natgeotravel) with
+           * `username`, `full_name` and `is_verified` — but **no follower
+           * count**, which is why the peer builder still has to read each
+           * candidate's profile before it can band them by size.
+           *
+           * It is the better half of peer discovery on quality: these are real
+           * accounts in the same space as judged by Instagram, not whatever a
+           * phrase search happened to return. It is the worse half on quantity
+           * (six or so), so the phrase search runs alongside it.
+           */
+          related: Array.isArray(p.relatedProfiles)
+            ? (p.relatedProfiles as unknown[])
+                .map((r) => str(obj(r).username))
+                .filter((u): u is string => Boolean(u))
+            : undefined,
         },
       },
       usd: charged,

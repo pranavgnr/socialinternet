@@ -22,6 +22,7 @@ import { jsonCall, llmReady } from "./llm";
 import { researchNiche, researchFromCache, type NicheResearch } from "./niche";
 import { availableProviders } from "./providers";
 import { cohortFitness, pruneCohort } from "./cohort";
+import { instagramPeers } from "./peers";
 import { languageName, readLanguage } from "./lang";
 import { coherentLabel, labelFromCaptions, nicheQuality, normaliseNiche } from "./nicheLabel";
 import { buildPlay, topSongTitle } from "./playbook";
@@ -611,6 +612,16 @@ export interface PlanInput {
    * YouTube instead of inheriting Instagram from a default.
    */
   platform?: Platform;
+  /**
+   * What happened when the cohort was rebuilt on the creator's own network.
+   *
+   * Present only when the room had to be replaced. It carries the sentence the
+   * page is allowed to print about the comparison, decided next to the evidence
+   * rather than reconstructed from a headcount later — "3 accounts" reads the
+   * same whether they are the right size or not, and that difference is the
+   * whole claim.
+   */
+  peerRoom?: { basis: string; sizeMatched: boolean; accounts: number; band?: { low: number; high: number } };
 }
 
 /**
@@ -643,6 +654,7 @@ export function buildPlan({
   nicheSource,
   nicheFit,
   platform,
+  peerRoom,
 }: PlanInput): GrowthPlan {
   const clean = cleanHandle(handle);
 
@@ -751,7 +763,33 @@ export function buildPlan({
   let peers = others;
   let basis = "everyone in this space — not enough accounts your size yet";
   let sizeMatched = false;
-  if (followers) {
+
+  /**
+   * When the room was rebuilt on the creator's own network, the peers module's
+   * size verdict wins, and it wins with the band it actually applied.
+   *
+   * Two authorities were disagreeing. The module banded candidate accounts at
+   * 0.3–3.5x, read each follower count, and called the cohort size-matched on
+   * two — while the rule below re-derived the answer at 0.35–2.5x and demanded
+   * three, so it dissented. @natgeotravel (44.5M) then printed "not enough
+   * accounts your size yet on Instagram" over numbers taken from two accounts
+   * that were inside the band all along (16.5M and 104M). Three is impossible
+   * when only PEER_MAX accounts are bought and one returns no posts of its own,
+   * so the floor here is the module's own two.
+   */
+  if (peerRoom?.sizeMatched && followers) {
+    const low = peerRoom.band?.low ?? followers * 0.3;
+    const high = peerRoom.band?.high ?? followers * 3.5;
+    const banded = others.filter(
+      (a) => a.followers && a.followers >= low && a.followers <= high,
+    );
+    if (banded.length >= 2) {
+      peers = banded;
+      basis = `accounts about your size (${fmt(followers)} followers) on Instagram`;
+      sizeMatched = true;
+    }
+  }
+  if (!sizeMatched && followers) {
     const banded = others.filter(
       (a) => a.followers && a.followers >= followers * 0.35 && a.followers <= followers * 2.5,
     );
@@ -770,6 +808,18 @@ export function buildPlan({
       basis = "accounts pulling within 3x your usual views";
       sizeMatched = true;
     }
+  }
+  /**
+   * When the room was rebuilt on Instagram, the sentence has to come from the
+   * rebuild.
+   *
+   * The size match below is computed from whatever accounts arrived. Those can
+   * now be Instagram accounts at the *wrong* size, and "accounts about your
+   * size" would be a claim the evidence does not support — the peers module
+   * already decided which of the two sentences is true, so it wins here.
+   */
+  if (peerRoom) {
+    basis = peerRoom.sizeMatched ? basis : peerRoom.basis;
   }
   peers = peers.slice(0, MAX_COHORT_ACCOUNTS);
 
@@ -1382,7 +1432,7 @@ export async function analyseHandle(
    * disk, and the check only reads them.
    */
   const ownKey = own.handle.toLowerCase();
-  const cohortReels = (research.payload ?? []).filter(
+  let cohortReels = (research.payload ?? []).filter(
     (r) => (r.account ?? "").toLowerCase() !== ownKey,
   );
 
@@ -1402,6 +1452,134 @@ export async function analyseHandle(
       (r.account ?? "").toLowerCase() === ownKey &&
       (identityPlatform ? r.platform === identityPlatform : true),
   );
+
+  /**
+   * The comparison cohort has to be on the creator's network.
+   *
+   * Keyword search is served by the free YouTube reader, so an Instagram
+   * creator's room arrived as YouTube channels — @natgeotravel, 44.5M followers
+   * on Instagram, was benchmarked against two YouTube channels with one of them
+   * being a Baltimore news station. The page admitted the mismatch and shipped
+   * it anyway, because no amount of labelling turns YouTube views into a
+   * yardstick for an Instagram account.
+   *
+   * So when the creator is known to be on Instagram and the room came back from
+   * somewhere else, the cohort is rebuilt on Instagram: Instagram's own similar
+   * accounts, plus accounts matching the niche phrase, size-banded, with three
+   * of them read in full. Roughly $0.21 a plan out of the free monthly
+   * allowance.
+   *
+   * Only fires on a genuine platform conflict. A room that is already Instagram
+   * is left exactly as it was — this repairs a wrong cohort, it does not replace
+   * a correct one.
+   */
+  const cohortOn = (payload: RawReel[]): Platform | undefined => {
+    const tally = new Map<Platform, number>();
+    for (const r of payload) {
+      const p = r.platform ?? "instagram";
+      tally.set(p, (tally.get(p) ?? 0) + 1);
+    }
+    return [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  };
+  /** set only by the rebuild below; carried into the plan so the page can say it */
+  let peerRoom: PlanInput["peerRoom"];
+
+  /**
+   * Rebuild the room on Instagram for one search phrase, or give up quietly.
+   *
+   * A function rather than a block because the phrase can change *after* the
+   * first rebuild. When the room is judged wrong, the corrected phrase is
+   * searched — and that search is served by the free YouTube reader, so it put
+   * the YouTube cohort straight back and undid the repair. Measured on
+   * @natgeotravel on 2026-10-28: three Instagram accounts were bought, the page
+   * said "Instagram accounts in your space…", and the cohort underneath it was
+   * still stamped `youtube`, because the retry arrived after the rebuild.
+   *
+   * Returns null when no Instagram reels came back, leaving the caller's room
+   * untouched — a labelled mismatch beats replacing a real cohort with nothing.
+   */
+  const rebuildRoom = async (
+    query: string,
+    base: NicheResearch,
+  ): Promise<NicheResearch | null> => {
+    try {
+      const peers = await instagramPeers({
+        handle: own.handle,
+        followers: account?.followers,
+        related: account?.related,
+        query,
+      });
+      if (!peers.reels.length) {
+        dbg("rebuild FAILED (no reels)", query, peers.errors.slice(0, 2));
+        if (peers.errors.length) {
+          peerRoom = { basis: peers.basis, sizeMatched: false, accounts: 0 };
+        }
+        return null;
+      }
+      /**
+       * The creator's own posts ride along so the language gate and the "what is
+       * this account" reading have the same anchor they had before. `shape()`
+       * keeps them out of the cohort list itself.
+       */
+      const rebuilt = researchFromCache(query, [...creatorPosts, ...peers.reels], {
+        handle: own.handle,
+        fetchedAt: base.fetchedAt,
+        errors: [...base.errors, ...peers.errors],
+      });
+      /**
+       * Peer discovery is real money, so it is added to the run's own spend
+       * counter. Leaving it out would print a plan cost that is lower than the
+       * invoice, which is the one number in the product a reader can check.
+       */
+      rebuilt.credits = {
+        spent: base.credits.spent + peers.cost.results,
+        calls: base.credits.calls + peers.accounts.length + 1,
+        remaining: peers.cost.results ? null : base.credits.remaining,
+      };
+      peerRoom = {
+        basis: peers.basis,
+        sizeMatched: peers.sizeMatched,
+        accounts: peers.accounts.length,
+        band: peers.band,
+      };
+      dbg("rebuild OK", query, "peerReels", peers.reels.length, "accounts", peers.accounts.map((a) => a.handle).join(","), "shaped", rebuilt.payload?.length);
+      return rebuilt;
+    } catch (err) {
+      /**
+       * Non-fatal by design: a cohort from the wrong network is still a cohort,
+       * and the page already labels it as such. Failing the whole plan because
+       * the better room could not be bought would be worse than the mismatch.
+       */
+      peerRoom = {
+        basis: `Instagram peers could not be read: ${(err as Error).message}`,
+        sizeMatched: false,
+        accounts: 0,
+      };
+      return null;
+    }
+  };
+
+  /** temporary trace, stripped before commit */
+  const dbg = (...a: unknown[]) => {
+    if (process.env.DEBUG_PEERS) console.error("[peers]", ...a);
+  };
+
+  const adoptRoom = (rebuilt: NicheResearch) => {
+    research = rebuilt;
+    cohortReels = (rebuilt.payload ?? []).filter(
+      (r) => (r.account ?? "").toLowerCase() !== ownKey,
+    );
+  };
+
+  const needsInstagramRoom =
+    identityPlatform === "instagram" && cohortReels.length > 0 && cohortOn(cohortReels) !== "instagram";
+
+  if (needsInstagramRoom) {
+    dbg("needs rebuild; room is", cohortOn(cohortReels), cohortReels.length);
+    const rebuilt = await rebuildRoom(guess.query, research);
+    if (rebuilt) adoptRoom(rebuilt);
+    dbg("after first rebuild: room is", cohortOn(cohortReels), cohortReels.length);
+  }
 
   const checked = cohortFitness({
     query: guess.query,
@@ -1497,6 +1675,17 @@ export async function analyseHandle(
             });
           }
         }
+        /**
+         * The corrected phrase came back from the free YouTube reader, so an
+         * Instagram creator would get its repaired cohort swapped back for a
+         * YouTube one right here — the repair has to be repeated for the new
+         * phrase, or adopting the better phrase is what breaks the comparison.
+         */
+        if (identityPlatform === "instagram") {
+          const rebuiltRoom = await rebuildRoom(fallback, research);
+          if (rebuiltRoom) adoptRoom(rebuiltRoom);
+          dbg("after retry rebuild: room is", cohortOn(cohortReels), cohortReels.length, "rebuilt:", Boolean(rebuiltRoom));
+        }
         guess.query = fallback;
         guess.source = "shape";
         nicheFit = recheck;
@@ -1523,6 +1712,7 @@ export async function analyseHandle(
   let deep: EnrichReport | undefined;
   let ownReels = own.reels;
   let payload = research.payload;
+  dbg("final research room:", cohortOn(payload ?? []), "rows", payload?.length, "cohortReels", cohortReels.length, cohortOn(cohortReels));
   if (opts.deep && own.reels.length) {
     try {
       const picks = pickForEnrichment(own.reels, research.payload ?? []);
@@ -1582,6 +1772,7 @@ export async function analyseHandle(
     nicheSource: guess.source,
     nicheFit,
     platform: own.platform,
+    peerRoom,
   });
 
   return {

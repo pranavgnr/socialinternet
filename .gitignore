@@ -32,6 +32,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# local run logs
+.start*.log
+.dev.log
 
 # vercel
 .vercel
@@ -39,3 +44,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# visitor plans and cached pulls — never committed
+/data/
+
+# scratch
+.tmp-*
+
+# probe scratch
+/.probe/

@@ -1,26 +1,64 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0b0b0d;
+  --panel: #131317;
+  --panel-2: #1a1a20;
+  --line: #26262e;
+  --text: #f2f2f5;
+  --muted: #8e8e9c;
+  --accent: #c8ff4d;
+  --warn: #ffb84d;
+  --bad: #ff6b6b;
+  /**
+   * The positive colour. Missing until now, which meant every "▲" and every
+   * "Strong" label the ranking produced rendered in the default text colour —
+   * the one signal the room comparison exists to give was invisible.
+   */
+  --good: #6ee7a8;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-good: var(--good);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-image:
+    radial-gradient(900px 420px at 12% -10%, rgba(200, 255, 77, 0.07), transparent 60%),
+    radial-gradient(700px 380px at 100% 0%, rgba(90, 120, 255, 0.07), transparent 60%);
+  background-repeat: no-repeat;
+}
+
+::selection {
+  background: rgba(200, 255, 77, 0.25);
+}
+
+.card {
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
 }

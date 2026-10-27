@@ -17,6 +17,7 @@ import type {
   SoundStats,
 } from "./types";
 import {
+  availableProviders,
   checkBalance as providerBalance,
   creditLedger,
   paidReady,
@@ -323,6 +324,32 @@ export async function harvestAccountReels(
         if (viaApi.length) return viaApi;
       } catch {
         // fall through to the web reader
+      }
+    }
+    /**
+     * The free channel reader before the paid one.
+     *
+     * A YouTube channel costs nothing to read, and this branch used to call the
+     * paid vendor regardless — so at a zero balance a YouTube handle could not
+     * be read at all, even though the free reader was configured and working
+     * next to it. That is what made the fallback in `readOwnAccount` fail
+     * silently: it detected the right channel, then died buying its posts.
+     *
+     * Same response shape (`items` + `creator_baseline`), so the rows below are
+     * normalised identically whichever vendor answered.
+     */
+    const free = availableProviders("youtube").find((p) => p.cost.usdPerCall === 0);
+    if (free) {
+      try {
+        const { data } = await free.profileReels(handle);
+        const baseline =
+          num(obj(obj(data.creator_baseline).baseline).median_views) || undefined;
+        const rows = items(data)
+          .map((row) => normalise(row, "youtube", handle, baseline))
+          .filter((r): r is RawReel => Boolean(r));
+        if (rows.length) return rows;
+      } catch {
+        // fall through to the paid vendor
       }
     }
     const { data, provider } = await socialcrawl(

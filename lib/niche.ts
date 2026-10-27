@@ -53,8 +53,16 @@ const ENRICH_MAX = Number(process.env.ENRICH_ACCOUNTS ?? 6);
  * left the room described by too few accounts to say anything about small ones;
  * twelve, read three at a time, covers the size range in about the time six
  * took in series.
+ *
+ * Thirty-two, because twelve was still not enough. A YouTube search page returns
+ * roughly one video per account, so a 26-account room arrives as 26 accounts that
+ * each need a history before their median means anything — and reading only 12
+ * of them left the "accounts your size" bar resting on four, one of which had
+ * nine followers. The room was not wrong, it was thin, and a thin median reads
+ * as a confident fact on the page. Read three at a time this costs about ten
+ * seconds once per room, and the result is cached on disk.
  */
-const FREE_ENRICH_MAX = Number(process.env.FREE_ENRICH_ACCOUNTS ?? 12);
+const FREE_ENRICH_MAX = Number(process.env.FREE_ENRICH_ACCOUNTS ?? 32);
 /**
  * How many reels may be downloaded and watched to settle a language the caption
  * could not. Costs nothing but seconds, and every one of them is cached, so a

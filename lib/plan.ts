@@ -12,7 +12,12 @@ import { times } from "./fmt";
 import { mineComments } from "./comments";
 import { enrich, pickForEnrichment, type EnrichReport } from "./enrich";
 import { buildNextMove } from "./nextMove";
-import { harvestInstagramAccount, fetchInstagramProfile, type AccountProfile } from "./harvest";
+import {
+  harvestAccountReels,
+  harvestInstagramAccount,
+  fetchInstagramProfile,
+  type AccountProfile,
+} from "./harvest";
 import { jsonCall, llmReady } from "./llm";
 import { researchNiche, researchFromCache, type NicheResearch } from "./niche";
 import { availableProviders } from "./providers";
@@ -102,12 +107,51 @@ interface StoredHandle {
    */
   profile?: AccountProfile;
   profileAt?: string;
+  /**
+   * Which network this feed was read from.
+   *
+   * The same handle can be two different creators — @natgeo exists on both
+   * Instagram and YouTube — so the two reads are kept apart on disk as well as
+   * in the plan. Records written before this field existed are Instagram by
+   * definition: it was the only platform the reader could reach.
+   */
+  platform?: Platform;
 }
 
-async function readHandle(handle: string): Promise<StoredHandle | null> {
+/**
+ * Instagram keeps the bare handle so existing cache entries still hit; YouTube
+ * gets its own key, because one handle on two networks is two different feeds
+ * and merging them would install a stranger's videos as your baseline.
+ */
+function handleKey(handle: string, platform: Platform): string {
+  return platform === "youtube" ? `${slug(handle)}--yt` : slug(handle);
+}
+
+async function readHandle(
+  handle: string,
+  platform: Platform = "instagram",
+): Promise<StoredHandle | null> {
   try {
-    const raw = await fs.readFile(path.join(HANDLE_DIR, `${slug(handle)}.json`), "utf8");
-    return JSON.parse(raw) as StoredHandle;
+    const raw = await fs.readFile(
+      path.join(HANDLE_DIR, `${handleKey(handle, platform)}.json`),
+      "utf8",
+    );
+    const parsed = JSON.parse(raw) as StoredHandle;
+    /**
+     * Reject a record filed under one network whose reels came from another.
+     *
+     * The pre-platform code fell back to the free YouTube reader and wrote those
+     * reels into the bare-handle Instagram slot. Trusting that file is what
+     * printed a 435-subscriber squatter's numbers as @natgeotravel's — and once
+     * the numbers are refused it becomes worse, not better: the handle answers
+     * "could not read" forever, because the poisoned cache keeps satisfying the
+     * TTL and no read is ever attempted. A network mismatch is a cache miss.
+     */
+    const filed = parsed.platform ?? "instagram";
+    const reels = parsed.reels ?? [];
+    if (filed !== platform) return null;
+    if (reels.some((r) => r.platform && r.platform !== platform)) return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -115,7 +159,10 @@ async function readHandle(handle: string): Promise<StoredHandle | null> {
 
 async function writeHandle(value: StoredHandle): Promise<void> {
   await fs.mkdir(HANDLE_DIR, { recursive: true });
-  const target = path.join(HANDLE_DIR, `${slug(value.handle)}.json`);
+  const target = path.join(
+    HANDLE_DIR,
+    `${handleKey(value.handle, value.platform ?? "instagram")}.json`,
+  );
   const tmp = `${target}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(value), "utf8");
   await fs.rename(tmp, target);
@@ -130,11 +177,38 @@ const PROFILE_TTL_HOURS = 24 * 7;
  * Failure is non-fatal by design: a stale profile beats no plan, and the caller
  * already falls back to the numbers in the feed.
  */
+/**
+ * Who the channel is, from the free reader.
+ *
+ * YouTube needs no key, so this is the one identity read that keeps working at
+ * zero credits — and it is the only correct answer for a YouTube handle. Asking
+ * an Instagram vendor for it used to return a different creator entirely.
+ */
+async function fetchYouTubeProfile(handle: string): Promise<AccountProfile | null> {
+  const provider = availableProviders().find((p) => p.id === "youtubeweb");
+  if (!provider?.profile) return null;
+  try {
+    const { data } = await provider.profile(handle);
+    const p = (data.profile ?? {}) as Record<string, unknown>;
+    const followers = typeof p.followers === "number" ? p.followers : undefined;
+    if (!followers) return null;
+    return {
+      handle: String(p.username ?? handle),
+      followers,
+      bio: typeof p.biography === "string" ? p.biography : undefined,
+      platform: "youtube",
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function cachedProfile(
   handle: string,
   force = false,
+  platform: Platform = "instagram",
 ): Promise<AccountProfile | null> {
-  const stored = await readHandle(handle);
+  const stored = await readHandle(handle, platform);
   const ageHours = stored?.profileAt
     ? (Date.now() - Date.parse(stored.profileAt)) / 36e5
     : Infinity;
@@ -146,7 +220,10 @@ async function cachedProfile(
   }
 
   try {
-    const fresh = await fetchInstagramProfile(handle);
+    const fresh =
+      platform === "youtube"
+        ? await fetchYouTubeProfile(handle)
+        : await fetchInstagramProfile(handle);
     if (!fresh) return stored?.profile ?? null;
     /* Only write back onto a handle file that already exists — writing one here
        would create an empty-reel record that pullOwn would later trust. */
@@ -161,6 +238,15 @@ async function cachedProfile(
 
 export interface OwnPull {
   handle: string;
+  /** The network this feed was actually read from. */
+  platform: Platform;
+  /**
+   * Set when the caller named no platform and Instagram could not be read, so
+   * the channel of the same name was used instead. The plan says so out loud:
+   * a creator who typed an Instagram handle must never be shown YouTube numbers
+   * as their own without being told which network was measured.
+   */
+  fellBackFrom?: Platform;
   reels: RawReel[];
   cached: boolean;
   niche?: string;
@@ -168,11 +254,15 @@ export interface OwnPull {
   nicheAt?: string;
 }
 
-export async function pullOwn(handle: string, force = false): Promise<OwnPull> {
+export async function pullOwn(
+  handle: string,
+  force = false,
+  platform: Platform = "instagram",
+): Promise<OwnPull> {
   const clean = cleanHandle(handle);
-  if (!clean) throw new Error("Enter an Instagram handle");
+  if (!clean) throw new Error("handle is required");
 
-  const stored = await readHandle(clean);
+  const stored = await readHandle(clean, platform);
   const ageHours = stored
     ? (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5
     : Infinity;
@@ -180,6 +270,7 @@ export async function pullOwn(handle: string, force = false): Promise<OwnPull> {
   if (!force && stored && ageHours < HANDLE_TTL_HOURS) {
     return {
       handle: clean,
+      platform,
       reels: stored.reels,
       cached: true,
       niche: stored.niche,
@@ -188,21 +279,42 @@ export async function pullOwn(handle: string, force = false): Promise<OwnPull> {
     };
   }
 
-  if (!availableProviders().length) {
+  /**
+   * The free YouTube reader always exists, so only the Instagram path can be
+   * missing a vendor — and saying which one is the difference between a creator
+   * who can fix it and one who is told to check their spelling.
+   */
+  if (platform !== "youtube" && !availableProviders().length) {
     throw new Error(
-      "No Instagram data source is configured — add HIKERAPI_KEY or SOCIALCRAWL_API_KEY.",
+      "No Instagram data source is configured — add HIKERAPI_KEY, APIFY_TOKEN or SOCIALCRAWL_API_KEY.",
     );
   }
 
-  const reels = await harvestInstagramAccount(clean);
+  /**
+   * Read the network the handle actually lives on.
+   *
+   * This used to call the Instagram reader unconditionally, so a YouTube handle
+   * was answered with an Instagram error while the free YouTube reader sat
+   * unused beside it. `harvestAccountReels` also goes through the provider
+   * router, so a spent paid balance now falls through to the free reader
+   * instead of killing the build.
+   */
+  const reels =
+    platform === "youtube"
+      ? await harvestAccountReels(clean, "youtube")
+      : await harvestInstagramAccount(clean);
+
   if (!reels.length) {
     throw new Error(
-      `Instagram returned nothing for @${clean}. Check the handle is spelled right and the account is public.`,
+      platform === "youtube"
+        ? `YouTube returned nothing for @${clean}. Check the handle is spelled right and the channel is public.`
+        : `Instagram returned nothing for @${clean}. Check the handle is spelled right and the account is public.`,
     );
   }
   await writeHandle({
     fetchedAt: new Date().toISOString(),
     handle: clean,
+    platform,
     reels,
     niche: stored?.niche,
     nicheSource: stored?.nicheSource,
@@ -210,7 +322,7 @@ export async function pullOwn(handle: string, force = false): Promise<OwnPull> {
     profile: stored?.profile,
     profileAt: stored?.profileAt,
   });
-  return { handle: clean, reels, cached: false };
+  return { handle: clean, platform, reels, cached: false };
 }
 
 /* ------------------------------------------------------------------ *
@@ -493,6 +605,12 @@ export interface PlanInput {
   nicheSource?: NicheGuess["source"];
   /** whether the cohort compares like with like, checked before any number */
   nicheFit?: CohortFit;
+  /**
+   * The network the handle was read from. Known by the caller even when the
+   * profile call fails, and the only way a YouTube channel stays labelled
+   * YouTube instead of inheriting Instagram from a default.
+   */
+  platform?: Platform;
 }
 
 /**
@@ -524,6 +642,7 @@ export function buildPlan({
   account,
   nicheSource,
   nicheFit,
+  platform,
 }: PlanInput): GrowthPlan {
   const clean = cleanHandle(handle);
 
@@ -580,7 +699,14 @@ export function buildPlan({
    */
   const postsPlatform: Platform | undefined =
     identityPlatform ??
-    (accountRead ? sameHandle.find((r) => r.platform)?.platform : undefined);
+    (accountRead ? sameHandle.find((r) => r.platform)?.platform : undefined) ??
+    /**
+     * The caller read this handle on `platform`, so the posts it harvested are
+     * that network's — true even when the profile call failed. Without this a
+     * YouTube channel whose follower count was unreadable fell back to the
+     * cohort's platform and printed YouTube views under an Instagram label.
+     */
+    platform;
   const mineReels =
     postsPlatform ? sameHandle.filter((r) => r.platform === postsPlatform) : [];
 
@@ -611,8 +737,8 @@ export function buildPlan({
       ? undefined
       : `we know who @${clean} is, but could not read their recent ${identityPlatform ?? "instagram"} posts`
     : elsewhere.length
-      ? `we could not read @${clean} on instagram; the ${elsewhere[0]?.platform ?? "other"} posts under that name belong to a different creator and were not used as yours`
-      : `we could not read @${clean} on instagram`;
+      ? `we could not read @${clean} on ${platform ?? "instagram"}; the ${elsewhere[0]?.platform ?? "other"} posts under that name belong to a different creator and were not used as yours`
+      : `we could not read @${clean} on ${platform ?? "instagram"}`;
 
   const shape = archetype ?? detectArchetype(mineReels, research.query);
 
@@ -1119,11 +1245,49 @@ const VERDICT_RANK: Record<CohortFit["verdict"], number> = {
   matches: 2,
 };
 
+/**
+ * Read the account from the network it lives on, and say so when that turned
+ * out to be a different one than the caller assumed.
+ *
+ * The rule when no platform was named: try Instagram first, because that is the
+ * product's primary source and the only network where a typed handle is
+ * unambiguous to most creators. Fall back to YouTube *only* when Instagram
+ * genuinely could not be read and a channel of that name exists — then the
+ * whole plan is built from the channel, and `fellBackFrom` makes the plan say it
+ * out loud instead of quietly printing YouTube numbers under an Instagram name.
+ */
+async function readOwnAccount(
+  handle: string,
+  force: boolean,
+  platform?: Platform,
+): Promise<OwnPull> {
+  if (platform) return pullOwn(handle, force, platform);
+
+  let instagramError: unknown = null;
+  try {
+    return await pullOwn(handle, force, "instagram");
+  } catch (err) {
+    instagramError = err;
+  }
+
+  /**
+   * A channel of the same name is only worth trusting as *this* creator when it
+   * has an audience. Without a floor, any handle with no Instagram account fell
+   * through to a 435-subscriber squatter and printed their numbers as yours.
+   */
+  const channel = await fetchYouTubeProfile(handle).catch(() => null);
+  if (!channel?.followers || channel.followers < 1000) throw instagramError;
+
+  const own = await pullOwn(handle, force, "youtube");
+  own.fellBackFrom = "instagram";
+  return own;
+}
+
 export async function analyseHandle(
   handle: string,
-  opts: { force?: boolean; niche?: string; deep?: boolean } = {},
+  opts: { force?: boolean; niche?: string; deep?: boolean; platform?: Platform } = {},
 ): Promise<AnalyseResult> {
-  const own = await pullOwn(handle, opts.force);
+  const own = await readOwnAccount(handle, Boolean(opts.force), opts.platform);
 
   /**
    * What kind of account this is, decided from its own captions before anything
@@ -1198,7 +1362,7 @@ export async function analyseHandle(
    * band, so a mis-sized cohort produced confident nonsense. Failure here is
    * non-fatal: the plan falls back to the numbers in the feed.
    */
-  const account = await cachedProfile(own.handle, opts.force);
+  const account = await cachedProfile(own.handle, opts.force, own.platform);
 
   // `exclude` stops cohort enrichment from buying this creator's own feed a
   // second time — it was already pulled above, with its own baseline.
@@ -1417,6 +1581,7 @@ export async function analyseHandle(
     account,
     nicheSource: guess.source,
     nicheFit,
+    platform: own.platform,
   });
 
   return {

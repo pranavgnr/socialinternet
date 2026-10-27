@@ -85,6 +85,12 @@ globalThis.fetch = (async (url: string | URL) => {
   return new Response(JSON.stringify(body), { status: 200 });
 }) as typeof fetch;
 
+/**
+ * Wrapped in a function because tsx compiles this file as CommonJS, where
+ * top-level await is a transform error rather than a runtime one — the script
+ * died on esbuild before it could check anything.
+ */
+async function main() {
 const profile = await scrapecreators.profile("@adrianhorning");
 const p = (profile.data.user ?? {}) as Record<string, unknown>;
 check("followers from edge_followed_by.count", p.followers, 25116);
@@ -113,3 +119,6 @@ check("search refuses instead of pricing on zeros", refused, true);
 
 console.log(failures ? `\n${failures} FAILED` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
+}
+
+main();

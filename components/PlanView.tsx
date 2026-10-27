@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { GrowthPlan } from "@/lib/types";
 import { fmtViews, plain, sentenceCase, times, titleCase } from "@/lib/plain";
-import { platformName, postUrl, profileUrl } from "@/lib/platform";
+import { platformName, postUrl, profileUrl, sameNetwork } from "@/lib/platform";
 
 const LABEL = "text-[11px] font-medium uppercase tracking-[0.14em] text-muted";
 
@@ -77,7 +77,7 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
     <div className="space-y-6">
       <section>
         <a
-          href={profileUrl(plan.handle, plan.platform)}
+          href={profileUrl(plan.handle, plan.accountPlatform ?? plan.platform)}
           target="_blank"
           rel="noreferrer"
           className="inline-flex min-h-[34px] items-center text-[23px] font-semibold leading-tight tracking-tight transition hover:text-accent"
@@ -87,8 +87,32 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
         <p className="mt-1 text-[12.5px] text-muted">
           {shape}
           {plan.standing.followers ? ` · ${fmtViews(plan.standing.followers)} followers` : ""}
-          {plan.platform ? ` · read from ${platformName(plan.platform)}` : ""}
+          {plan.platform ? ` · posts read from ${platformName(plan.platform)}` : ""}
         </p>
+        {plan.accountPlatform &&
+        plan.platform &&
+        !sameNetwork(plan.accountPlatform, plan.platform) ? (
+          /* The follower count and the measured posts did not come from the same
+             network, which happens when a fallback vendor answers the reels call.
+             Both numbers are real; putting them in one sentence without this line
+             is what makes them read as if they describe one account. */
+          <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[12px] leading-relaxed text-muted">
+            The account and follower count are from {platformName(plan.accountPlatform)};
+            the posts we measured came from {platformName(plan.platform)}. Both are real,
+            but check a median against the right feed before acting on it.
+          </p>
+        ) : plan.platform &&
+          plan.cohort?.platform &&
+          !sameNetwork(plan.platform, plan.cohort.platform) ? (
+          /* The numbers are real but they are not measured on the same network
+             as the account, so the comparison is not like-for-like. Say it once,
+             here, rather than let a median look authoritative. */
+          <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[12px] leading-relaxed text-muted">
+            Your posts come from {platformName(plan.platform)}; the creators we compared
+            you with are on {platformName(plan.cohort.platform)}. The numbers are real but
+            it is not a like-for-like yardstick — treat the comparison as a rough guide.
+          </p>
+        ) : null}
 
         <div className="mt-4 grid grid-cols-3 divide-x divide-line/70 rounded-xl border border-line bg-panel">
           <div className="px-3 py-3">

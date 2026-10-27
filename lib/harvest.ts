@@ -530,6 +530,17 @@ export interface AccountProfile {
   category?: string;
   verified?: boolean;
   url?: string;
+  /**
+   * The network this profile was actually read from.
+   *
+   * Needed because the profile call and the reels call can be answered by
+   * different vendors: with the paid Instagram source out of credits the reels
+   * come back from a YouTube fallback and get stamped youtube, while the
+   * follower count here is genuinely Instagram's. Without this the page ends up
+   * printing "268M followers · read from youtube", which is two networks in one
+   * sentence.
+   */
+  platform?: "instagram" | "youtube" | "tiktok";
 }
 
 /**
@@ -553,6 +564,7 @@ export async function fetchInstagramProfile(handle: string): Promise<AccountProf
     category: str(user.category ?? user.business_category) ?? undefined,
     verified: Boolean(user.is_verified ?? user.verified),
     url: str(user.url ?? user.profile_url) ?? undefined,
+    platform: "instagram",
   };
 }
 

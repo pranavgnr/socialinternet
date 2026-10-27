@@ -513,6 +513,13 @@ export interface GrowthPlan {
    * and the ideas page never sees the profile object.
    */
   platform?: Platform;
+  /**
+   * The network the account itself lives on, as opposed to `platform`, which is
+   * where the measured posts came from. They differ when the reels are served by
+   * a fallback vendor — the follower count is still the real account's, so the
+   * handle must link here, not to `platform`.
+   */
+  accountPlatform?: Platform;
   /** where the phrase came from: a model, the account's shape, its tags, or the visitor */
   nicheSource?: "model" | "hashtags" | "captions" | "shape" | "user";
   /** did the cohort end up comparing like with like */
@@ -531,6 +538,17 @@ export interface GrowthPlan {
     /** how peers were chosen, e.g. "accounts within 2x your typical views" */
     basis: string;
     nicheMedianViews: number;
+    /**
+     * The network the cohort was measured on.
+     *
+     * Recorded separately from `platform` on purpose. `platform` is where the
+     * creator's own posts came from; this is where the comparison came from.
+     * With the paid Instagram source unavailable the research falls back to
+     * YouTube, so the two can differ, and a median from one network is not a
+     * fair yardstick for a post on another. The page has to be able to say so
+     * rather than print the comparison as if it were like-for-like.
+     */
+    platform?: Platform;
   };
   /**
    * What the account says about itself — one 1-credit profile call.

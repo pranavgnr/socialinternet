@@ -29,6 +29,7 @@ import type {
   PlanHook,
   PlanGap,
   PlanSong,
+  Platform,
   Profile,
   RawReel,
 } from "./types";
@@ -556,6 +557,20 @@ export function buildPlan({
   const peersMed = peersMedian(peers);
 
   /**
+   * Which network the comparison group actually came from.
+   *
+   * Taken as the most common platform among the accounts that were measured,
+   * not from the first one, so a single stray account cannot mislabel the whole
+   * cohort. Undefined when the research carried no platform stamps at all —
+   * better to say nothing than to guess.
+   */
+  const counted = new Map<Platform, number>();
+  for (const a of research.accounts) {
+    if (a.platform) counted.set(a.platform, (counted.get(a.platform) ?? 0) + 1);
+  }
+  const cohortPlatform = [...counted.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  /**
    * One reference group for every sentence on the page. The standing used to be
    * measured against everyone in the space while the comparison row used the
    * size-matched accounts, so the same plan said "accounts your size get 66k"
@@ -837,6 +852,9 @@ export function buildPlan({
      * platform stamp.
      */
     platform: ownReels.find((r) => r.platform)?.platform ?? research.accounts[0]?.platform,
+    /* Where the account lives, which is not always where its posts were read
+       from once a fallback vendor answers the reels call. */
+    accountPlatform: account?.platform,
     nicheSource,
     nicheFit,
     generatedAt: new Date().toISOString(),
@@ -855,6 +873,7 @@ export function buildPlan({
       accounts: peers.length,
       basis,
       nicheMedianViews: nicheMedian,
+      platform: cohortPlatform,
     },
     account: account
       ? {

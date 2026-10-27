@@ -8,7 +8,14 @@ import {
   roomLanguage,
 } from "./lang";
 import type { AccountLangProfile } from "./lang";
-import type { Platform, Profile, RawComment, RawReel, SoundStats } from "./types";
+import type {
+  Platform,
+  Profile,
+  RawComment,
+  RawReel,
+  ReelRelevance,
+  SoundStats,
+} from "./types";
 import {
   checkBalance as providerBalance,
   creditLedger,
@@ -85,6 +92,26 @@ function toIso(v: unknown): string {
 }
 
 /**
+ * A row's relevance judgement, or undefined when it has not been scored yet.
+ *
+ * Kept strictly to what the vendor reported: a missing score is left missing,
+ * because "no judgement" and "judged irrelevant" are opposite pieces of
+ * evidence and collapsing them is how a gate starts inventing.
+ */
+function relevanceOf(v: unknown): ReelRelevance | undefined {
+  const r = obj(v);
+  if (!Object.keys(r).length) return undefined;
+  const p = r.p;
+  if (typeof p !== "number" || !Number.isFinite(p)) return undefined;
+  return {
+    p,
+    sense: str(r.sense) ?? undefined,
+    depth: typeof r.depth === "number" ? r.depth : undefined,
+    spam: typeof r.spam === "number" ? r.spam : undefined,
+  };
+}
+
+/**
  * SocialCrawl's unified schema: { post: { id, url, content, author, engagement,
  * published_at, ext }, computed: {...} }. Profile calls also carry a
  * creator baseline, which we pass down because it is the control group for
@@ -142,6 +169,21 @@ function fromUnified(
     nicheLabel: str(obj(computed.labels).niche ? obj(obj(computed.labels).niche).label : undefined),
     /** the provider saw the audio, so its language tag is the best evidence */
     language: normaliseLang(computed.language) ?? normaliseLang(content.language) ?? undefined,
+    /**
+     * The vendor's free relevance judgement, kept rather than recomputed.
+     *
+     * `computed.relevance` is scored against the query we sent, which is
+     * exactly the question the subject gate asks, and it is a different reader
+     * from ours — it has read the reel's audio and the whole caption, and it
+     * answers "is the thing this query names present here", which no bag of
+     * words can.
+     *
+     * Search is asked for `relevance=score` so every row arrives judged. A row
+     * the vendor still could not judge is sent as null and is left null here:
+     * "no judgement" and "judged irrelevant" are opposite pieces of evidence,
+     * and the gate treats them as such.
+     */
+    relevance: relevanceOf(computed.relevance),
     providerRatio: typeof rawRatio === "number" && rawRatio > 0 ? rawRatio : undefined,
     /** which search shelf produced this row, when the vendor says (YouTube does) */
     sourceWindow:
@@ -310,10 +352,33 @@ export async function harvestInstagramAccount(handle: string): Promise<RawReel[]
  * accounts are worth benchmarking, and it returns real view counts.
  */
 export async function harvestInstagramSearch(query: string): Promise<RawReel[]> {
-  const { data, provider } = await socialcrawl("/instagram/search/reels", { query }, 1);
-  return items(data)
-    .map((row) => normalise(row, platformFor(provider)))
-    .filter((r): r is RawReel => Boolean(r));
+  const { reels } = await searchReelsWithMeta(query);
+  return reels;
+}
+
+/** What the vendor's own judge did with a page, when it reports it. */
+export interface RelevanceCoverage {
+  /** "complete" | "partial" | "skipped" */
+  status: string;
+  rows: number;
+  /** rows carrying a verdict this time */
+  scored: number;
+  /** rows still being judged — they carry null, and are judged next call */
+  pending: number;
+  /** rows the vendor's filter dropped, only in `filter` mode */
+  dropped: number;
+}
+
+export function relevanceCoverage(data: Record<string, unknown>): RelevanceCoverage | null {
+  const r = obj(data.relevance);
+  if (!Object.keys(r).length) return null;
+  return {
+    status: str(r.status) ?? "unknown",
+    rows: num(r.rows),
+    scored: num(r.scored),
+    pending: num(r.pending),
+    dropped: Array.isArray(r.dropped_ids) ? r.dropped_ids.length : num(r.dropped),
+  };
 }
 
 /**
@@ -323,15 +388,25 @@ export async function harvestInstagramSearch(query: string): Promise<RawReel[]> 
  * pipeline and wrong for a probe: the difference between "the provider found
  * eight reels" and "the provider found thirty and its own relevance filter
  * dropped twenty-two" is the difference between a thin room and a strict one.
+ *
+ * The call asks for `relevance=score`, which is free and makes the vendor
+ * finish judging every row before the page is sent. The default judges in the
+ * background and sends the unjudged rows with `computed.relevance: null` —
+ * 12 of 30 on a fresh page in the sample pull — and those are exactly the rows
+ * the subject gate would then have to decide with a word bag.
  */
 export async function searchReelsWithMeta(
   query: string,
-): Promise<{ data: Record<string, unknown>; reels: RawReel[] }> {
-  const { data, provider } = await socialcrawl("/instagram/search/reels", { query }, 1);
+): Promise<{ data: Record<string, unknown>; reels: RawReel[]; judged: RelevanceCoverage | null }> {
+  const { data, provider } = await socialcrawl(
+    "/instagram/search/reels",
+    { query, relevance: "score" },
+    1,
+  );
   const reels = items(data)
     .map((row) => normalise(row, platformFor(provider)))
     .filter((r): r is RawReel => Boolean(r));
-  return { data, reels };
+  return { data, reels, judged: relevanceCoverage(data) };
 }
 
 export interface PostPayload {

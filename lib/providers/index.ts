@@ -349,7 +349,16 @@ async function dispatch(
     case "/account/reels":
       return provider.profileReels(params.handle ?? "");
     case "/instagram/search/reels":
-      return provider.searchReels(params.query ?? "");
+      return provider.searchReels(params.query ?? "", {
+        relevance:
+          params.relevance === "score" || params.relevance === "filter"
+            ? params.relevance
+            : undefined,
+        relevanceThreshold:
+          params.relevance_threshold && Number.isFinite(Number(params.relevance_threshold))
+            ? Number(params.relevance_threshold)
+            : undefined,
+      });
     case "/instagram/post":
       return provider.post(params.url ?? "");
     case "/instagram/profile":
@@ -395,8 +404,14 @@ async function dispatch(
    * Report the *active* vendor's balance, not a sum. Adding 400 HikerAPI
    * requests to 40 SocialCrawl credits produces a number in no unit at all, and
    * the caller only ever asks one question: can the next call be paid for?
+   *
+   * "Active" means the vendor that would serve a *paid* call. The free YouTube
+   * reader sorts first on price and reports no balance at all, so asking it
+   * made every run answer "balance: unknown (no data vendor configured)" while
+   * a paid key sat there with forty credits on it — and a caller reading that
+   * line would turn off the paid steps the account could afford.
    */
-  const active = availableProviders()[0];
+  const active = availableProviders().find((p) => p.cost.usdPerCall > 0) ?? availableProviders()[0];
   const mine = results.find((r) => r.id === active?.id);
   return {
     balance: mine?.remaining ?? null,

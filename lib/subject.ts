@@ -1,4 +1,5 @@
 import { words, type Matchable } from "./relevance";
+import type { ReelRelevance } from "./types";
 
 /**
  * Is this reel about the thing the search asked for?
@@ -160,8 +161,30 @@ function accountCoreTerms<T extends Matchable & { account?: string }>(
   );
 }
 
+/**
+ * What the vendor's relevance score proves, when it has one.
+ *
+ * Two thresholds, far apart on purpose. Only a clear yes keeps and only a clear
+ * no drops; the middle is left to the vocabulary, because a 0.5 is exactly the
+ * case where two readers disagree and neither should overrule the other.
+ *
+ * It is consulted only for reels with enough readable words to have been judged
+ * fairly. A Kannada caption has no English word to score, and letting a
+ * `not_present` verdict drop it would empty every room that is not written in
+ * Latin letters — the same over-pruning that made the language gate one-sided.
+ */
+const RELEVANT = 0.6;
+const IRRELEVANT = 0.4;
+
+function judgedByVendor(relevance: ReelRelevance | undefined, tokens: string[]): boolean | null {
+  if (!relevance || tokens.length < 3) return null;
+  if (relevance.p >= RELEVANT) return true;
+  if (relevance.sense === "not_present" && relevance.p < IRRELEVANT) return false;
+  return null;
+}
+
 export function keepOnSubject<
-  T extends Matchable & { audioName?: string | null; account?: string },
+  T extends Matchable & { audioName?: string | null; account?: string; relevance?: ReelRelevance },
 >(
   posts: T[],
   query: string,
@@ -219,6 +242,19 @@ export function keepOnSubject<
      * against a reel; a caption with four words chose them.
      */
     if (tokens.length < 2) return true;
+
+    /**
+     * The vendor's own reading of the same question, when it has one.
+     *
+     * This is the witness the vocabulary cannot be: "lil fit check" shares no
+     * word with "music covers", so it is only dropped because it says something
+     * else; a reel captioned "the summer I begged someone to stay" is a cover
+     * artist announcing a single and the model can tell, while a word bag
+     * counting "stay" cannot. Asking it first, and leaving the ambiguous middle
+     * to the vocabulary, keeps both readers doing what each is good at.
+     */
+    const vendor = judgedByVendor(p.relevance, tokens);
+    if (vendor !== null) return vendor;
 
     /**
      * Evidence is counted, not merely detected.
@@ -296,7 +332,30 @@ export function keepOnSubject<
   }
   const spoke = [...withSeveral.values()].filter((n) => n >= 2).length;
   const anchored = [...perAccount.values()].filter((n) => n >= 2).length;
-  const floorKept = opts.minKept ?? 8;
+  /**
+   * How many reels must survive for the filter to be worth applying.
+   *
+   * Two floors, because there are two kinds of pull and they carry different
+   * evidence.
+   *
+   * When an account has several reels, the account test can vouch for the
+   * vocabulary — and only then is the absolute floor safe. A finance search
+   * answered by a cooking pull passes the account test by coincidence (four
+   * chefs, two reels "kept" each on a stray shared word), so the count is the
+   * only thing standing between a wrong room and a confident median.
+   *
+   * When no account has two reels — every fresh keyword search — the account
+   * test cannot run at all, and a fixed floor of eight is fatal: dropping the
+   * two off-subject reels from a nine-reel covers pull left seven, the gate
+   * called that "too few to be sure", handed all nine back, and the fit check
+   * set the median exactly as it had before the gate existed. There the floor
+   * is a share of the pull, which is what "did the vocabulary describe this
+   * room" actually asks.
+   */
+  const floorKept =
+    spoke > 0
+      ? (opts.minKept ?? 8)
+      : Math.min(opts.minKept ?? 8, Math.max(4, Math.ceil(posts.length * 0.5)));
   /**
    * Three anchored accounts where three accounts exist to be anchored, fewer
    * when the pull only enriched one or two. Half of them must agree: one
@@ -306,15 +365,29 @@ export function keepOnSubject<
   const need = Math.min(2, Math.max(1, spoke));
   const share = spoke ? anchored / spoke : 0;
 
-  if (kept.length < floorKept || anchored < need || share < 0.5) {
+  /**
+   * A pull with no long accounts cannot answer the account question.
+   *
+   * A keyword search returns one reel per account, so `spoke` is zero unless
+   * enrichment bought some feeds — and then the anchored test was unsatisfiable
+   * and the gate stood down on every fresh search, which is exactly where it
+   * was needed. With no account evidence the counts below still answer it: a
+   * vocabulary that described half the pull is the room's own language, and a
+   * wrong one fails the floor instead.
+   */
+  const accountTest = spoke > 0 ? anchored >= need && share >= 0.5 : true;
+
+  if (kept.length < floorKept || !accountTest) {
     return {
       kept: posts,
       dropped: [],
       vocab,
       applied: false,
-      reason:
-        `only ${kept.length} of ${posts.length} reels from ${anchored} of ${spoke} accounts with more than one reel ` +
-        "use words from this room, so nothing was dropped — the phrase and the pull may not describe the same subject",
+      reason: spoke
+        ? `only ${kept.length} of ${posts.length} reels from ${anchored} of ${spoke} accounts with more than one reel ` +
+          "use words from this room, so nothing was dropped — the phrase and the pull may not describe the same subject"
+        : `only ${kept.length} of ${posts.length} reels use words from this room, so nothing was dropped — ` +
+          "the phrase and the pull may not describe the same subject",
     };
   }
   return { kept, dropped, vocab, applied: true };

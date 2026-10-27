@@ -185,6 +185,29 @@ export interface RawReel {
   sourceWindow?: "recent" | "established" | "shorts";
   /** median views of the account's recent posts, when the source returns it */
   baselineMedianViews?: number;
+  /**
+   * SocialCrawl's own free judgement of whether this row is about the query:
+   * `p` is the probability, `sense` says whether the thing the query means is
+   * present at all ("not_present" is the giveaway for a row that matched on a
+   * shared word and means something else), and `spam` is a low-quality score.
+   *
+   * The vendor computes it on every search row for nothing, so throwing it away
+   * means re-deriving by hand what is already known — and doing it worse: a
+   * caption reading "lil fit check" shares no word with "music covers", while a
+   * row judged `not_present` is one the model could see was something else.
+   */
+  relevance?: ReelRelevance;
+}
+
+export interface ReelRelevance {
+  /** probability the reel is about the query, 0..1 */
+  p: number;
+  /** "target" when the query's meaning is present, "not_present" when it is not */
+  sense?: string;
+  /** 1.0 = exactly the topic; higher goes deeper into it */
+  depth?: number;
+  /** low-quality / spam score, 0..1 */
+  spam?: number;
 }
 
 /** Usage stats for one audio/format, used to place it on the trend curve. */

@@ -73,6 +73,24 @@ export interface ProviderBalance {
   error?: string;
 }
 
+/**
+ * What a keyword search may ask the vendor to add.
+ *
+ * `relevance` exists because the vendor judges every search row against the
+ * query anyway — free, on by default — but only *eventually*: a page sent while
+ * the judge is still working carries `computed.relevance: null` on the rows it
+ * has not reached (30 rows, 18 judged, 12 pending is a normal first page).
+ * Asking for `score` makes the call wait until every row is judged, which is
+ * the difference between a subject gate with a second reader on 60% of a pull
+ * and one with it on all of it. Vendors that do not judge rows ignore this.
+ */
+export interface SearchOptions {
+  /** `score` waits for every row; `filter` also drops rows that are not on topic */
+  relevance?: "score" | "filter";
+  /** only with `filter`: the probability a row must reach. The vendor's default is 0.5 */
+  relevanceThreshold?: number;
+}
+
 /** The logical operations the pipeline needs. Four calls cover ~99% of spend. */
 export interface DataProvider {
   id: ProviderId;
@@ -84,7 +102,7 @@ export interface DataProvider {
   /** a page of an account's recent reels — the benchmark pull */
   profileReels(handle: string): Promise<PullResult>;
   /** reels matching a keyword — the cheap way to discover accounts */
-  searchReels(query: string): Promise<PullResult>;
+  searchReels(query: string, opts?: SearchOptions): Promise<PullResult>;
   /** one post in full (caption, metrics, comments, MP4 link) */
   post(url: string): Promise<PullResult>;
   /** follower count, bio, category — one call per handle */

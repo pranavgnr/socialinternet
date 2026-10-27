@@ -184,6 +184,15 @@ export interface NicheResearch {
     applied: boolean;
     vocab: string[];
     dropped: number;
+    /**
+     * How many of the language-clean reels the vendor's own judge scored.
+     *
+     * The number exists to keep the gate honest about itself: when it stands
+     * down, or when it drops nothing, the reader deserves to know whether that
+     * was a decision or a shortage of judgements. Zero of thirty and thirty of
+     * thirty produce the same page otherwise.
+     */
+    judged?: { scored: number; of: number };
     reason?: string;
   };
 }
@@ -1010,6 +1019,13 @@ function shape(
       applied: subject.applied,
       vocab: subject.vocab.slice(0, 8),
       dropped: subject.dropped.length,
+      /**
+       * Counted here rather than threaded from the search call, so it is true
+       * for a rebuild off disk as well: a cached pull holds the same
+       * judgements it was bought with, and a pull made before this field
+       * existed simply reports zero rather than pretending.
+       */
+      judged: { scored: kept.filter((r) => r.relevance).length, of: kept.length },
       reason: subject.reason,
     },
     errors,

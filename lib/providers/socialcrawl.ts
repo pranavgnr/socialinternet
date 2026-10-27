@@ -81,7 +81,19 @@ export const socialcrawl: DataProvider = {
 
   profileReels: (handle) => call("/instagram/profile/reels", { handle }),
 
-  searchReels: (query) => call("/instagram/search/reels", { query }),
+  searchReels: (query, opts) =>
+    call("/instagram/search/reels", {
+      query,
+      /**
+       * Free on this vendor, and the reason the subject gate has a second
+       * reader at all: without `score` a fresh page leaves ~40% of its rows
+       * judged `null`, and those rows are then decided by a word bag.
+       */
+      ...(opts?.relevance ? { relevance: opts.relevance } : {}),
+      ...(opts?.relevanceThreshold !== undefined
+        ? { relevance_threshold: String(opts.relevanceThreshold) }
+        : {}),
+    }),
 
   post: (url) => call("/instagram/post", { url }),
 

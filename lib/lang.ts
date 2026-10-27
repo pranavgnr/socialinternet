@@ -208,15 +208,28 @@ const TAG_SUFFIX = "(cover|covers|coverr|song|songs|music|singer|version|reels|e
 /** The building blocks a tag is allowed to stack: #english + music + covers. */
 const SUFFIXES = TAG_SUFFIX.replace(/[()]/g, "").split("|").sort((a, b) => b.length - a.length);
 
-/** Can this leftover be eaten entirely by vocabulary words? "musiccovers" yes. */
+/**
+ * Can this leftover be eaten entirely by vocabulary words? "musiccovers" yes.
+ *
+ * Backtracking, not greedy. The greedy version took the longest suffix it could
+ * see and gave up when the rest did not divide — so "#kannadacoversong" ate
+ * "covers" and was left holding "ong", and a Kannada cover of a Hindi song fell
+ * through to its caption and was read as Hindi. Trying every split instead
+ * costs nothing (the vocabulary is twenty words and the tag is short) and finds
+ * "cover"+"song".
+ */
 function eatsSuffixes(rest: string): boolean {
-  let left = rest;
-  while (left.length) {
-    const hit = SUFFIXES.find((s) => left.startsWith(s));
-    if (!hit) return false;
-    left = left.slice(hit.length);
-  }
-  return true;
+  const seen = new Set<string>();
+  const walk = (left: string): boolean => {
+    if (!left) return true;
+    if (seen.has(left)) return false;
+    seen.add(left);
+    for (const s of SUFFIXES) {
+      if (left.startsWith(s) && walk(left.slice(s.length))) return true;
+    }
+    return false;
+  };
+  return walk(rest);
 }
 
 /**

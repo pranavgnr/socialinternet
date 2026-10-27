@@ -276,18 +276,45 @@ export function keepOnSubject<
     const key = (p.account ?? "").toLowerCase() || "__anon";
     perAccount.set(key, (perAccount.get(key) ?? 0) + 1);
   }
+  /**
+   * How many accounts could have spoken at all.
+   *
+   * A search returns one reel per account, so most rows carry a single post and
+   * prove nothing either way — one post is not a habit. Only accounts we topped
+   * up have several reels, and those are the only ones that can say "this
+   * account is about this subject". Counting *every* account in the pull and
+   * demanding three anchored ones asked for evidence the pull structurally
+   * cannot contain when enrichment bought two feeds instead of six: an English
+   * covers room with two real cover artists in it anchored 2 of 2 and was
+   * declared unreadable, so its fit checks and birthday transitions were handed
+   * back and the median was computed over them.
+   */
+  const withSeveral = new Map<string, number>();
+  for (const p of posts) {
+    const key = (p.account ?? "").toLowerCase() || "__anon";
+    withSeveral.set(key, (withSeveral.get(key) ?? 0) + 1);
+  }
+  const spoke = [...withSeveral.values()].filter((n) => n >= 2).length;
   const anchored = [...perAccount.values()].filter((n) => n >= 2).length;
   const floorKept = opts.minKept ?? 8;
+  /**
+   * Three anchored accounts where three accounts exist to be anchored, fewer
+   * when the pull only enriched one or two. Half of them must agree: one
+   * prolific account out of ten matching a stray word is a coincidence, two out
+   * of two is the room.
+   */
+  const need = Math.min(2, Math.max(1, spoke));
+  const share = spoke ? anchored / spoke : 0;
 
-  if (kept.length < floorKept || anchored < 3) {
+  if (kept.length < floorKept || anchored < need || share < 0.5) {
     return {
       kept: posts,
       dropped: [],
       vocab,
       applied: false,
       reason:
-        `only ${kept.length} of ${posts.length} reels from ${anchored} accounts use words from this room, ` +
-        "so nothing was dropped — the phrase and the pull may not describe the same subject",
+        `only ${kept.length} of ${posts.length} reels from ${anchored} of ${spoke} accounts with more than one reel ` +
+        "use words from this room, so nothing was dropped — the phrase and the pull may not describe the same subject",
     };
   }
   return { kept, dropped, vocab, applied: true };

@@ -12,7 +12,8 @@
  *
  * Exits non-zero when a case fails, so it can gate a release.
  */
-import { inLanguage } from "../lib/lang";
+import { accountProfile, inLanguage, isSuspect } from "../lib/lang";
+import { researchFromCache } from "../lib/niche";
 import { watchToVerify } from "../lib/verifyLang";
 import type { RawReel } from "../lib/types";
 
@@ -172,6 +173,59 @@ async function main() {
     check("nothing bought", calls.length === 0, `${calls.length}`);
     check("nothing dropped", out.dropped.length === 0, `${out.dropped.length}`);
     check("said why it did nothing", Boolean(out.stats.skipped), `${out.stats.skipped}`);
+  }
+
+  console.log("\n=== A bilingual account: the English single is rescued, the Spanish ones stay out");
+  {
+    /**
+     * The case that made "suspect" necessary, run end to end through the gate
+     * and the room build. Seven Mexican regional posts and one English single
+     * from the same account: under a blanket account rule the English single
+     * was thrown out, under none the Spanish ones walked in.
+     */
+    const account = "bilingual_artist";
+    const payload: RawReel[] = [
+      ...Array.from({ length: 7 }, (_, i) =>
+        reel({ id: `BI${i}`, account, caption: "chicos tristes", hashtags: ["musicamexicana"] }),
+      ),
+      reel({ id: "BI7", account, caption: "chained in my ways… 🔗 #indie #alt" }),
+    ];
+    /** Before any witness: suspect, and the room build leaves it out. */
+    const before = researchFromCache("english music covers", payload);
+    const fromBefore = before.payload ?? [];
+    const keptBefore = before.accounts.length;
+    check(
+      "no witness → the suspect reel does not reach the room",
+      !fromBefore.some((r) => r.id === "BI7"),
+      `kept ${keptBefore} accounts`,
+    );
+
+    /** With the audience in hand, the same reel is settled and kept. */
+    const withComments = payload.map((r) =>
+      r.id === "BI7" ? { ...r, topComments: ENGLISH.map((text) => ({ text, likes: 0 })) } : r,
+    );
+    const after = researchFromCache("english music covers", withComments as RawReel[]);
+    const fromAfter = after.payload ?? [];
+    check(
+      "English comments → the suspect reel is in the room",
+      fromAfter.some((r) => r.id === "BI7"),
+      `kept ${fromAfter.length}`,
+    );
+    check(
+      "and the Spanish ones are still out",
+      !fromAfter.some((r) => r.id.startsWith("BI") && r.id !== "BI7"),
+      `${fromAfter.filter((r) => r.id !== "BI7").length} other reels`,
+    );
+
+    /**
+     * A suspect reel is a candidate for the pass, not a silent drop — and the
+     * verdict only exists in the account's context, which is the whole point:
+     * on its own the reel is an English caption and nothing more.
+     */
+    const profile = accountProfile(payload, "en");
+    const r = payload[7];
+    const v = inLanguage(r, "en", profile.mixed ? null : profile);
+    check("the gate names it suspect", isSuspect(v.why) && v.keep, v.why);
   }
 
   console.log(`\n${fail ? "FAIL" : "PASS"}: ${pass} checks passed${fail ? `, ${fail} failed` : ""}`);

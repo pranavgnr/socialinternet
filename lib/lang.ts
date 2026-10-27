@@ -233,6 +233,13 @@ function tagHas(token: string, word: string): boolean {
   const w = word.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (!t || !w) return false;
   if (t === w) return true;
+  /**
+   * Plurals. "#corridos" is how a Mexican regional singer tags a genre and
+   * "#rancheras" how they tag a song, and neither matched the singular word —
+   * so two Spanish reels in an English pull were read as unlabelled and had to
+   * be caught by their account instead of by what they said about themselves.
+   */
+  if (t === `${w}s` || t === `${w}es`) return true;
   if (t.startsWith(w) && eatsSuffixes(t.slice(w.length))) return true;
   return w.length >= 5 && t.endsWith(w);
 }
@@ -999,6 +1006,34 @@ export interface LangVerdict {
 }
 
 /**
+ * A reel the account contradicts but nothing in the reel itself does.
+ *
+ * `suspect:` is a third answer between keep and drop, and it exists because
+ * "this account posts in Telugu" and "this reel is Telugu" are different
+ * claims. The first is an inference from the account; the second is a fact
+ * about the reel. A Telugu cover singer's Telugu film song captioned in
+ * English should go, and a bilingual artist's English single should stay — and
+ * the caption cannot tell those two apart, because both are English words over
+ * a reel.
+ *
+ * So the gate stops pretending to know. A suspect reel is *kept* for long
+ * enough to reach the second witness — the video, then the comments — and if
+ * that witness says another language it is dropped on proof, if it says the
+ * room's language it is kept on proof. Only when no witness can speak does the
+ * account's prior decide, and then it decides by dropping: `shape()` treats a
+ * verdict that is still suspect at the end as a drop, because the only thing
+ * left pointing anywhere points out of the room.
+ */
+export function isSuspect(why: string): boolean {
+  return why.startsWith("suspect:");
+}
+
+/** The language a suspect verdict names, for the audit line. */
+export function suspectLanguage(why: string): string | null {
+  return isSuspect(why) ? why.slice("suspect:".length) || null : null;
+}
+
+/**
  * Does this post belong to a room in `want`?
  *
  * Contradiction only: a post is dropped when the provider says another
@@ -1050,7 +1085,11 @@ export function inLanguage(
     if (said && said.code === want && emphatic) {
       return { keep: true, why: `comments:${want}` };
     }
-    return { keep: false, why: `account:${accountLang}` };
+    /**
+     * Not a drop: the account is the only thing pointing anywhere, and an
+     * account is a person's habit, not this reel's language. See `isSuspect`.
+     */
+    return { keep: true, why: `suspect:${accountLang}` };
   }
   if (!code) {
     /**
@@ -1084,7 +1123,12 @@ export function inLanguage(
     profile.dominance.n >= 3 &&
     profile.dominance.share >= 0.8
   ) {
-    return { keep: false, why: `account:${accountLang}` };
+    /**
+     * Also suspect rather than dropped: a tag that says the room's language on
+     * an account that says another is a conflict between two pieces of the
+     * same weak kind, and the reel itself is the only thing that can settle it.
+     */
+    return { keep: true, why: `suspect:${accountLang}` };
   }
 
   /**

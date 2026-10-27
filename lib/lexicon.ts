@@ -32,6 +32,30 @@ export const STRONG: Record<string, string[]> = {
     "bhale", "chesadu", "chesi", "chesa", "chestunna", "chestundu", "vachindi",
     "vachadu", "aapedhevaru", "nidhra", "untundi", "untadu", "untav", "ayyipoyindi",
     "telugu", "tollywood", "gurinchi", "endhuku", "enduku", "emiti", "enti",
+    /**
+     * The comment-section register, which is not the caption register.
+     *
+     * Captions are written by the creator; comments are typed fast by the
+     * audience, and they are the witness this gate leans on when a caption is
+     * silent or in English. Measured on real Telugu comment sections, the words
+     * that actually appear are the ones missing here: "super ga undhi akka",
+     * "chala bagundi ra", "ee song keka", "nachindi", "cheppandi". Without them
+     * two of four comments went unplaced, the section never reached the
+     * three-labelled bar, and an English caption over a Telugu song survived on
+     * a technicality.
+     *
+     * All chosen so that none is an English word and none is shared with Hindi
+     * or Tamil: no "mass", no "pata", no "ammo"/"ayyo" (Telugu and Tamil both
+     * use them), no "manasu"/"kani"/"chinna" (shared with Tamil).
+     */
+    "undhi", "undhii", "vundhi", "undi", "bagundi", "bagundhi", "baagundi",
+    "bavundi", "keka", "nachindi", "nachuthundi", "nachadu", "cheppu",
+    "cheppandi", "cheppava", "chepthadu", "chesav", "chesaru", "ardham",
+    "artham", "gurthu", "gurtu", "chustunna", "chustunnav", "vintunna",
+    "kotta", "kotha", "adhirindi", "adurs", "abbah", "abbaha", "gunde",
+    "gundello", "emaindi", "emayindi", "pedda", "peddha", "malli", "inkosari",
+    // "baga" stays out: Baga beach is in Goa, and a beach post is not Telugu.
+    "ravali", "vachina", "baaga",
     // Telugu film-song titles, the same way: "chuttamalle", "maate vinadhuga".
     "samajavaragamana", "chuttamalle", "buttabomma", "peelings", "ninnu",
     "vennelave", "ramulo", "aakasam", "tholi", "maate", "vinadhuga", "nammaka",
@@ -143,7 +167,7 @@ export const STRONG: Record<string, string[]> = {
  */
 export const WEAK: Record<string, string[]> = {
   hi: ["hai", "hain", "ka", "ki", "ke", "ko", "se", "mein", "aur", "bhi", "kuch", "ek", "aa", "gaya", "gayi", "kya", "kyun"],
-  te: ["lo", "ra", "ee", "ni", "manchi", "baga", "chudu", "kuda", "mari", "ala", "ila"],
+  te: ["lo", "ra", "ee", "ni", "manchi", "baga", "chudu", "kuda", "mari", "ala", "ila", "ga"],
   ta: ["da", "di", "na", "nee", "oru", "illa", "aama", "nalla"],
   tr: ["sen", "ben", "bir", "bu", "ve", "da", "de"],
   es: ["que", "por", "para", "como", "mi", "te", "pero", "todo", "nada", "con", "sin", "muy", "yo", "tu", "esta", "este", "amor", "más", "mas"],

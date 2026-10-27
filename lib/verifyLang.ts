@@ -2,6 +2,7 @@ import {
   accountProfile,
   commentsLanguage,
   inLanguage,
+  isSuspect,
   readLanguage,
   type AccountLangProfile,
 } from "./lang";
@@ -74,6 +75,17 @@ export interface WatchResult {
  */
 const WEAK = new Set(["unknown", "english-caption-unknown", "ok:english", "ok:provider"]);
 
+/**
+ * Reels whose verdict is not settled: kept on a caption, or on nothing at all,
+ * or on an account that contradicts them. A `suspect:` reel is here on purpose
+ * and is the most valuable member of the queue — it is one the gate would have
+ * thrown out on the account's reputation alone, and the video is the only way
+ * to keep the English single and still lose the Telugu film song.
+ */
+function unsettled(why: string): boolean {
+  return WEAK.has(why) || isSuspect(why);
+}
+
 /** What a bought post has to give back for the comment phase to be worth it. */
 export type PostBuyer = (url: string) => Promise<{
   topComments?: { text?: string | null }[];
@@ -143,7 +155,7 @@ export async function watchToVerify(
 
   const queued = reels
     .filter((r) => r.platform === "instagram")
-    .filter((r) => WEAK.has(verdictOf(r).why))
+    .filter((r) => unsettled(verdictOf(r).why))
     // The biggest reels first: they are the ones that move the median and end
     // up cited, so they are the ones worth a second witness.
     .sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
@@ -240,7 +252,7 @@ export async function watchToVerify(
   const droppedIds = new Set(dropped.map((d) => d.reel.id));
   const undecided = () =>
     queued.filter(
-      (r) => !droppedIds.has(r.id) && !settled.has(r.id) && WEAK.has(verdictOf(r).why),
+      (r) => !droppedIds.has(r.id) && !settled.has(r.id) && unsettled(verdictOf(r).why),
     );
 
   for (const reel of undecided()) {
@@ -296,7 +308,7 @@ export async function watchToVerify(
      * Still undecided, but the buy may have handed us a video that was never
      * readable before. Watch it now rather than leave a paid reel half-read.
      */
-    if (WEAK.has(verdict.why) && reel.mediaUrl && canWatch && stats.watched < max) {
+    if (unsettled(verdict.why) && reel.mediaUrl && canWatch && stats.watched < max) {
       stats.watched += 1;
       const reading = await readHook({ reel, mediaUrl: reel.mediaUrl });
       const onScreen = reading.onScreen?.join(" · ").slice(0, 400);

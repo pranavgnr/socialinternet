@@ -14,7 +14,7 @@
  *
  * Exits non-zero on any failure, so it can gate a release.
  */
-import { accountProfile, commentsLanguage, inLanguage, readLanguage } from "../lib/lang";
+import { accountProfile, commentsLanguage, inLanguage, isSuspect, readLanguage } from "../lib/lang";
 import { languageInQuery, roomLanguage } from "../lib/lang";
 import type { RawReel } from "../lib/types";
 
@@ -184,12 +184,18 @@ function accountProfileOf(reels: RawReel[], want: string) {
   ];
   const profile = accountProfileOf(reels, "en");
   const v = inLanguage(reels[3], "en", profile);
-  if (!v.keep) {
+  /**
+   * Marked, not quietly kept. Nothing in this reel says it is Telugu — only the
+   * account does — so the gate names the suspicion and hands the reel to the
+   * video and the comments. `shape()` drops it if neither can speak, which is
+   * the outcome this case used to assert directly.
+   */
+  if (isSuspect(v.why) && v.why === "suspect:te") {
     pass += 1;
-    console.log(`  ok   drop  English caption on a Telugu account [${v.why}]`);
+    console.log(`  ok   suspect  English caption on a Telugu account [${v.why} → dropped unless a witness says otherwise]`);
   } else {
     fail += 1;
-    console.log(`  FAIL drop  English caption on a Telugu account — kept [${v.why}]`);
+    console.log(`  FAIL suspect  English caption on a Telugu account — ${v.keep ? "kept" : "dropped"} [${v.why}]`);
   }
 }
 {
@@ -230,12 +236,17 @@ function accountProfileOf(reels: RawReel[], want: string) {
   reels.push(reel("J11", { account, caption: "english songs vibes", hashtags: ["englishsongs"] }));
   const profile = accountProfileOf(reels, "en");
   const v = inLanguage(reels[11], "en", profile);
-  if (!v.keep) {
+  /**
+   * Same shape of answer: one tag is not a language, and it is not enough to
+   * overrule an account that is eleven twelfths Japanese either. The reel is
+   * suspect, and the pass gets a chance to prove the tag right.
+   */
+  if (isSuspect(v.why) && v.why === "suspect:ja") {
     pass += 1;
-    console.log(`  ok   drop  English tag on a Japanese tag-spam account [${v.why}]`);
+    console.log(`  ok   suspect  English tag on a Japanese tag-spam account [${v.why} → dropped unless a witness says otherwise]`);
   } else {
     fail += 1;
-    console.log(`  FAIL drop  English tag on a Japanese tag-spam account — kept [${v.why}]`);
+    console.log(`  FAIL suspect  English tag on a Japanese tag-spam account — ${v.keep ? "kept" : "dropped"} [${v.why}]`);
   }
 }
 
@@ -354,6 +365,59 @@ console.log("\n=== What language the room is in");
   const ok = r.basis === "none";
   ok ? pass++ : fail++;
   console.log(`  ${ok ? "ok  " : "FAIL"} room  a half-foreign pull is mixed, not one room (${r.code ?? "none"}/${r.basis})`);
+}
+
+{
+  /**
+   * The bilingual artist, and the reason "suspect" exists.
+   *
+   * A Mexican regional singer with seven posts tagged #musicamexicana and a
+   * handful of English originals ("Tattoos", #indie #alt). Under a blanket
+   * account rule his English singles were thrown out of an English-covers
+   * pull; under no account rule at all a Telugu singer's English-captioned
+   * film songs walk straight in. Both are English words over a reel, so the
+   * gate marks the reel instead of guessing: kept for now, and handed to the
+   * video and the comments to settle.
+   */
+  const posts = [
+    ...Array.from({ length: 7 }, (_, i) =>
+      reel(`S${i}`, { account: "elijah", caption: "chicos tristes #musicamexicana #cover" }),
+    ),
+    reel("S7", { account: "elijah", caption: "chained in my ways… 🔗😅 #indie #alt" }),
+    reel("S8", { account: "elijah", caption: "on Santa Monica sand btw ✌️ #bts #videography" }),
+  ];
+  const profile = accountProfile(posts, "en");
+  const v = inLanguage(posts[7], "en", profile.mixed ? null : profile);
+  const ok = v.keep && isSuspect(v.why);
+  ok ? pass++ : fail++;
+  console.log(`  ${ok ? "ok  " : "FAIL"} suspect  English single on a Spanish account (${v.keep ? "kept" : "dropped"}/${v.why})`);
+
+  /**
+   * And the same reel, once the audience speaks. An English comment section is
+   * the witness that settles it, so the post must leave the suspect state
+   * rather than wait for a video that may not exist.
+   */
+  const settled = inLanguage(
+    { ...posts[7], topComments: ["love this song", "your voice is amazing", "what song is this", "obsessed"].map((text) => ({ text })) },
+    "en",
+    profile.mixed ? null : profile,
+  );
+  const ok2 = settled.keep && !isSuspect(settled.why);
+  ok2 ? pass++ : fail++;
+  console.log(`  ${ok2 ? "ok  " : "FAIL"} suspect  English audience settles it (${settled.why})`);
+
+  /**
+   * The other side of the same account: a post that names its own song. No
+   * suspect state needed — the reel said what it was.
+   */
+  const named = inLanguage(
+    reel("S9", { account: "sing._.dha", caption: "barbaad - saiyaara just hits you in the feels" }),
+    "en",
+    null,
+  );
+  const ok3 = !named.keep;
+  ok3 ? pass++ : fail++;
+  console.log(`  ${ok3 ? "ok  " : "FAIL"} suspect  a named Hindi song needs no account (${named.why})`);
 }
 
 console.log(`\n${fail ? "FAIL" : "PASS"}: ${pass} passed${fail ? `, ${fail} failed` : ""}`);

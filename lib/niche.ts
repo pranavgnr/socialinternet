@@ -14,6 +14,7 @@ import {
   commentsLanguage,
   explicitLanguage,
   inLanguage,
+  isSuspect,
   roomLanguage,
 } from "./lang";
 import { platformOn } from "./platform";
@@ -938,7 +939,16 @@ function shape(
   let soft = 0;
   for (const r of others) {
     const verdict = inLanguage(r, wanted, accountLang.get(r.account) ?? null);
-    if (verdict.keep) {
+    /**
+     * A suspect verdict counts as dropped here, and only here.
+     *
+     * By the time `shape()` runs, the second-witness pass has already been
+     * asked (`watchToVerify` runs before it), so a reel that is *still* suspect
+     * is one whose video and comments could not settle it either. Nothing in
+     * the reel contradicts the room; the account does; and when there is no
+     * other witness, that is the only evidence there is.
+     */
+    if (verdict.keep && !isSuspect(verdict.why)) {
       kept.push(r);
       /**
        * How much of the room was actually confirmed. A reel kept on a provider

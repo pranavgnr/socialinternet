@@ -20,7 +20,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { accountProfile, inLanguage, languageName, roomLanguage } from "../lib/lang";
+import { accountProfile, inLanguage, isSuspect, languageName, roomLanguage } from "../lib/lang";
 import type { RawReel } from "../lib/types";
 
 interface Fixture {
@@ -74,6 +74,7 @@ for (const [slug, entry] of Object.entries(fixture)) {
   let okKeep = 0;
   let missed = 0;
   let leaked = 0;
+  let suspects = 0;
   let nicheExpected = 0;
   for (const r of payload) {
     const label = entry.reels[r.id] ?? entry.accounts[r.account];
@@ -86,9 +87,16 @@ for (const [slug, entry] of Object.entries(fixture)) {
       expectedKeep += 1;
       nicheExpected += 1;
     }
-    if (verdict.keep) keep += 1;
-    if (verdict.keep && shouldKeep) okKeep += 1;
-    if (verdict.keep && !shouldKeep) {
+    /**
+     * A suspect reel is scored as dropped, because that is what the pipeline
+     * does with one whose video and comments could not settle it: `shape()`
+     * treats a verdict that is still suspect at the end as a drop. Scoring it
+     * as kept would flatter the gate with reels it has not actually verified.
+     */
+    if (isSuspect(verdict.why)) suspects += 1;
+    if (verdict.keep && !isSuspect(verdict.why)) keep += 1;
+    if (verdict.keep && !isSuspect(verdict.why) && shouldKeep) okKeep += 1;
+    if (verdict.keep && !isSuspect(verdict.why) && !shouldKeep) {
       leaked += 1;
       fp += 1;
       falsePositives.push(
@@ -97,6 +105,11 @@ for (const [slug, entry] of Object.entries(fixture)) {
           .slice(0, 42)}" [${verdict.why}]`,
       );
     }
+    /**
+     * A suspect reel that should have been kept is not counted as a miss: the
+     * pass has not finished with it, and the video usually rescues it. It is
+     * counted apart, above, so the number is visible rather than hidden.
+     */
     if (!verdict.keep && shouldKeep) {
       missed += 1;
       fn += 1;
@@ -115,7 +128,8 @@ for (const [slug, entry] of Object.entries(fixture)) {
     `\n=== ${query}  →  ${languageName(want)}  [${room.basis}]\n` +
       `   labelled ${n} · expected to keep ${nicheExpected} · kept ${keep} (${okKeep} right)\n` +
       `   precision ${(precision * 100).toFixed(1)}% · recall ${(recall * 100).toFixed(1)}%` +
-      ` · leaked ${leaked} · missed ${missed}`,
+      ` · leaked ${leaked} · missed ${missed}` +
+      (suspects ? ` · ${suspects} left to the video` : ""),
   );
 }
 

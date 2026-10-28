@@ -1,9 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { creditLedger, checkBalance, fetchInstagramPost, type PostPayload } from "./harvest";
+import { creditLedger, fetchInstagramPost, type PostPayload } from "./harvest";
 import { mediaReady, readHooks } from "./media";
-import { availableProviders } from "./providers";
+import { availableProviders, checkBalance, fetchComments } from "./providers";
 import type { HookReading, RawComment, RawReel } from "./types";
 
 /**
@@ -120,7 +120,7 @@ export async function enrich(
 ): Promise<EnrichResult> {
   const cache = readCache();
   const report: EnrichReport = { posts: 0, watched: 0, spent: 0, errors: [] };
-  const budget = Math.min(opts.maxCredits ?? MAX_CREDITS, MAX_CREDITS);
+  let budget = Math.min(opts.maxCredits ?? MAX_CREDITS, MAX_CREDITS);
   const out: RawReel[] = [];
 
   if (!availableProviders().length) {
@@ -129,8 +129,39 @@ export async function enrich(
 
   // Balance first (0 credits): being cut off halfway leaves a half-read set of
   // posts, which is worse than reading none of them.
-  const { balance } = await checkBalance();
-  if (balance !== null && balance - RESERVE < 1) {
+  const { balance, byProvider } = await checkBalance();
+
+  /**
+   * "Zero credits left" from every vendor is a report, not a fact.
+   *
+   * Apify's balance endpoint answers for the free allowance, and it reads 0 once
+   * the monthly free results are gone — while the same key still serves paid
+   * calls. Measured 2026-10-28: both vendors reported 0, this gate returned
+   * early with `skipped: "only 0 credits left"`, and a comment call on one of
+   * the same posts came back with 15 rows moments later. The result was a plan
+   * with no comment section at all, on every run, for a whole day.
+   *
+   * So a broke report now buys a trial: two calls, only the ones that buy
+   * something the page cannot otherwise show. If the vendor really is empty it
+   * throws, the error is recorded, and the run stops spending. The reserve still
+   * stops a real near-empty balance from being drained by a full read.
+   */
+  /**
+   * Only paid vendors count as headroom. The free YouTube reader answers with
+   * no balance at all, and counting that as "there is credit left" put every
+   * run back in the early-return branch this fix exists to remove.
+   */
+  const paid = new Set(
+    availableProviders()
+      .filter((p) => p.cost.usdPerCall > 0)
+      .map((p) => p.id),
+  );
+  const reported = byProvider.filter((b) => b.ok && paid.has(b.id));
+  const anyHeadroom = reported.some((b) => b.remaining === null || b.remaining >= 1);
+  const broke = balance !== null && balance - RESERVE < 1;
+  if (broke && reported.length && !anyHeadroom) {
+    budget = Math.min(budget, 2);
+  } else if (broke) {
     return {
       reels,
       hooks: new Map(),
@@ -180,6 +211,63 @@ export async function enrich(
     });
   }
   report.spent = spent;
+
+  /**
+   * Comments for the posts that came back without any.
+   *
+   * The post payload is where comments are supposed to arrive, and on Apify the
+   * field is simply empty unless comments are asked for separately. That is the
+   * difference between a plan with a "what people asked for" section and a plan
+   * that reports, truthfully but uselessly, that the audience said nothing.
+   *
+   * Capped low and on purpose: only posts already paid for, a handful of them,
+   * and only when a vendor actually offers the call. Four posts of comments is
+   * enough to rank what people are asking; a hundred is a bill.
+   */
+  /**
+   * A post we already hold is a post we can ask for comments about.
+   *
+   * This used to require `fetched.has(r.url)` — a post bought *in this run* —
+   * and that quietly switched the comment section off for every run served from
+   * the cache. `spent` is 0 on a cached run, so `fetched` is empty, so the loop
+   * below never ran and the plan reported, accurately and uselessly, that the
+   * audience said nothing. Measured: 11 of 56 posts in the cache held comments,
+   * and a live call on one of the empty ones returned 15 rows in one request.
+   * The reel's URL is the thing we need; whether the payload was paid for now
+   * or before is not.
+   */
+  const thin = out.filter(
+    (r) => Boolean(r.url) && !r.topComments?.length && (fetched.has(r.url) || Boolean(cache[r.url])),
+  );
+  const commentCap = Math.min(thin.length, Number(process.env.ENRICH_COMMENTS_MAX ?? 4));
+  if (commentCap > 0 && availableProviders().some((p) => p.comments)) {
+    for (const reel of thin.slice(0, commentCap)) {
+      try {
+        const rows = await fetchComments(reel.url, 15);
+        if (rows.length) {
+          reel.topComments = rows as RawComment[];
+          /**
+           * Written back to the post cache, not only onto this run's reel.
+           *
+           * Comments are bought once and were being thrown away: the next
+           * plan (and every cache-only weekly rebuild) found an empty
+           * `topComments` and re-bought them, and any rebuild that could not
+           * spend — the whole point of the rebuild route — printed a plan with
+           * no comment section at all. That is how a feature that works reads
+           * as a feature that was deleted.
+           *
+           * `fetchedAt` is left alone on purpose: it is the post payload's
+           * clock, and the comments do not make the payload fresher.
+           */
+          const hit = cache[reel.url];
+          if (hit) cache[reel.url] = { ...hit, topComments: rows as RawComment[] };
+          writeCache(cache);
+        }
+      } catch (err) {
+        report.errors.push(`${reel.account}: comments — ${(err as Error).message}`);
+      }
+    }
+  }
 
   if (!mediaReady()) {
     return { reels: out, hooks: new Map(), report: { ...report, skipped: "local video tools missing" } };

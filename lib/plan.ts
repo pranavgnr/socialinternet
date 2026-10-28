@@ -9,7 +9,7 @@ import {
 } from "./archetype";
 import { buildAudit, hookVerdict } from "./audit";
 import { times } from "./fmt";
-import { mineComments } from "./comments";
+import { cachedCommentsByUrl, mineComments, normaliseUrl } from "./comments";
 import { enrich, pickForEnrichment, type EnrichReport } from "./enrich";
 import { buildNextMove } from "./nextMove";
 import {
@@ -57,6 +57,32 @@ import type {
 const HANDLE_DIR = path.join(process.cwd(), "data", "handles");
 const HANDLE_TTL_HOURS = 12;
 const MAX_COHORT_ACCOUNTS = 40;
+
+/**
+ * The fewest accounts a cohort may hold and still be quoted as "accounts your
+ * size".
+ *
+ * It was two, and two is not a cohort — it is two posts. @natgeotravel cleared
+ * the band with `natgeohistory` and `nasa`, so the plan printed a size-matched
+ * yardstick built from two accounts, the move engine had almost no peer rows,
+ * dropped every move without receipts, and shipped a single suggestion about
+ * the creator's own best post. Below this floor the plan compares against the
+ * whole room instead: a weaker yardstick, but one that can still name the
+ * accounts a creator should look at.
+ *
+ * Three, not five, because five is unreachable by construction.
+ *
+ * `peers.ts` buys at most six accounts, and one or two of those routinely
+ * return no posts of their own — so a five-account size-matched cohort could
+ * not exist even when every account bought was inside the band. The floor and
+ * the purchase cap were written independently and then contradicted each
+ * other: on @natgeotravel four accounts sat inside the band, the five-account
+ * test failed, the plan fell back to "everyone in this space" — which was two
+ * accounts — and the week shipped a single move about the creator's own best
+ * post. A band of four that is used, with its count printed, beats a fallback
+ * of two. Three is the smallest set a median means anything over.
+ */
+const COHORT_MIN = Number(process.env.PEER_MIN_COHORT ?? 3);
 
 /** Tags that say nothing about what an account is about. */
 const GENERIC_TAGS = new Set(
@@ -765,6 +791,26 @@ export function buildPlan({
   let sizeMatched = false;
 
   /**
+   * How many posts we actually hold per account.
+   *
+   * A cohort is only as useful as the posts behind it: the move that says "make
+   * what @someone made" can only be written if we hold that account's reels.
+   * Accounts chosen purely on follower count were sometimes names we had no
+   * posts for, so the cohort move found nothing to quote and the plan fell back
+   * to telling the creator about their own best post — 13 of 163 recorded weeks
+   * came out that way, with a cohort of 2 to 31 accounts behind them.
+   *
+   * Sorting by what we hold, before the slice, keeps every account in the same
+   * band and simply prefers the ones we can put a number and a link next to.
+   */
+  const rows = buildRows(research, clean);
+  const held = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.account.toLowerCase();
+    held.set(key, (held.get(key) ?? 0) + 1);
+  }
+
+  /**
    * When the room was rebuilt on the creator's own network, the peers module's
    * size verdict wins, and it wins with the band it actually applied.
    *
@@ -783,9 +829,9 @@ export function buildPlan({
     const banded = others.filter(
       (a) => a.followers && a.followers >= low && a.followers <= high,
     );
-    if (banded.length >= 2) {
+    if (banded.length >= COHORT_MIN) {
       peers = banded;
-      basis = `accounts about your size (${fmt(followers)} followers) on Instagram`;
+      basis = `accounts about your size (${fmt(followers)} followers) on Instagram — ${banded.length} of them`;
       sizeMatched = true;
     }
   }
@@ -793,9 +839,9 @@ export function buildPlan({
     const banded = others.filter(
       (a) => a.followers && a.followers >= followers * 0.35 && a.followers <= followers * 2.5,
     );
-    if (banded.length >= 3) {
+    if (banded.length >= COHORT_MIN) {
       peers = banded;
-      basis = `accounts about your size (${fmt(followers)} followers)`;
+      basis = `accounts about your size (${fmt(followers)} followers) — ${banded.length} of them`;
       sizeMatched = true;
     }
   }
@@ -803,9 +849,9 @@ export function buildPlan({
     const banded = others.filter(
       (a) => a.medianViews >= ownMedian * 0.3 && a.medianViews <= ownMedian * 3,
     );
-    if (banded.length >= 3) {
+    if (banded.length >= COHORT_MIN) {
       peers = banded;
-      basis = "accounts pulling within 3x your usual views";
+      basis = `accounts pulling within 3x your usual views — ${banded.length} of them`;
       sizeMatched = true;
     }
   }
@@ -821,16 +867,40 @@ export function buildPlan({
   if (peerRoom) {
     basis = peerRoom.sizeMatched ? basis : peerRoom.basis;
   }
-  peers = peers.slice(0, MAX_COHORT_ACCOUNTS);
+  peers = [...peers]
+    .sort((a, b) => (held.get(b.handle.toLowerCase()) ?? 0) - (held.get(a.handle.toLowerCase()) ?? 0))
+    .slice(0, MAX_COHORT_ACCOUNTS);
+  /**
+   * The fallback sentence carries its own count.
+   *
+   * "Not enough accounts your size yet" was true and unhelpful: it never said
+   * how many accounts were actually behind the numbers underneath it, so a
+   * cohort of two and a cohort of forty read the same.
+   */
+  if (!sizeMatched) {
+    basis = `everyone in this space (${peers.length} accounts) — not enough close to your size to call a cohort`;
+  }
 
-  const rows = buildRows(research, clean);
   const peerHandles = new Set(peers.map((p) => p.handle.toLowerCase()));
   const peerRows = rows.filter((r) => peerHandles.has(r.account.toLowerCase()));
   const workingRows = peerRows.length >= 6 ? peerRows : rows;
 
   const nicheMedian = research.nicheMedianViews || median(others.map((a) => a.medianViews));
-  const vsNiche = nicheMedian > 0 ? ownMedian / nicheMedian : 0;
   const peersMed = peersMedian(peers);
+
+  /**
+   * The yardstick, decided once, before any number that quotes it.
+   *
+   * `vsNiche` used to divide by the whole room's median while the diagnosis,
+   * the gap table and the percentile all divided by the size-matched cohort.
+   * @natgeotravel read "1.8x the niche (212k)" on one page and "accounts your
+   * size get about 2.0M" on another — 1.8x ahead and 0.2x behind in the same
+   * plan. Two yardsticks is not a rounding difference; it is two different
+   * answers to the only question the page asks.
+   */
+  const reference = sizeMatched ? peers : others;
+  const referenceMedian = sizeMatched ? peersMed : nicheMedian;
+  const vsNiche = referenceMedian > 0 ? ownMedian / referenceMedian : 0;
 
   /**
    * Which network the comparison group actually came from.
@@ -853,8 +923,6 @@ export function buildPlan({
    * above a chart that said 32k. Whatever the plan compares you with has to be
    * the same set it quotes.
    */
-  const reference = sizeMatched ? peers : others;
-  const referenceMedian = sizeMatched ? peersMed : nicheMedian;
   const beat = reference.filter((a) => ownMedian > 0 && a.medianViews < ownMedian).length;
   const percentile = reference.length ? beat / reference.length : 0;
 
@@ -879,6 +947,9 @@ export function buildPlan({
     peers,
     ownGapDays: ownGap,
     peerGapDays: peerGapMedian,
+    // The move wording reads this: it may only say "accounts your size" when
+    // the cohort was actually banded by follower count.
+    sizeMatched,
   });
 
   /**
@@ -1039,10 +1110,18 @@ export function buildPlan({
     nicheMedian,
   });
   const hookRead = hookVerdict(mineReels);
+  /**
+   * Every comment we hold, not only the ones this run bought.
+   *
+   * The reader below is fed the reels plus, for any reel without comments
+   * attached, whatever the post cache kept from an earlier paid call — so the
+   * section survives a cache-only run instead of disappearing from the page.
+   */
+  const cachedComments = cachedCommentsByUrl();
   const comments = mineComments(
     [...mineReels, ...(research.payload ?? [])].map((r) => ({
       url: r.url,
-      comments: r.topComments,
+      comments: r.topComments?.length ? r.topComments : cachedComments.get(normaliseUrl(r.url)),
     })),
   );
 
@@ -1185,7 +1264,8 @@ export function buildPlan({
     cohort: {
       accounts: peers.length,
       basis,
-      nicheMedianViews: nicheMedian,
+      nicheMedianViews: referenceMedian,
+      sizeMatched,
       platform: cohortPlatform,
     },
     account: account

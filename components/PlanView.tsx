@@ -390,13 +390,27 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
       ) : null}
 
       {/* What the audience asked for, in their own words. */}
-      {plan.comments && plan.comments.seeds.length ? (
+      {plan.comments &&
+      (plan.comments.seeds.length ||
+        plan.comments.questions.length ||
+        plan.comments.requests.length ||
+        plan.comments.objections.length) ? (
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">What people asked for</h2>
             <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
-              Read from the comments under the posts that worked. These are requests, not guesses.
+              Read from the comments under the posts that worked —{" "}
+              {plan.comments.read === 1
+                ? "1 comment thread"
+                : `${plan.comments.read} comment threads`}
+              , {plan.comments.posts === 1 ? "1 post" : `${plan.comments.posts} posts`} in all.
+              These are requests, not guesses.
             </p>
+            {plan.comments.language.length ? (
+              <p className="mt-1 text-[11.5px] leading-relaxed text-muted/70">
+                The words they keep using: {plan.comments.language.slice(0, 6).join(", ")}
+              </p>
+            ) : null}
           </div>
           <div className="card divide-y divide-line/70">
             {plan.comments.seeds.slice(0, 5).map((c, i) => (
@@ -415,9 +429,36 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
                 </p>
               </div>
             ))}
+            {/* Nothing repeated enough to be a seed is still an answer: the
+                questions, objections and asks are listed in their own words so
+                the section never collapses to an empty panel. */}
+            {!plan.comments.seeds.length
+              ? [
+                  ...plan.comments.requests.map((t) => ({ text: t, kind: "asked for" })),
+                  ...plan.comments.questions.map((t) => ({ text: t, kind: "asked" })),
+                  ...plan.comments.objections.map((t) => ({ text: t, kind: "pushed back on" })),
+                ]
+                  .slice(0, 6)
+                  .map((c, i) => (
+                    <div key={`raw-${i}`} className="px-4 py-3">
+                      <p className="text-[13px] leading-relaxed">{beginning(c.text, 140)}</p>
+                      <p className="mt-1 text-[11px] text-muted/60">{c.kind}</p>
+                    </div>
+                  ))
+              : null}
           </div>
         </section>
-      ) : null}
+      ) : (
+        /* Hiding the section when the comments were never fetched made a
+           missing pull look like a deleted feature. Say which it is. */
+        <section className="card px-4 py-4">
+          <h2 className="text-[17px] font-semibold tracking-tight">What people asked for</h2>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+            We did not read the comments under this account&rsquo;s posts — the pull came back
+            without them. Analyse again to try.
+          </p>
+        </section>
+      )}
 
       {/* Who the platform says they are — only for a creator already in the field. */}
       {plan.account?.bio || plan.account?.category ? (

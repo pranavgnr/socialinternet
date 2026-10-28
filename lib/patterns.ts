@@ -131,8 +131,28 @@ export async function decompose(
         { temperature: 0.2 },
       );
       const known = new Set(batch.map((b) => b.id));
+      const got = new Set<string>();
       for (const card of res.cards ?? []) {
-        if (card?.signalId && known.has(card.signalId)) out.push(card);
+        if (card?.signalId && known.has(card.signalId)) {
+          out.push(card);
+          got.add(card.signalId);
+        }
+      }
+      /**
+       * A signal the model said nothing about was silently thrown away.
+       *
+       * Measured on @natgeotravel: a four-signal batch came back with two cards,
+       * both from the creator's own posts, and the two cards the week actually
+       * needed — @nasa's 11M-view POV and @natgeohistory's pyramid — were never
+       * produced. Every idea downstream was then built from the creator's own
+       * footage, which is the one thing they cannot learn from.
+       *
+       * A missing card is the model declining one item, not evidence that the
+       * post is uninteresting, so the heuristic stands in. Anything real is
+       * better than a hole where another account used to be.
+       */
+      for (const b of batch) {
+        if (!got.has(b.id)) out.push(heuristicPattern(b));
       }
     } catch {
       out.push(...batch.map(heuristicPattern));

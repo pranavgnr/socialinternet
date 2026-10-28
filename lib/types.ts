@@ -548,7 +548,18 @@ export interface GrowthPlan {
     accounts: number;
     /** how peers were chosen, e.g. "accounts within 2x your typical views" */
     basis: string;
+    /**
+     * The median this plan actually divides by — the size-matched cohort when
+     * there is one, the whole room otherwise.
+     *
+     * Named for the niche because that is what it always was, and it was always
+     * the wrong one to print next to a size-matched `vsNiche`. Kept as the
+     * single field the pages read so the standing and the weekly cannot quote
+     * different yardsticks.
+     */
     nicheMedianViews: number;
+    /** true when `nicheMedianViews` comes from size-matched accounts */
+    sizeMatched: boolean;
     /**
      * The network the cohort was measured on.
      *
@@ -794,6 +805,16 @@ export interface CommentMining {
   seeds: CommentSeed[];
   /** the recurring word or phrase people use for the problem */
   language: string[];
+  /**
+   * Comments read, minus the ones that could become a post.
+   *
+   * Kept so a thread full of praise is reported as a thread full of praise
+   * instead of as a section that silently does not exist. Zero here with
+   * `read > 0` is a finding about the audience; a missing section is not.
+   */
+  dropped?: number;
+  /** the most-repeated things said that were not asks, in their own words */
+  praise?: string[];
 }
 
 export interface RunLog {

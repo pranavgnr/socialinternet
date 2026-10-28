@@ -118,10 +118,23 @@ export default function WeeklyView({
         )}
       </section>
 
+      {/* A week built only on your own posts says so before it says anything else. */}
+      {digest.stale ? (
+        <section
+          className="rounded-xl border border-warn/40 bg-warn/5 px-4 py-3.5"
+          aria-live="polite"
+        >
+          <h2 className={LABEL}>This week has no cohort behind it</h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{digest.stale}</p>
+        </section>
+      ) : null}
+
       {/* The moves, in the order they should be done. */}
       {digest.moves.length ? (
         <section className="space-y-2.5">
-          <h2 className={LABEL}>Do these, in this order</h2>
+          <h2 className={LABEL}>
+            {digest.movesBasis === "cohort" ? "Do these, in this order" : "What your own numbers say"}
+          </h2>
           <ol className="space-y-2.5">
             {digest.moves.map((m, i) => (
               <li key={i} className="rounded-xl border border-line bg-panel px-4 py-3.5">
@@ -135,7 +148,24 @@ export default function WeeklyView({
                     {m.why ? (
                       <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted/80">{m.why}</p>
                     ) : null}
-                    {m.receipts > 0 ? (
+                    {/* Who this was measured on — the name, not a count of posts. */}
+                    {m.from?.length ? (
+                      <ul className="mt-2 space-y-1">
+                        {m.from.map((e) => (
+                          <li key={e.handle} className="flex items-baseline gap-1.5 text-[11.5px]">
+                            <a
+                              href={profileUrl(e.handle, digest.platform)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="shrink-0 font-medium text-accent underline decoration-line underline-offset-2"
+                            >
+                              @{e.handle}
+                            </a>
+                            <span className="truncate text-muted/80">{e.metric}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : m.receipts > 0 ? (
                       <p className="mt-2 text-[11.5px] text-muted/60">
                         {m.receipts === 1 ? "1 post behind this" : `${m.receipts} posts behind this`}
                       </p>
@@ -147,6 +177,92 @@ export default function WeeklyView({
           </ol>
         </section>
       ) : null}
+
+      {/* Who the moves were measured against — the part a creator cannot see. */}
+      {digest.peers?.length ? (
+        <section className="space-y-2.5">
+          <h2 className={LABEL}>What accounts your size are doing</h2>
+          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-panel">
+            {digest.peers.map((p) => (
+              <li key={p.handle} className="px-4 py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  {/* The handle opens the account; the post is the receipt, second. */}
+                  <a
+                    href={profileUrl(p.handle, digest.platform)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate text-[13.5px] font-medium underline decoration-line underline-offset-2 hover:text-accent"
+                  >
+                    @{p.handle}
+                  </a>
+                  <span className="shrink-0 text-right text-[12px] tabular-nums text-muted">
+                    {p.metric}
+                    {p.url ? (
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ml-1.5 underline decoration-line underline-offset-2 hover:text-text"
+                      >
+                        post
+                      </a>
+                    ) : null}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {/* The audience in their own words — the one input nobody can invent. */}
+      {digest.heard && (digest.heard.asks.length || digest.heard.language.length) ? (
+        <section className="space-y-2.5">
+          <div>
+            <h2 className={LABEL}>What people asked for</h2>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted/80">
+              {digest.heard.read === 1
+                ? "1 comment thread read"
+                : `${digest.heard.read} comment threads read`}
+              {digest.heard.language.length
+                ? ` · they say: ${digest.heard.language.slice(0, 4).join(", ")}`
+                : ""}
+            </p>
+          </div>
+          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-panel">
+            {digest.heard.asks.map((a, i) => (
+              <li key={`${a.text}-${i}`} className="px-4 py-3">
+                <p className="text-[13px] leading-relaxed">“{a.text}”</p>
+                <p className="mt-1 text-[11.5px] text-muted/60">
+                  {a.kind === "request"
+                    ? "asked for"
+                    : a.kind === "question"
+                      ? "asked"
+                      : a.kind === "objection"
+                        ? "pushed back on"
+                        : "told a story about"}
+                  {a.asked > 1 ? ` · ${a.asked} times` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        /**
+         * Silence read as "the feature was deleted". It was not: the comments
+         * were never fetched for this account, and hiding the section hid the
+         * reason too.
+         */
+        <section className="space-y-2.5">
+          <div>
+            <h2 className={LABEL}>What people asked for</h2>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted/80">
+              We did not read the comments under this account&rsquo;s posts — the pull came
+              back without them. Refresh this week to try again.
+            </p>
+          </div>
+        </section>
+      )}
 
       {/* The posts themselves, with the line to open on. */}
       {digest.ideas.length ? (
@@ -173,10 +289,38 @@ export default function WeeklyView({
                   {idea.format ? (
                     <div className="mt-1 text-[11.5px] text-muted/60">{idea.format}</div>
                   ) : null}
+                  {/* Where the post came from. Without it the list reads as the
+                      creator's own subjects dressed up as next week's work. */}
+                  {idea.from ? (
+                    <div className="mt-1 text-[11.5px] text-muted/60">
+                      {idea.from.own ? "your own post" : `from @${idea.from.handle}`}
+                      {idea.from.ratio
+                        ? ` · ${times(idea.from.ratio)} its usual views`
+                        : ""}
+                      {idea.from.url && !idea.from.own ? (
+                        <a
+                          href={idea.from.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-1.5 underline decoration-line underline-offset-2 hover:text-text"
+                        >
+                          post
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </Link>
               </li>
             ))}
           </ul>
+          {/* A week of self-sourced posts is still a week, but it is a mirror,
+              and the creator has to be told which one they are reading. */}
+          {digest.ideasBasis === "own" ? (
+            <p className="text-[12px] leading-relaxed text-muted/70">
+              Every post here is learned from your own winners — no other account in your
+              comparison produced one this week. Refresh to read the cohort again.
+            </p>
+          ) : null}
         </section>
       ) : null}
 

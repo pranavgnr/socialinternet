@@ -537,6 +537,37 @@ export const apify: DataProvider = {
     pull("post", postsInput(url, 1)),
 
   /**
+   * The comments under one post, as their own call.
+   *
+   * `resultsType: "comments"` is what makes `latestComments` exist at all: a
+   * plain post pull returns the post with an empty array, so the mining step
+   * had nothing to read and the section disappeared. One result per comment, so
+   * twelve of them cost about three cents — cheap enough to spend on every post
+   * that comes back thin, which is exactly what the caller does.
+   */
+  comments: async (url, limit = 15) => {
+    const { items } = await runActor({
+      directUrls: [url],
+      resultsType: "comments",
+      resultsLimit: Math.max(1, Math.min(40, limit)),
+    });
+    const real = price("post", items.length);
+    addSpend(real, items.length);
+    const rows = items.map((c) => ({
+      text: str(c.text) ?? "",
+      likes: pick(c.likesCount, c.like_count, c.likes),
+      author: str(c.ownerUsername) ?? str(obj(c.owner).username) ?? undefined,
+      postedAt: str(c.timestamp),
+    }));
+    return {
+      data: { items: [{ post: { ext: { top_comments: rows } } }] },
+      usd: effectiveUsd("post", items.length),
+      units: items.length,
+      remaining: null,
+    };
+  },
+
+  /**
    * Who the account is — and the one place this actor needs a different call.
    *
    * A `resultsType: "posts"` pull returns posts whose `owner` object is

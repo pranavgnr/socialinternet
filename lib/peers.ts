@@ -47,7 +47,22 @@ import type { RawReel } from "./types";
  * put a peer cohort at ~$0.60 a plan: a fifth of the free monthly allowance for
  * a comparison that three accounts already answer.
  */
-const PEER_MAX = Number(process.env.PEER_MAX ?? 3);
+const PEER_MAX = Number(process.env.PEER_MAX ?? 6);
+
+/**
+ * How many accounts a size-matched cohort needs before it is allowed to exist.
+ *
+ * Two was not a cohort, it was two posts. @natgeotravel was size-matched on
+ * `natgeohistory` and `nasa`, so every number on the page rested on those two
+ * accounts, the move engine found almost no peer rows, dropped every move
+ * without receipts, and shipped one self-referential suggestion ("repeat your
+ * own best post") under a heading promising what accounts your size do.
+ *
+ * Five, because a median over four accounts is one account away from being a
+ * different number. Below this the plan falls back to the whole room — weaker
+ * as a yardstick, far stronger as a source of moves, and the sentence says so.
+ */
+const MIN_COHORT = Number(process.env.PEER_MIN_COHORT ?? 3);
 
 /**
  * How many candidate profiles may be read just to learn a follower count.
@@ -381,18 +396,18 @@ export async function instagramPeers(opts: {
   }
 
   const banded = accounts.filter((a) => a.inBand);
-  const sizeMatched = banded.length >= 2;
+  const sizeMatched = banded.length >= MIN_COHORT;
 
   const after = creditLedger();
   return {
     reels,
     accounts,
     basis: sizeMatched
-      ? `Instagram accounts about your size (${compact(opts.followers)} followers)`
+      ? `Instagram accounts about your size (${compact(opts.followers)} followers) — ${banded.length} of them`
       : band
-        ? `Instagram accounts in your space, but none near your size (${compact(
+        ? `Instagram accounts in your space, but only ${banded.length} near your size (${compact(
             opts.followers,
-          )} followers) — this is a comparison of what travels in your niche, not of what is normal for an account like yours`
+          )} followers) — too few to call a cohort, so this is what travels in your niche rather than what is normal for an account like yours`
         : "Instagram accounts in your space — your size is unknown, so this is not size-matched",
     sizeMatched,
     band,

@@ -120,6 +120,17 @@ export interface DataProvider {
   searchAccounts?(query: string): Promise<PullResult>;
   /** one post in full (caption, metrics, comments, MP4 link) */
   post(url: string): Promise<PullResult>;
+  /**
+   * The comments under one post.
+   *
+   * Optional because the post payload is *supposed* to carry them and, on some
+   * vendors, does not. Apify's actor returns `latestComments` only when asked
+   * for comments explicitly — a plain post pull came back with the field empty
+   * on every reel, which meant the comment mining found nothing, and the
+   * "what people asked for" section silently vanished while the creator was
+   * paying for the pull. A vendor that can answer this directly says so.
+   */
+  comments?(url: string, limit?: number): Promise<PullResult>;
   /** follower count, bio, category — one call per handle */
   profile(handle: string): Promise<PullResult>;
   /** free on both vendors: never costs a unit */

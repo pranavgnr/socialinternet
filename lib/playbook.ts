@@ -1,6 +1,6 @@
 import type { ArchetypeGuess } from "./archetype";
 import { times } from "./fmt";
-import { rankFormats, shapesTheyUse, type FormatPick } from "./formats";
+import { detectFormat, rankFormats, shapesTheyUse, videoFormat, type FormatPick } from "./formats";
 import { hookShapeId, hookShapeLabel, rankHooks, type HookPick } from "./hooks";
 import type { NicheAccount } from "./niche";
 import { ownSongWinners, rankSongs, songOf, type SongPick } from "./songs";
@@ -42,6 +42,17 @@ export interface PlayCtx {
   peers: NicheAccount[];
   ownGapDays: number | null;
   peerGapDays: number | null;
+  /**
+   * Whether the cohort is actually made of accounts the creator's own size.
+   *
+   * The moves below say "accounts your size" in almost every sentence, and
+   * when the cohort could not be size-matched that phrase is a claim about
+   * evidence that does not exist. @natgeotravel (44.5M followers) was told the
+   * strongest post "among 2 accounts your size" did 2.8x — the two accounts
+   * were the whole of a fallback room, one of them @nasa, and the plan's own
+   * basis line said in the same breath that it could not call them a cohort.
+   */
+  sizeMatched: boolean;
 }
 
 const SERIES = /\b(cover|day|ep|episode|part|song)\s*\[?\s*\d+\s*[/\-–]\s*\d+/i;
@@ -727,6 +738,112 @@ function cohortBestMove(ctx: PlayCtx): PlanMove | null {
   };
 }
 
+/**
+ * The move that names other accounts.
+ *
+ * Every plan is supposed to answer "what is working for accounts like me, and
+ * what do I do about it". When the cohort's reels were thin the assembly fell to
+ * its floor, `ownBestMove` — "your own best post did 3x your usual, repeat it" —
+ * and that was the *whole* plan. Real, measured, and useless as a weekly
+ * recommendation: it tells a creator to redo work they have already done, and it
+ * never once mentions another account, which is the only thing they cannot see
+ * for themselves.
+ *
+ * So the cohort gets its own move, built from its own winners. It is ranked by
+ * how far each post beat *that account's* usual views, which is what makes an
+ * account of any size comparable, and it requires nothing from the outlier gate
+ * the rest of the plan uses — the cohort's best post is evidence on its own.
+ */
+function peerLeaderMove(ctx: PlayCtx): PlanMove | null {
+  if (!ctx.peers.length) return null;
+  const peerSet = new Set(ctx.peers.map((p) => p.handle.toLowerCase()));
+  const rows = ctx.rows.filter((r) => peerSet.has(r.account.toLowerCase()) && r.ratio > 0);
+  if (!rows.length) return null;
+
+  /** One post per account: a single account's four hits is still one account. */
+  const best = new Map<string, Row>();
+  for (const r of rows) {
+    const key = r.account.toLowerCase();
+    const seen = best.get(key);
+    if (!seen || r.ratio > seen.ratio) best.set(key, r);
+  }
+  const leaders = [...best.values()].sort((a, b) => b.ratio - a.ratio);
+  if (!leaders.length) return null;
+
+  const top = leaders[0];
+  const second = leaders[1];
+  const topShape = detectFormat(top.reel);
+  const secondShape = second ? detectFormat(second.reel) : null;
+  const shape = topShape ? videoFormat(topShape) : undefined;
+
+  /**
+   * Two accounts on the same shape is a pattern; two accounts on different
+   * shapes is two options. The wording has to follow, or the page claims a
+   * convergence that is not there.
+   */
+  const shared = Boolean(
+    topShape && secondShape && topShape === secondShape && second && second.ratio >= 1.3,
+  );
+  const breadth = new Set(leaders.map((l) => l.account.toLowerCase())).size;
+  const who = `@${top.account}${second && !shared ? ` and @${second.account}` : ""}`;
+  /**
+   * The noun follows the evidence. "Accounts your size" is only allowed when
+   * the cohort was banded by follower count; otherwise the sentence names the
+   * room it actually measured, so the number and the claim cannot part ways.
+   */
+  const band = ctx.sizeMatched ? "accounts your size" : "other accounts in this space";
+
+  /**
+   * The subject, not only the account.
+   *
+   * "Make what @nasa made" names the competitor and says nothing about what to
+   * make — the creator is told to copy a post they have never seen, and the one
+   * piece of information that would make the move actionable (the caption of the
+   * post that broke out) was sitting in the evidence array, unread. The gist
+   * leads now, so the move can be judged and acted on without opening a link.
+   */
+  const idea = top.reel.caption.replace(/\s+/g, " ").trim();
+  const gist = idea.length > 90 ? `${idea.slice(0, 88).trimEnd()}…` : idea;
+  const ideaLine = gist ? `“${gist}”` : null;
+
+  const title = shared && shape
+    ? `${shape.label} is working for ${band} — ${breadth} broke out with it${
+        ideaLine ? `, @${top.account} with ${ideaLine}` : ""
+      }`
+    : ideaLine
+      ? `Make your version of @${top.account}'s ${fmt(top.reel.views)}-view post: ${ideaLine}`
+      : `Make what ${who} made — the strongest post among ${breadth} ${band}`;
+
+  const why = shared && shape
+    ? `Your own account is not the only evidence here. ${breadth} account${
+        breadth === 1 ? "" : "s"
+      } in your comparison posted ${shape.label.toLowerCase()} and beat their own usual views — ${top.account} by ${top.ratio.toFixed(
+        1,
+      )}x. That is the shape travelling, not one lucky post.`
+    : `This is measured outside your account: the strongest post among ${breadth} ${band} did ${top.ratio.toFixed(
+        1,
+      )}x its own usual views${
+        second ? `, and ${second.account} did ${second.ratio.toFixed(1)}x` : ""
+      }. Copying a shape that already works for someone else is cheaper than inventing one.`;
+
+  const action = shape
+    ? `Make one ${shape.label.toLowerCase()} this week — ${shape.what.replace(/\.$/, "")}. Take the subject from @${top.account}${
+        ideaLine ? ` — ${ideaLine}` : ""
+      }` + " and put your own footage behind it."
+    : `Make one post with @${top.account}'s structure${
+        ideaLine ? ` and its subject — ${ideaLine}` : ""
+      } — same kind of opening, same build — with your own subject in it.`;
+
+  return {
+    id: "cohort-leader",
+    priority: 0,
+    title,
+    why,
+    action,
+    evidence: leaders.slice(0, 3).map(evidenceFrom),
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * Assembly
  * ------------------------------------------------------------------ */
@@ -866,6 +983,46 @@ export function buildPlay(ctx: PlayCtx): PlayResult {
   const usable = candidates.filter(
     (m): m is PlanMove => Boolean(m) && Boolean(m!.evidence.length),
   );
+
+  /**
+   * A plan that never names another account is not a competitive read — it is a
+   * mirror. That was the failure mode on a thin cohort: every candidate dropped
+   * for want of receipts, the floor move took over, and the creator was told to
+   * repeat their own best post with no comparison anywhere on the page.
+   *
+   * So the cohort's own winners are computed separately, and when nothing else
+   * manages to cite another account it leads. When something does, it is kept as
+   * a secondary move rather than dropped.
+   */
+  const cohort = peerLeaderMove(ctx);
+  const citesPeer = (m: PlanMove) =>
+    m.evidence.some((e) => e.handle.replace(/^@/, "").toLowerCase() !== ctx.handle.toLowerCase());
+  if (cohort) {
+    /**
+     * Other accounts lead, always.
+     *
+     * This move used to be appended when something else already cited a peer, so
+     * it could sit third behind two moves about the creator's own posting
+     * cadence — and the week read as advice about themselves with a competitor
+     * mentioned in passing. The one thing a creator cannot see from inside their
+     * own analytics is what is working for someone else, so when we hold that
+     * evidence it is the lead, not a footnote.
+     */
+    usable.unshift(cohort);
+
+    /**
+     * And the mirror goes.
+     *
+     * "Your own best post did 3x your usual views — repeat it" is measurable,
+     * true, and useless as a weekly recommendation: it tells a creator to redo
+     * work they have already done, and they can read it off their own dashboard
+     * without us. It is dropped only when a move grounded in another account
+     * exists to take its place, because a mirror week is still better than an
+     * empty one.
+     */
+    const mirror = usable.findIndex((m) => m.id === "ownbest");
+    if (mirror >= 0) usable.splice(mirror, 1);
+  }
 
   /**
    * "Keep posting in Kannada" is a constraint, not a next step — it cannot be

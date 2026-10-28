@@ -34,9 +34,79 @@ export interface WeeklyDigest {
   /** what moved since the last digest, in plain words; empty on a first run */
   changes: string[];
   /** this week's moves, in the order they should be done */
-  moves: { title: string; action: string; why: string; receipts: number }[];
-  /** this week's ideas, already written, with the hook to open on */
-  ideas: { id: string; title: string; hook?: string; format?: string }[];
+  moves: {
+    title: string;
+    action: string;
+    why: string;
+    receipts: number;
+    /**
+     * The other accounts this move was measured on.
+     *
+     * Carried per move, not only in `peers`, because a move that says "one
+     * account your size broke out with it" and names nobody is advice the
+     * creator cannot check or copy. The name belongs next to the sentence that
+     * depends on it.
+     */
+    from: { handle: string; metric: string; url?: string }[];
+  }[];
+  /**
+   * This week's ideas, already written, with the hook to open on.
+   *
+   * Each one now carries the post it was learned from. Without it the section
+   * read as a list of the creator's own subjects dressed as next week's work:
+   * all four posts in @natgeotravel's week cited @natgeotravel, so a page that
+   * promised "what to post" was showing the account talking to itself. The
+   * source is per idea rather than per week because the point of the list is
+   * where each one came from, and the peer-backed ones are ranked first.
+   */
+  ideas: {
+    id: string;
+    title: string;
+    hook?: string;
+    format?: string;
+    from?: { handle: string; ratio?: number; url?: string; own: boolean };
+  }[];
+  /**
+   * The other accounts behind this week's moves, strongest first.
+   *
+   * A week that names nobody is a week the creator cannot check. These are the
+   * handles and the numbers the moves were built from, so "what is working for
+   * accounts your size" is a claim with receipts attached rather than advice
+   * that could have been written without reading anything.
+   */
+  peers: { handle: string; metric: string; url?: string }[];
+  /** what the audience asked for, in their own words; absent when none were read */
+  heard?: {
+    /** comment threads actually read */
+    read: number;
+    /** the most-repeated asks, strongest first */
+    asks: { text: string; kind: string; asked: number }[];
+    /** the words the audience keeps using */
+    language: string[];
+  };
+  /**
+   * Whether this week's moves were built on other accounts or only on your own.
+   *
+   * "cohort" means at least one move cites a handle that is not the creator's.
+   * "own" means every move is the account measured against itself — a mirror.
+   * The two are shown differently because they are not the same product: one is
+   * a competitive read, the other is arithmetic about work already posted.
+   */
+  movesBasis: "cohort" | "own";
+  /**
+   * Whether this week's posts came from other accounts or only from your own.
+   *
+   * Same distinction as `movesBasis`, for the other half of the page: a week
+   * whose four posts all reword the creator's own winners is a mirror, and the
+   * creator cannot tell that from a competitive read unless the page says it.
+   * Optional because weeks recorded before this field existed have no answer.
+   */
+  ideasBasis?: "cohort" | "own";
+  /**
+   * Said out loud when `movesBasis` is "own", so a mirror week is never dressed
+   * as a competitive one. Absent on a cohort week.
+   */
+  stale?: string;
   /** true when the pull was served from cache, so the numbers may be stale */
   cached: boolean;
   credits: number;
@@ -114,6 +184,70 @@ function describeChanges(plan: GrowthPlan, previous?: WeeklyDigest): string[] {
   return out;
 }
 
+/**
+ * The other accounts one move was measured on, own posts excluded.
+ *
+ * Kept as a function of its own because both the move and the peer list read
+ * from it: the name next to a sentence and the name in the list can then never
+ * disagree about who was cited.
+ */
+function namesBehind(
+  move: GrowthPlan["moves"][number],
+  own: string,
+): { handle: string; metric: string; url?: string }[] {
+  const out: { handle: string; metric: string; url?: string }[] = [];
+  const seen = new Set<string>();
+  for (const e of move.evidence) {
+    const handle = e.handle.replace(/^@/, "");
+    const key = handle.toLowerCase();
+    if (!handle || key === own || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ handle, metric: e.metric, url: e.url });
+  }
+  return out.slice(0, 3);
+}
+
+/**
+ * Other accounts named by this plan's moves, one row each, strongest first.
+ *
+ * Moved to the front of the plan now that the cohort move exists, but the order
+ * here follows the moves rather than a second opinion about who matters.
+ */
+function peerEvidence(plan: GrowthPlan): { handle: string; metric: string; url?: string }[] {
+  const own = plan.handle.replace(/^@/, "").toLowerCase();
+  const seen = new Set<string>();
+  const out: { handle: string; metric: string; url?: string }[] = [];
+  for (const move of [...plan.moves].sort((a, b) => a.priority - b.priority)) {
+    for (const e of namesBehind(move, own)) {
+      const key = e.handle.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+    }
+  }
+  return out.slice(0, 5);
+}
+
+/**
+ * What the audience asked for, in their own words.
+ *
+ * Falls back to the flat question/request/objection lists when no seed survived
+ * ranking, so a run that read comments never shows an empty section just
+ * because nothing repeated. `read` is the gate: no threads read, no section.
+ */
+function heardFrom(plan: GrowthPlan): WeeklyDigest["heard"] {
+  const c = plan.comments;
+  if (!c?.read) return undefined;
+  const asks = c.seeds.length
+    ? c.seeds.slice(0, 5).map((s) => ({ text: s.text, kind: s.kind, asked: s.asked }))
+    : [
+        ...c.requests.map((text) => ({ text, kind: "request", asked: 1 })),
+        ...c.questions.map((text) => ({ text, kind: "question", asked: 1 })),
+        ...c.objections.map((text) => ({ text, kind: "objection", asked: 1 })),
+      ].slice(0, 5);
+  return { read: c.read, asks, language: c.language.slice(0, 6) };
+}
+
 /** Turn a plan and its idea feed into the week's record. */
 export function buildDigest(args: {
   plan: GrowthPlan;
@@ -124,6 +258,70 @@ export function buildDigest(args: {
   now?: Date;
 }): WeeklyDigest {
   const { plan, ideas, previous } = args;
+  const own = plan.handle.replace(/^@/, "").toLowerCase();
+
+  /**
+   * A week that only cites the creator's own posts is not a competitive read.
+   *
+   * It is still true, so it is not deleted — but it is labelled, and the reason
+   * it came out that way is stated next to the fix. The case this exists for: a
+   * plan recorded before the cohort move existed (the week keeps whatever shape
+   * it was recorded in), or a pull whose peers' posts never reached the row set.
+   * Either way the creator is reading their own arithmetic and being told it is
+   * advice for the week, which is the thing they asked not to be given.
+   */
+  const citesPeer = (m: GrowthPlan["moves"][number]) =>
+    m.evidence.some((e) => e.handle.replace(/^@/, "").toLowerCase() !== own);
+  const movesBasis: WeeklyDigest["movesBasis"] =
+    plan.moves.length && plan.moves.some(citesPeer) ? "cohort" : "own";
+  const stale =
+    movesBasis === "cohort"
+      ? undefined
+      : plan.cohort.accounts > 0
+        ? `Nothing here is measured on another account, though ${plan.cohort.accounts} ${
+            plan.cohort.accounts === 1 ? "is" : "are"
+          } already in your comparison. Refresh below to rebuild this week from their posts.`
+        : `No other account could be read for your comparison, so this week measures you only against yourself. Refresh below to try the cohort again.`;
+
+  /**
+   * Another account's proven post beats the creator's own reworded one.
+   *
+   * Sorted in that order, then by score inside each group: a week whose posts
+   * are all self-sourced is still shown, but with every line saying so, instead
+   * of quietly presenting a mirror as a plan.
+   */
+  const weekIdeas = ideas
+    .slice()
+    .map((i) => {
+      const account = (i.receipt?.account ?? "").replace(/^@/, "");
+      return {
+        i,
+        from: account
+          ? {
+              handle: account,
+              ratio: i.receipt?.ratio,
+              url: i.receipt?.url,
+              own: account.toLowerCase() === own,
+            }
+          : undefined,
+      };
+    })
+    .sort((a, b) => Number(a.from?.own ?? true) - Number(b.from?.own ?? true) || b.i.score - a.i.score)
+    .slice(0, 6)
+    .map(({ i, from }) => ({
+      id: i.id,
+      title: i.title,
+      hook: i.hookVariants?.[0],
+      format: i.format,
+      from,
+    }));
+
+  const ideasBasis: WeeklyDigest["ideasBasis"] = weekIdeas.length
+    ? weekIdeas.some((i) => i.from && !i.from.own)
+      ? "cohort"
+      : "own"
+    : undefined;
+
   return {
     weekOf: mondayOf(args.now),
     handle: plan.handle,
@@ -145,17 +343,20 @@ export function buildDigest(args: {
         action: m.action,
         why: m.why,
         receipts: m.evidence.length,
+        from: namesBehind(m, own),
       })),
-    ideas: ideas
-      .slice()
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 6)
-      .map((i) => ({
-        id: i.id,
-        title: i.title,
-        hook: i.hookVariants?.[0],
-        format: i.format,
-      })),
+    ideas: weekIdeas,
+    ideasBasis,
+    /**
+     * Read off the moves' own evidence rather than re-derived here: the handle
+     * and the number a move cites are the same ones the week is claiming, so
+     * they cannot disagree. Own posts are excluded — the point of the list is
+     * what other people's accounts are doing.
+     */
+    peers: peerEvidence(plan),
+    heard: heardFrom(plan),
+    movesBasis,
+    stale,
     cached: args.cached,
     credits: args.credits,
   };

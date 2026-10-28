@@ -454,6 +454,66 @@ async function dispatch(
   }
 }
 
+/**
+ * The comments under one post, from the cheapest vendor that can serve them.
+ *
+ * Called only for posts whose payload came back without any — the situation
+ * that made the comment section disappear. SocialCrawl returns them inline and
+ * has no method here (its balance is spent); Apify does, with one explicit call.
+ * Vendors without a `comments` method are skipped rather than tried and failed,
+ * and a spent vendor is benched for the rest of the run exactly as on the main
+ * route, so this cannot become a loop of failing calls.
+ */
+export async function fetchComments(
+  url: string,
+  limit = 15,
+): Promise<{ text: string; likes?: number; username?: string; publishedAt?: string }[]> {
+  let lastError: Error | null = null;
+
+  for (const provider of availableProviders()) {
+    if (!provider.comments || benched.has(provider.id)) continue;
+    try {
+      const result = await provider.comments(url, limit);
+      ledger.spent += result.units;
+      ledger.calls += 1;
+      ledger.usd += result.usd;
+      ledger.byEndpoint["/instagram/post/comments"] =
+        (ledger.byEndpoint["/instagram/post/comments"] ?? 0) + result.units;
+      ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + result.units;
+      ledger.servedBy[provider.id] = (ledger.servedBy[provider.id] ?? 0) + 1;
+
+      const items = (result.data as { items?: unknown[] }).items ?? [];
+      const first = items[0] as
+        | { post?: { ext?: { top_comments?: { text: string; likes?: number; author?: string; postedAt?: string }[] } } }
+        | undefined;
+      const rows = first?.post?.ext?.top_comments ?? [];
+      const out = rows
+        .filter((r) => typeof r.text === "string" && r.text.trim().length > 0)
+        .map((r) => ({
+          text: r.text,
+          likes: r.likes,
+          username: r.author,
+          publishedAt: r.postedAt,
+        }));
+      if (out.length) return out;
+    } catch (err) {
+      lastError = err as Error;
+      if (err instanceof ProviderUnavailable) {
+        if (err.exhausted) benched.set(provider.id, (err as Error).message);
+        continue;
+      }
+      /* a post with comments turned off is not the vendor's fault */
+      return [];
+    }
+  }
+
+  if (lastError) {
+    /* nothing to salvage, but the caller records the miss rather than lying */
+    return [];
+  }
+  return [];
+}
+
 /** Free on every vendor: total units left across configured vendors. */export async function checkBalance(): Promise<{
   balance: number | null;
   byProvider: { id: ProviderId; name: string; remaining: number | null; ok: boolean; error?: string }[];
@@ -484,8 +544,28 @@ async function dispatch(
    * made every run answer "balance: unknown (no data vendor configured)" while
    * a paid key sat there with forty credits on it — and a caller reading that
    * line would turn off the paid steps the account could afford.
+   *
+   * "Would serve" has to mean *can* serve: the cheapest paid vendor is skipped
+   * when it has nothing left. Measured 2026-10-28, this one line hid the
+   * comment mining and the peer deep-read for a whole day. SocialCrawl sorts
+   * first at $0.0076 with 0 credits, Apify sat behind it at $0.0552 with 405
+   * results, and this function returned 0 — so `niche` computed zero headroom
+   * for comments and zero budget for cohort enrichment. The failover would have
+   * paid for both; nobody asked it. The creator saw a plan with no comment
+   * section and moves that only quoted their own account back at them, and the
+   * cause was a balance read off a vendor that was never going to be called.
+   *
+   * An unknown balance (`null`, or a vendor that will not report) counts as
+   * usable: the per-call failover handles it, and treating "shy" as "broke"
+   * would shut the paid steps off for a vendor that was simply quiet.
    */
-  const active = availableProviders().find((p) => p.cost.usdPerCall > 0) ?? availableProviders()[0];
+  const order = availableProviders();
+  const paidOrder = order.filter((p) => p.cost.usdPerCall > 0);
+  const affordable = paidOrder.find((p) => {
+    const r = results.find((x) => x.id === p.id);
+    return Boolean(r?.ok) && (r?.remaining === null || (r?.remaining ?? 0) >= 1);
+  });
+  const active = affordable ?? paidOrder[0] ?? order[0];
   const mine = results.find((r) => r.id === active?.id);
   return {
     balance: mine?.remaining ?? null,

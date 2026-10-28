@@ -464,7 +464,24 @@ export interface PostPayload {
  */
 export async function fetchInstagramPost(url: string): Promise<PostPayload> {
   const { data } = await socialcrawl("/instagram/post", { url }, 1);
-  const post = obj(data.post ?? data);
+  /**
+   * The post, from whichever envelope the vendor used.
+   *
+   * Two shapes arrive here for the same logical call. SocialCrawl answers
+   * `{ post: {...} }`. Every other vendor answers the router's unified
+   * `{ items: [ { post: {...} } ] }` — the *same inner object*, one level
+   * further down.
+   *
+   * Reading only `data.post` therefore found nothing whenever Apify served the
+   * call, and an empty object parses as a valid but blank post: caption "",
+   * views 0, `topComments` []. That silent empty is why the comment section
+   * disappeared from the plan and why no reel ever carried an audio name to
+   * compare against other accounts — the paid data had arrived and was thrown
+   * away by one missing level of unwrapping. Verified live on 2026-10-28:
+   * `items[0].post.ext.top_comments` held 14 comments and the track title.
+   */
+  const row = items(data)[0];
+  const post = obj(data.post ?? (row ? (obj(row).post ?? row) : data));
   const content = obj(post.content);
   const author = obj(post.author);
   const eng = obj(post.engagement);
@@ -484,12 +501,31 @@ export async function fetchInstagramPost(url: string): Promise<PostPayload> {
     .map((c) => ({
       text: String(c.text ?? "").trim(),
       likes: num(c.likes),
-      username: str(obj(c.author).username) ?? str(c.username),
-      publishedAt: c.published_at ? toIso(c.published_at) : undefined,
+      /** `author` is an object on SocialCrawl and a bare handle on Apify. */
+      username: str(obj(c.author).username) ?? str(c.author) ?? str(c.username),
+      /** `published_at` on SocialCrawl, `postedAt` on the unified shape. */
+      publishedAt: c.published_at
+        ? toIso(c.published_at)
+        : c.postedAt
+          ? toIso(c.postedAt)
+          : undefined,
     }))
     .filter((c) => c.text.length > 0);
 
-  return {
+  /**
+   * A blank post is not a post, and must never be returned as one.
+   *
+   * When the vendor answers with an empty `items` list — rate-limited, private,
+   * deleted, or a 200 carrying nothing — every field below reads `undefined`
+   * and this function used to hand back a perfectly valid-looking post with
+   * caption "", views 0 and `topComments` []. `enrich` then cached that empty
+   * object for a week, so the account's comment section vanished and stayed
+   * vanished on every re-run: measured on @natgeotravel, fourteen cached rows
+   * held nothing, and the same posts re-read by hand carried 15 comments and
+   * 1.04M views. Throwing here keeps the hole out of the cache — the caller
+   * records the miss and the next run tries again.
+   */
+  const payload = {
     url: str(post.url) ?? url,
     caption: String(content.text ?? post.caption ?? "").slice(0, 800),
     views: num(eng.views ?? ext.instagram_views ?? ext.video_view_count),
@@ -504,6 +540,24 @@ export async function fetchInstagramPost(url: string): Promise<PostPayload> {
     mediaUrl,
     topComments,
   };
+
+  /**
+   * The three things any real post has at least one of. A payload with none of
+   * them is the vendor's empty envelope, not a quiet post.
+   */
+  const empty =
+    !payload.caption.trim() &&
+    !payload.views &&
+    !payload.likes &&
+    !payload.comments &&
+    !payload.topComments.length &&
+    !payload.mediaUrl &&
+    !payload.postedAt;
+  if (empty) {
+    throw new Error("vendor returned an empty post (nothing to read, and not cached)");
+  }
+
+  return payload;
 }
 
 /* --------------------- the rest of the SocialCrawl shelf --------------------- */

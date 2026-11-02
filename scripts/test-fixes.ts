@@ -79,17 +79,19 @@ test("hikerapi puts comments where the harvester reads them", async () => {
             { status: 200 },
           );
         }
-        if (url.includes("/v1/media/comments/chunk")) {
+        if (url.includes("/v2/media/comments")) {
           return new Response(
             JSON.stringify({
-              items: [
-                {
-                  text: "how do you do this?",
-                  like_count: 3,
-                  user: { username: "viewer" },
-                  created_at: 1_700_000_100,
-                },
-              ],
+              response: {
+                comments: [
+                  {
+                    text: "how do you do this?",
+                    comment_like_count: 3,
+                    user: { username: "viewer" },
+                    created_at: 1_700_000_100,
+                  },
+                ],
+              },
             }),
             { status: 200 },
           );

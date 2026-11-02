@@ -10,22 +10,30 @@
  * reads. Doing the translation here — rather than teaching the harvester a
  * second dialect — keeps the ranking maths vendor-neutral.
  *
- * STATUS (checked 27 Oct 2026): every path below was verified against
- * `https://api.hikerapi.com/openapi.json` (167 paths). Six were wrong when this
- * file first landed and all would have failed on a real account:
- *   - `/v1/user/medias/chunk` is marked "Deprecated: may return 404 for existing
- *     accounts" — the main media pull, i.e. the whole adapter. Now `/g2/user/medias`.
- *   - `/v1/hashtag/medias/top` says "use /v2/hashtag/medias/top instead".
- *   - `/v1/media/by/code` is superseded by `/v2/media/info/by/code`.
- *   - `/v1/sys/balance` does not exist; balance lives at `/sys/balance`.
- *   - `/v1/user/by/username` → `/v2/user/by/username`.
- * Stills and MP4s also arrive nested (`image_versions2.candidates`,
- * `video_versions`), not as flat keys, so every reel came back with no media URL
- * and the deep pass silently watched nothing.
+ * STATUS (verified against live responses, 3 Nov 2026 — fixtures in
+ * `lib/providers/__fixtures__/hikerapi/`):
+ *   - `/v2/user/by/username` answers `{status, user}` with `pk` (number),
+ *     `id` (string) and `follower_count`. A missing handle is HTTP 404 with
+ *     `{detail, exc_type}`.
+ *   - `/v2/user/clips` answers `{next_page_id, response: {items: [{media}],
+ *     paging_info}}` — items are wrapped in `media`, and each media carries
+ *     play_count, ig_play_count, like_count, comment_count, reshare_count,
+ *     video_duration, taken_at, code, `video_versions[].url`,
+ *     `image_versions2.candidates[].url` and `clips_metadata`.
+ *   - `/v2/search/reels` answers
+ *     `{reels_serp_modules: [{module_type: "clips", clips: [{media}]}], …}`.
+ *     The query is sent exactly as typed (native script works).
+ *   - `/v2/media/comments?id=<media id>` is the working comments call.
+ *     The old `/v1/media/comments/chunk?media_id=` was a 422: it requires
+ *     `id`, and the value must be the media's `id` (`<pk>_<owner>`), not the
+ *     shortcode.
+ *   - A 500 "Instagram did not respond" (`exc_type: InstagramServerError`) is
+ *     transient; `getWithRetry` tries once more after 800 ms. 4xx is never
+ *     retried.
  *
- * Still NOT exercised against a live key. `scripts/probe-vendor.ts` is the
- * integration test — run it against the 100 free signup requests before
- * trusting a paid pull.
+ * Still worth re-running `scripts/probe-vendor.ts --live` against a paid key
+ * before trusting a large pull: `/sys/balance` and `/v2/media/info/by/code`
+ * are the two paths without a recorded fixture here.
  */
 import {
   ProviderUnavailable,
@@ -59,6 +67,8 @@ const obj = (v: unknown): Record<string, unknown> =>
 const arr = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
 
+const hasKeys = (v: Record<string, unknown>): boolean => Object.keys(v).length > 0;
+
 const num = (v: unknown): number => {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   if (typeof v === "string") {
@@ -70,6 +80,14 @@ const num = (v: unknown): number => {
 
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.length > 0 ? v : undefined;
+
+/**
+ * Ids arrive as strings on some paths and as big numbers on others (`user.pk`
+ * is a number, `user.id` its string form). Losing one to `str()` would make the
+ * next call go out without an id at all.
+ */
+const idStr = (v: unknown): string | undefined =>
+  str(v) ?? (typeof v === "number" && Number.isFinite(v) ? String(v) : undefined);
 
 const key = () => process.env.HIKERAPI_KEY;
 
@@ -88,6 +106,27 @@ function unwrap(json: Record<string, unknown>): Record<string, unknown> {
   return inner && typeof inner === "object" ? obj(inner) : json;
 }
 
+/**
+ * A failed HTTP call, with the two details the retry policy needs.
+ *
+ * `status` distinguishes a transient 5xx from a permanent 4xx, and `excType`
+ * is HikerAPI's own reason (`InstagramServerError` means Instagram refused the
+ * scrape, not that the account is empty). Both would be lost if this threw a
+ * bare `ProviderUnavailable`.
+ */
+class HikerHttpError extends ProviderUnavailable {
+  constructor(
+    message: string,
+    exhausted: boolean,
+    readonly status: number,
+    readonly excType?: string,
+  ) {
+    super("hikerapi", message, exhausted);
+    this.name = "ProviderUnavailable";
+  }
+}
+
+/** One HTTP request. No retry — `getWithRetry` owns that decision. */
 async function get(
   path: string,
   params: Record<string, string> = {},
@@ -115,10 +154,47 @@ async function get(
       res.status === 402 ||
       res.status === 403 ||
       /credit|balance|quota|limit/i.test(message);
-    throw new ProviderUnavailable("hikerapi", message, exhausted);
+    throw new HikerHttpError(message, exhausted, res.status, str(json.exc_type));
   }
 
   return { data: unwrap(json), usd: usdPerCall() };
+}
+
+/**
+ * One retry for a transient failure, never for a 4xx.
+ *
+ * A 500 "Instagram did not respond" is usually the scrape being throttled and
+ * the same read succeeds a second later. A 404/422 will answer the same way
+ * forever, and a 402/403 means the balance is gone — retrying either only
+ * spends more of the founder's money.
+ */
+async function getWithRetry(
+  path: string,
+  params: Record<string, string> = {},
+): Promise<{ data: Record<string, unknown>; usd: number }> {
+  try {
+    return await get(path, params);
+  } catch (err) {
+    if (!(err instanceof HikerHttpError)) throw err;
+    const transient =
+      err.status >= 500 ||
+      (err.excType === "InstagramServerError" && err.status < 400);
+    if (!transient) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return get(path, params);
+  }
+}
+
+/**
+ * Name the handle on a 404. "Not found" alone leaves the creator wondering
+ * whether the app broke or the handle is wrong; the review focus asks for a
+ * clear error and no invented rows.
+ */
+function withHandle(err: unknown, handle: string): Error {
+  if (err instanceof HikerHttpError && err.status === 404) {
+    return new ProviderUnavailable("hikerapi", `@${handle} not found on Instagram`, false);
+  }
+  return err as Error;
 }
 
 /**
@@ -145,6 +221,36 @@ function firstUrl(...candidates: unknown[]): string | undefined {
   return undefined;
 }
 
+/** Instagram reels only: the product's rows are clips, not feed photos. */
+function isClip(media: Record<string, unknown>): boolean {
+  return str(media.product_type) === "clips";
+}
+
+/**
+ * A media object, whether the endpoint wrapped it as `{ media: {...} }`
+ * (`/v2/user/clips`) or returned it directly.
+ */
+function asMedia(item: Record<string, unknown>): Record<string, unknown> {
+  const inner = obj(item.media);
+  return hasKeys(inner) ? inner : item;
+}
+
+/** Media list from whichever envelope the endpoint returned. */
+function mediaList(data: Record<string, unknown>): Record<string, unknown>[] {
+  return arr(data.items ?? data.medias ?? data.media ?? data).map(asMedia);
+}
+
+/**
+ * The search shelf is triple-nested:
+ * `reels_serp_modules[].clips[].media`. Flattening here keeps the caller from
+ * depending on the module type or the page shape.
+ */
+function searchMedia(data: Record<string, unknown>): Record<string, unknown>[] {
+  const modules = arr(data.reels_serp_modules);
+  if (!modules.length) return mediaList(data);
+  return modules.flatMap((module) => arr(obj(module).clips).map(asMedia));
+}
+
 /** One Instagram media object -> the unified row `fromUnified()` reads. */
 function toUnified(
   media: Record<string, unknown>,
@@ -152,7 +258,10 @@ function toUnified(
 ): Record<string, unknown> | null {
   const user = obj(media.user ?? media.owner ?? media.author);
   const code =
-    str(media.code) ?? str(media.shortcode) ?? str(media.pk) ?? str(media.id);
+    str(media.code) ??
+    str(media.shortcode) ??
+    idStr(media.pk) ??
+    idStr(media.id);
   if (!code) return null;
 
   const caption = obj(media.caption);
@@ -164,13 +273,13 @@ function toUnified(
   const commentCount = num(
     media.comment_count ?? media.comments_count ?? obj(media.edge_media_to_comment).count,
   );
-  const playCount = num(
-    media.play_count ??
-      media.view_count ??
-      media.video_view_count ??
-      media.video_play_count ??
-      media.ig_play_count,
-  );
+  /**
+   * `play_count` is the number the live reel endpoint reports (and equals
+   * `ig_play_count`). It is deliberately the only field read here: a reel whose
+   * play_count is missing must read as "no views known" (0), not silently take
+   * a different, possibly unrepresentative counter.
+   */
+  const playCount = num(media.play_count ?? media.video_play_count ?? media.view_count);
   const takenAt =
     media.taken_at ??
     media.taken_at_timestamp ??
@@ -187,17 +296,27 @@ function toUnified(
     firstUrl(media.video_versions) ??
     firstUrl(stills);
 
-  /** Audio: HikerAPI exposes it as `music_metadata` on newer endpoints. */
+  /**
+   * Audio: on a reel the useful data lives in
+   * `clips_metadata.original_sound_info` and `clips_metadata.music_info`;
+   * `music_metadata` is null on the live clips response. `music_canonical_id`
+   * is top-level and works as the stable audio id.
+   */
+  const clipsMeta = obj(media.clips_metadata);
+  const originalSound = obj(clipsMeta.original_sound_info);
   const music = obj(media.music_metadata ?? media.music ?? media.audio);
+  const musicInfo = obj(clipsMeta.music_info ?? music.music_info);
   const musicId =
-    str(media.music_canonical_id) ??
-    str(media.audio_id) ??
-    str(obj(music.audio_asset_id).id) ??
-    str(music.id);
+    idStr(media.music_canonical_id) ??
+    idStr(clipsMeta.music_canonical_id) ??
+    idStr(media.audio_id) ??
+    idStr(originalSound.audio_asset_id) ??
+    idStr(music.audio_asset_id) ??
+    idStr(music.id);
   const track =
-    str(obj(music.music_info).title) ??
+    str(musicInfo.title) ??
+    str(originalSound.original_audio_title) ??
     str(music.title) ??
-    str(obj(music.original_audio_title).title) ??
     str(media.audio_title);
 
   const hashtags = Array.isArray(media.hashtags)
@@ -205,6 +324,12 @@ function toUnified(
     : undefined;
 
   return {
+    /**
+     * Stamped here as well as in the harvester: this adapter only ever speaks
+     * Instagram, and the plan's rule is that no row can drift to another
+     * platform. `harvest.fromUnified()` ignores the extra key.
+     */
+    platform: "instagram",
     post: {
       id: code,
       url: `https://www.instagram.com/reel/${code}/`,
@@ -217,14 +342,13 @@ function toUnified(
       },
       author: {
         username: str(user.username) ?? authorHint?.username,
-        followers: num(user.follower_count ?? obj(media.user).follower_count) ||
-          authorHint?.followers,
+        followers: num(user.follower_count) || authorHint?.followers,
       },
       engagement: {
         views: playCount,
         likes: likeCount,
         comments: commentCount,
-        shares: num(media.share_count) || undefined,
+        shares: num(media.reshare_count) || num(media.share_count) || undefined,
         saves: num(media.save_count) || undefined,
       },
       ext: {
@@ -235,13 +359,6 @@ function toUnified(
       },
     },
   };
-}
-
-/** Media list from whichever envelope the endpoint returned. */
-function mediaRows(data: Record<string, unknown>): Record<string, unknown>[] {
-  return arr(
-    data.items ?? data.medias ?? data.media ?? data.response ?? data.data,
-  );
 }
 
 export const hikerapi: DataProvider = {
@@ -266,64 +383,89 @@ export const hikerapi: DataProvider = {
 
   /**
    * Reels for an account: resolve the username to a pk, then read a page of
-   * media. Two calls ($0.002) against SocialCrawl's one credit ($0.0076) — and
-   * the profile call also yields a real follower count, which the old pipeline
-   * could only guess from reel payloads.
+   * clips. Two calls ($0.04 at the Start rate) and the profile call also yields
+   * a real follower count, which the old pipeline could only guess from reel
+   * payloads.
+   *
+   * If the clips tab is empty (a creator with no reels, or a private account)
+   * the media tab is read once and filtered to clips, so a reel that Instagram
+   * did not put on the tab is not lost. It costs a third call only in that
+   * empty case.
    */
   async profileReels(handle: string): Promise<PullResult> {
     const clean = handle.replace(/^@/, "");
-    const prof = await get("/v2/user/by/username", { username: clean });
+    const prof = await getWithRetry("/v2/user/by/username", { username: clean }).catch(
+      (err) => {
+        throw withHandle(err, clean);
+      },
+    );
     const user = obj(prof.data.user ?? prof.data);
-    const pk = str(user.pk) ?? str(user.id) ?? str(user.user_id);
+    const pk = idStr(user.pk) ?? idStr(user.id) ?? idStr(user.user_id);
     if (!pk) {
       throw new ProviderUnavailable("hikerapi", `no pk for @${clean}`, false);
     }
     const followers = num(user.follower_count) || undefined;
 
-    const media = await get("/g2/user/medias", { user_id: pk });
-    const rows = mediaRows(media.data)
+    const clips = await getWithRetry("/v2/user/clips", { user_id: pk });
+    let media = mediaList(clips.data).filter(isClip);
+    let usd = prof.usd + clips.usd;
+    let units = 2;
+
+    if (!media.length) {
+      const fallback = await getWithRetry("/v2/user/medias", { user_id: pk });
+      media = mediaList(fallback.data).filter(isClip);
+      usd += fallback.usd;
+      units += 1;
+    }
+
+    const rows = media
       .map((m) => toUnified(m, { username: clean, followers }))
       .filter((r): r is Record<string, unknown> => Boolean(r));
 
-    return {
-      data: { items: rows },
-      usd: prof.usd + media.usd,
-      units: 2,
-      remaining: null,
-    };
+    return { data: { items: rows }, usd, units, remaining: null };
   },
 
   /**
-   * Keyword search has no direct equivalent: Instagram exposes no public
-   * keyword->reels endpoint. Translating the phrase into a hashtag is the
-   * closest honest mapping (spaces removed, which is how the tag would be
-   * written), then reading the tag's top media for real view counts.
+   * Keyword search through Instagram's own reel search.
    *
-   * Two calls. A multi-word phrase becomes one tag, so the room is narrower
-   * than SocialCrawl's relevance search — the router treats a thin result as
-   * "this vendor found little" rather than "this niche is empty".
+   * The phrase is sent exactly as typed — "kannada songs" and "कन्नड़ गाने"
+   * are both valid queries, and translating them to a hashtag first was both
+   * wrong and lossy. Only when the search returns zero rows does the old tag
+   * logic run (top media, then recent), because a dead phrase is more often a
+   * different spelling than a dead niche.
    */
   async searchReels(query: string): Promise<PullResult> {
-    const tag = query.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (!tag) {
-      throw new ProviderUnavailable("hikerapi", "no searchable tag in phrase", false);
-    }
-    const first = await get("/v2/hashtag/medias/top", { name: tag });
-    let rows = mediaRows(first.data)
+    const search = await getWithRetry("/v2/search/reels", { query });
+    let rows = searchMedia(search.data)
+      .filter(isClip)
       .map((m) => toUnified(m))
       .filter((r): r is Record<string, unknown> => Boolean(r));
-    let usd = first.usd;
+    let usd = search.usd;
     let units = 1;
 
-    // A tag that yields nothing is usually a different spelling, not a dead
-    // niche; try recent before declaring the room empty.
     if (!rows.length) {
-      const recent = await get("/v2/hashtag/medias/recent", { name: tag });
-      rows = mediaRows(recent.data)
-        .map((m) => toUnified(m))
-        .filter((r): r is Record<string, unknown> => Boolean(r));
-      usd += recent.usd;
-      units += 1;
+      const tag = query.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (tag) {
+        const top = await getWithRetry("/v2/hashtag/medias/top", { name: tag });
+        rows = mediaList(top.data)
+          .filter(isClip)
+          .map((m) => toUnified(m))
+          .filter((r): r is Record<string, unknown> => Boolean(r));
+        usd += top.usd;
+        units += 1;
+
+        // A tag that yields nothing is usually a different spelling, not a dead
+        // niche; try recent before declaring the room empty.
+        if (!rows.length) {
+          const recent = await getWithRetry("/v2/hashtag/medias/recent", { name: tag });
+          rows = mediaList(recent.data)
+            .filter(isClip)
+            .map((m) => toUnified(m))
+            .filter((r): r is Record<string, unknown> => Boolean(r));
+          usd += recent.usd;
+          units += 1;
+        }
+      }
     }
 
     return { data: { items: rows }, usd, units, remaining: null };
@@ -334,7 +476,7 @@ export const hikerapi: DataProvider = {
     if (!code) {
       throw new ProviderUnavailable("hikerapi", `no media code in ${url}`, false);
     }
-    const { data, usd } = await get("/v2/media/info/by/code", { code });
+    const { data, usd } = await getWithRetry("/v2/media/info/by/code", { code });
     const media = obj(data.media ?? data);
     const row = toUnified(media);
     if (!row) {
@@ -344,12 +486,17 @@ export const hikerapi: DataProvider = {
     /**
      * Comments arrive on a separate endpoint. They are valuable (what the
      * audience asks) but not worth a second call per post for the core plan,
-     * so the same endpoint is read only when `HIKERAPI_COMMENTS=1`.
+     * so the endpoint is read only when `HIKERAPI_COMMENTS=1`.
+     *
+     * Live verification (2026-11-03): `/v2/media/comments?id=<media id>` works
+     * and returns `response.comments`. The parameter is `id`; `media_id` is a
+     * 422, and the value is the media's `id` (`<pk>_<owner>`), not the code.
      */
     if (process.env.HIKERAPI_COMMENTS === "1") {
       try {
-        const c = await get("/v1/media/comments/chunk", { media_id: code });
-        const list = arr(c.data.items ?? c.data.comments ?? c.data);
+        const mediaId = idStr(media.id) ?? idStr(media.pk) ?? code;
+        const c = await get("/v2/media/comments", { id: mediaId });
+        const list = arr(c.data.comments ?? c.data.items ?? c.data);
         const post = obj(row.post);
         /**
          * `post.ext.top_comments`, not `post.top_comments`.
@@ -365,7 +512,7 @@ export const hikerapi: DataProvider = {
           ...ext,
           top_comments: list.slice(0, 20).map((x) => ({
             text: str(x.text) ?? "",
-            likes: num(x.like_count ?? x.likes),
+            likes: num(x.comment_like_count ?? x.like_count ?? x.likes),
             author: str(obj(x.user).username) ?? str(x.username),
             published_at: x.created_at ?? x.taken_at,
           })),
@@ -381,9 +528,13 @@ export const hikerapi: DataProvider = {
 
   async profile(handle: string): Promise<PullResult> {
     const clean = handle.replace(/^@/, "");
-    const { data, usd } = await get("/v1/user/by/username", { username: clean });
+    const { data, usd } = await getWithRetry("/v2/user/by/username", {
+      username: clean,
+    }).catch((err) => {
+      throw withHandle(err, clean);
+    });
     const user = obj(data.user ?? data);
-    if (!user.username && !user.follower_count) {
+    if (!user.username && user.follower_count == null) {
       throw new ProviderUnavailable("hikerapi", `@${clean} not found`, false);
     }
     return {

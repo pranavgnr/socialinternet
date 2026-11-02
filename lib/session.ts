@@ -6,7 +6,8 @@ import { accountDir, createStore, type Store } from "./store";
 
 export const COOKIE = "c101";
 
-const SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The only visitor ids we will adopt as account directories: bare UUIDs. */
+export const SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -23,20 +24,50 @@ export interface Account {
   fresh: boolean;
 }
 
-/** The visitor's own data, or null when they have not analysed anything yet. */
+/** The visitor's own data, or null when they have not analysed anything yet.
+ *
+ * Signed in, the account is the directory id that was stamped on the user's
+ * row at first sign-in (or minted on their first paid action). Signed out, it
+ * is still the `c101` cookie id — every existing route keeps working.
+ */
 export async function currentAccount(): Promise<Account | null> {
+  // A lazy import: auth.ts imports this module's cookie pieces, so a cycle in
+  // the other direction must never resolve at load time.
+  const { currentUser } = await import("./auth");
+  const user = await currentUser();
+  if (user) {
+    if (!user.legacyAccountId) return null; // ensureAccount() mints it first
+    return { id: user.legacyAccountId, store: createStore(accountDir(user.legacyAccountId)), fresh: false };
+  }
   const raw = (await cookies()).get(COOKIE)?.value;
   if (!raw || !SHAPE.test(raw)) return null;
   return { id: raw, store: createStore(accountDir(raw)), fresh: false };
 }
 
 /**
- * Read-or-create. Used only by the one route that spends money, so an empty
+ * Read-or-create. Used only by the routes that spend money, so an empty
  * directory is never created for someone who just landed on the page.
+ *
+ * Signed in with no directory yet, one is minted AND written onto the user
+ * row, so every later signed-in request resolves to the same directory.
  */
 export async function ensureAccount(): Promise<Account> {
-  const existing = await currentAccount();
-  if (existing) return existing;
+  const { currentUser, setSigninAccountDir } = await import("./auth");
+  const user = await currentUser();
+  if (user) {
+    if (user.legacyAccountId) {
+      return {
+        id: user.legacyAccountId,
+        store: createStore(accountDir(user.legacyAccountId)),
+        fresh: false,
+      };
+    }
+    const id = randomUUID();
+    await setSigninAccountDir(user.id, id);
+    return { id, store: createStore(accountDir(id)), fresh: true };
+  }
+  const raw = (await cookies()).get(COOKIE)?.value;
+  if (raw && SHAPE.test(raw)) return { id: raw, store: createStore(accountDir(raw)), fresh: false };
   const id = randomUUID();
   return { id, store: createStore(accountDir(id)), fresh: true };
 }
@@ -50,7 +81,7 @@ export async function ensureAccount(): Promise<Account> {
  * over Tailscale or the LAN is exactly that case, so the decision follows the
  * scheme the browser actually used rather than the build type.
  */
-async function secureCookies(): Promise<boolean> {
+export async function secureCookies(): Promise<boolean> {
   const explicit = process.env.COOKIE_SECURE;
   if (explicit === "0") return false;
   if (explicit === "1") return true;

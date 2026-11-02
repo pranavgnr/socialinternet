@@ -107,12 +107,15 @@ export async function POST(req: Request) {
     if (plan.formats?.length) profile.formats = plan.formats.map((f) => f.label);
     else if (archetype.songLed) profile.formats = undefined;
 
-    // Captions from posts that worked for accounts this size become the
-    // strongest grounding signal the idea generator has.
-    profile.ownWinners = plan.moves
-      .flatMap((m) => m.evidence.map((e) => e.caption ?? ""))
-      .filter(Boolean)
-      .slice(0, 3);
+    /**
+     * `ownWinners` stays exactly as set above: the creator's own captions.
+     *
+     * A second assignment used to overwrite it with every move's evidence
+     * captions, which are mostly *peer* posts. That is the same wrong-attribution
+     * bug the paragraph above describes — a competitor's caption presented to
+     * the idea generator as "a post that worked for you" — and it silently
+     * undid the correct value set two lines earlier.
+     */
 
     /**
      * The plan is saved, so the visitor can be shown it now. Writing the idea

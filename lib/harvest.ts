@@ -367,7 +367,16 @@ export async function harvestAccountReels(
 }
 
 export async function harvestInstagramAccount(handle: string): Promise<RawReel[]> {
-  const { data, provider } = await socialcrawl("/instagram/profile/reels", { handle }, 1);
+  /**
+   * `platform` is a filter, not a hint: without it the router may serve this
+   * call from the free YouTube reader once the paid vendors are benched, and a
+   * same-named channel's posts become the Instagram account's baseline.
+   */
+  const { data, provider } = await socialcrawl(
+    "/instagram/profile/reels",
+    { handle, platform: "instagram" },
+    1,
+  );
   const baseline = num(obj(obj(data.creator_baseline).baseline).median_views) || undefined;
   return items(data)
     .map((row) => normalise(row, platformFor(provider), handle, baseline))
@@ -463,7 +472,11 @@ export interface PostPayload {
  * kept for depth later; this is the bang-for-buck one.
  */
 export async function fetchInstagramPost(url: string): Promise<PostPayload> {
-  const { data } = await socialcrawl("/instagram/post", { url }, 1);
+  const { data } = await socialcrawl(
+    "/instagram/post",
+    { url, platform: "instagram" },
+    1,
+  );
   /**
    * The post, from whichever envelope the vendor used.
    *

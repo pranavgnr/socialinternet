@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import WeeklyRefresh from "@/components/WeeklyRefresh";
 import WeeklyView from "@/components/WeeklyView";
@@ -20,8 +21,30 @@ export const metadata = {
  * or by the button, and this page only renders whatever was recorded. That is
  * also why an old digest is shown as old rather than silently refreshed: a
  * number that changes while you are reading it cannot be trusted with a plan.
+ *
+ * The account is read from a cookie, and `cacheComponents` is on, so that read
+ * has to happen inside a Suspense boundary. Without one Next bakes whatever the
+ * page rendered at build time — which is the "nothing to show yet" state, with
+ * no cookie — into the static shell and serves it to everyone, signed in or not.
  */
-export default async function WeeklyPage() {
+export default function WeeklyPage() {
+  return (
+    <Suspense fallback={<WeeklySkeleton />}>
+      <RecordedWeek />
+    </Suspense>
+  );
+}
+
+function WeeklySkeleton() {
+  return (
+    <div className="space-y-4 py-6">
+      <h1 className="text-[19px] font-semibold tracking-tight">This week</h1>
+      <p className="text-[13.5px] leading-relaxed text-muted">Reading your week…</p>
+    </div>
+  );
+}
+
+async function RecordedWeek() {
   const account = await currentAccount();
   const plan = account ? await account.store.getPlan() : null;
   const history = account ? await account.store.getWeekly() : [];

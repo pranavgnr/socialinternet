@@ -36,6 +36,16 @@ export interface ProviderCost {
   usdPerCall: number;
   /** Human label for the pricing line, e.g. "$1.00 / 1,000 calls". */
   label: string;
+  /**
+   * What the *next* call actually costs right now, when that differs from list
+   * price (an unspent monthly allowance, a volume tier, a free quota).
+   *
+   * The router sorts on this rather than `usdPerCall`: a vendor with $5 of free
+   * usage left is genuinely cheaper than one charging $0.02 a call, even though
+   * its list price is higher. Without it the cheapest *headline* vendor wins and
+   * the free allowance is never used.
+   */
+  effectiveUsdPerCall?: () => number;
 }
 
 /** A single billable call's result. */

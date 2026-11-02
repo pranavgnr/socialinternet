@@ -351,12 +351,25 @@ export const hikerapi: DataProvider = {
         const c = await get("/v1/media/comments/chunk", { media_id: code });
         const list = arr(c.data.items ?? c.data.comments ?? c.data);
         const post = obj(row.post);
-        post.top_comments = list.slice(0, 20).map((x) => ({
-          text: str(x.text) ?? "",
-          likes: num(x.like_count ?? x.likes),
-          username: str(obj(x.user).username) ?? str(x.username),
-          published_at: x.created_at ?? x.taken_at,
-        }));
+        /**
+         * `post.ext.top_comments`, not `post.top_comments`.
+         *
+         * `fetchInstagramPost` reads the vendor-neutral envelope
+         * (`post.ext.top_comments`) that every other adapter writes and that
+         * SocialCrawl's own payload uses. Writing one level higher meant the
+         * comments were bought, parsed and then silently dropped: the plan's
+         * "what people asked for" section was empty on a pull that had them.
+         */
+        const ext = obj(post.ext);
+        post.ext = {
+          ...ext,
+          top_comments: list.slice(0, 20).map((x) => ({
+            text: str(x.text) ?? "",
+            likes: num(x.like_count ?? x.likes),
+            author: str(obj(x.user).username) ?? str(x.username),
+            published_at: x.created_at ?? x.taken_at,
+          })),
+        };
         return { data: row, usd: usd + c.usd, units: 2, remaining: null };
       } catch {
         /* comments are optional: the post itself already succeeded */

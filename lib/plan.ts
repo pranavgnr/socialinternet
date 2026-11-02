@@ -184,7 +184,15 @@ async function readHandle(
   }
 }
 
-async function writeHandle(value: StoredHandle): Promise<void> {
+/**
+ * Persist one handle record. `platform` is required, not optional.
+ *
+ * Leaving it out is not a cosmetic omission: `handleKey` files a YouTube read
+ * under `<slug>--yt`, so a record written without the field lands in the bare
+ * Instagram slot and is then rejected by `readHandle(..., "youtube")` forever.
+ * The type makes that mistake a compile error instead of a permanent cache miss.
+ */
+async function writeHandle(value: StoredHandle & { platform: Platform }): Promise<void> {
   await fs.mkdir(HANDLE_DIR, { recursive: true });
   const target = path.join(
     HANDLE_DIR,
@@ -255,7 +263,7 @@ async function cachedProfile(
     /* Only write back onto a handle file that already exists — writing one here
        would create an empty-reel record that pullOwn would later trust. */
     if (stored) {
-      await writeHandle({ ...stored, profile: fresh, profileAt: new Date().toISOString() });
+      await writeHandle({ ...stored, platform, profile: fresh, profileAt: new Date().toISOString() });
     }
     return fresh;
   } catch {
@@ -565,12 +573,22 @@ function shapeMovedOn(guess: NicheGuess, archetype: ArchetypeGuess): boolean {
  * Without this the improved shape reading is worked out again on every build,
  * and — worse — the stale phrase stays on disk to be trusted by the next run.
  */
-async function rememberNiche(handle: string, guess: NicheGuess): Promise<void> {
+export async function rememberNiche(
+  handle: string,
+  guess: NicheGuess,
+  platform: Platform = "instagram",
+): Promise<void> {
   try {
-    const stored = await readHandle(handle);
+    /**
+     * Read the slot for the network the posts actually came from. The default
+     * is Instagram only for old callers; a YouTube handle read from the bare
+     * key misses or, worse, edits an unrelated Instagram record.
+     */
+    const stored = await readHandle(handle, platform);
     if (!stored) return;
     await writeHandle({
       ...stored,
+      platform,
       niche: guess.query,
       nicheSource: guess.source,
       nicheAt: new Date().toISOString(),
@@ -1451,7 +1469,7 @@ export async function analyseHandle(
         });
 
   /** Keep the corrected phrase, so the improved reading is not recomputed. */
-  if (stale) await rememberNiche(own.handle, guess);
+  if (stale) await rememberNiche(own.handle, guess, own.platform);
 
   /**
    * Last gate before the phrase is allowed to pick a cohort: it has to be a
@@ -1769,7 +1787,7 @@ export async function analyseHandle(
         guess.query = fallback;
         guess.source = "shape";
         nicheFit = recheck;
-        await rememberNiche(own.handle, guess);
+        await rememberNiche(own.handle, guess, own.platform);
       } else {
         nicheNext = fallback;
         guess.next = fallback;
@@ -1833,7 +1851,8 @@ export async function analyseHandle(
     await writeHandle({
       fetchedAt: new Date().toISOString(),
       handle: own.handle,
-      reels: own.reels,
+      platform: own.platform,
+      reels: ownReels,
       niche: storedNiche,
       nicheSource: storedSource,
       nicheAt: new Date().toISOString(),

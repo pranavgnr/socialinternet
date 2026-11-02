@@ -414,6 +414,12 @@ export const apify: DataProvider = {
   cost: {
     usdPerCall: price("user", resultsLimit()),
     label: `$2.30 / 1,000 results · ${monthlyFree().toFixed(0)} free each month`,
+    /**
+     * Zero until the monthly allowance is used up. The router sorts on this,
+     * so Apify is tried before a paid vendor while the $5 is still there — the
+     * whole point of carrying a free-tier vendor.
+     */
+    effectiveUsdPerCall: () => effectiveUsd("user", resultsLimit()),
   },
   configured: () => Boolean(key()),
 

@@ -128,7 +128,14 @@ export function availableProviders(path?: string): DataProvider[] {
     const pa = path ? (a.preference?.(path) ?? 0) : 0;
     const pb = path ? (b.preference?.(path) ?? 0) : 0;
     if (pa !== pb) return pa - pb;
-    return a.cost.usdPerCall - b.cost.usdPerCall || a.id.localeCompare(b.id);
+    /**
+     * Marginal price, not headline price. A vendor inside a free allowance (or
+     * below a volume tier) charges nothing for the next call, and that is the
+     * number that should decide which one answers.
+     */
+    const ca = a.cost.effectiveUsdPerCall?.() ?? a.cost.usdPerCall;
+    const cb = b.cost.effectiveUsdPerCall?.() ?? b.cost.usdPerCall;
+    return ca - cb || a.id.localeCompare(b.id);
   });
   const live = configured.filter((p) => !benched.has(p.id));
   if (preferred !== "auto") {

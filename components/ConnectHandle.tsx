@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import SignInButton from "./SignInButton";
+import { normalizeHandle } from "@/lib/handle";
+import { plain } from "@/lib/plain";
+
 const STAGES = [
   "Reading your latest reels…",
   "Working out what you post about…",
@@ -37,6 +41,8 @@ export default function ConnectHandle({
   const [stage, setStage] = useState(0);
   const [slow, setSlow] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A 401 is not an error to apologise for: it needs a way forward. */
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -54,14 +60,16 @@ export default function ConnectHandle({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const clean = handle.trim().replace(/^@/, "");
+    const clean = normalizeHandle(handle);
     if (!clean) {
-      setError("Add your Instagram handle first.");
+      setError("That does not look like an Instagram handle. Try @yourname.");
+      setNeedsSignIn(false);
       return;
     }
 
     setBusy(true);
     setError(null);
+    setNeedsSignIn(false);
     setStage(0);
     setSlow(false);
 
@@ -85,8 +93,23 @@ export default function ConnectHandle({
         ok?: boolean;
         error?: string;
       };
+
+      /**
+       * A plan belongs to a signed-in account. A 401 is therefore the normal
+       * first response for a new visitor, not a failure: show the Google
+       * button and keep the handle they typed. A 402 (out of credits) shows
+       * the server's sentence about the balance and reset time, with no
+       * sign-in button to press, because signing in again would not help.
+       */
+      if (res.status === 401) {
+        setNeedsSignIn(true);
+        setError(plain(json.error ?? "Sign in to read your account."));
+        return;
+      }
       if (!res.ok || !json.ok) {
-        throw new Error(json.error ?? "That did not work. Try again in a moment.");
+        throw new Error(
+          plain(json.error ?? "That did not work. Try again in a moment."),
+        );
       }
 
       /**
@@ -102,8 +125,10 @@ export default function ConnectHandle({
       setError(
         aborted
           ? "That took too long to read. Try again — or try a smaller account."
-          : ((err as Error).message ||
-              "That did not work. Try again in a moment."),
+          : plain(
+              (err as Error).message ||
+                "That did not work. Try again in a moment.",
+            ),
       );
     } finally {
       clearTimeout(killer);
@@ -114,34 +139,30 @@ export default function ConnectHandle({
   }
 
   return (
-    <div className="space-y-8">
-      <section className="pt-6">
-        <p className="text-[11.5px] font-medium uppercase tracking-[0.16em] text-accent">
-          For creators
-        </p>
-        <h1 className="mt-3 text-[32px] font-semibold leading-[1.06] tracking-tight sm:text-[42px]">
-          Know exactly what
-          <br />
-          to post next.
-        </h1>
-        <p className="mt-4 max-w-lg text-[14.5px] leading-relaxed text-muted">
-          Put in your handle. We work out what kind of account it is, find the
-          posts breaking out for accounts your size, and give you what to make
-          this month — each one with the post that proves it.
-        </p>
+    <div className="space-y-7">
+      <section>
+        <form onSubmit={submit}>
+          <label
+            htmlFor="handle-input"
+            className="block text-[13px] font-medium text-text"
+          >
+            Connect your Instagram
+          </label>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-muted/70">
+            Reads public posts only. Nothing is posted for you.
+          </p>
 
-        <form onSubmit={submit} className="mt-7">
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
             <div className="flex min-w-0 flex-1 items-center rounded-xl border border-line bg-panel px-3 focus-within:border-accent/60">
               <span className="text-[15px] text-muted">@</span>
               <input
+                id="handle-input"
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
                 placeholder="yourhandle"
                 autoComplete="off"
                 autoCapitalize="none"
                 spellCheck={false}
-                aria-label="Your Instagram handle"
                 className="min-w-0 flex-1 bg-transparent px-1.5 py-3.5 text-[16px] outline-none placeholder:text-muted/50"
               />
             </div>
@@ -155,13 +176,13 @@ export default function ConnectHandle({
           </div>
 
           <p className="mt-3 text-[11.5px] leading-relaxed text-muted/70">
-            Free to try · about a minute · no login
+            Free · sign in with Google to read your account
           </p>
 
           {niche ? (
             <div className="mt-2.5 flex items-center gap-2">
               <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[11.5px] text-text">
-                <span className="truncate">In &ldquo;{niche}&rdquo;</span>
+                <span className="truncate">In &ldquo;{plain(niche)}&rdquo;</span>
                 <button
                   type="button"
                   onClick={() => setNiche("")}
@@ -200,7 +221,26 @@ export default function ConnectHandle({
           </div>
         ) : null}
 
-        {error ? (
+        {needsSignIn ? (
+          <div className="mt-4 rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
+            <p className="text-[13px] font-medium text-text">
+              Sign in to read your account
+            </p>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+              Your plan is built from your own public posts. Sign in with Google
+              to continue.
+            </p>
+            {error ? (
+              <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted/70">
+                {error}
+              </p>
+            ) : null}
+            <SignInButton
+              label="Continue with Google"
+              className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+            />
+          </div>
+        ) : error ? (
           <p className="mt-4 rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
             {error}
           </p>

@@ -1,11 +1,12 @@
 import { NextResponse, after } from "next/server";
 
 import { gate, settleAfter } from "@/lib/gate";
+import { normalizeHandle } from "@/lib/handle";
 import { take, tooMany, refund } from "@/lib/limits";
 import { profileFromNiche } from "@/lib/niche";
 import { runPipeline } from "@/lib/pipeline";
 import { creditLedger } from "@/lib/providers";
-import { analyseHandle, cleanHandle, ownWinnerCaptions } from "@/lib/plan";
+import { analyseHandle, ownWinnerCaptions } from "@/lib/plan";
 import { attachCookie, currentAccount, ensureAccount } from "@/lib/session";
 import { friendly } from "@/lib/userError";
 
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       shallow?: boolean;
     };
 
-    const handle = cleanHandle(body.handle ?? "");
+    const handle = normalizeHandle(body.handle ?? "");
     if (!handle) throw new Error("handle is required");
 
     const account = await ensureAccount();

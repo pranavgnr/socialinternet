@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import SignInButton from "./SignInButton";
 import type { NicheView } from "@/lib/niche";
+import { plain } from "@/lib/plain";
 
 /**
  * Numbers as a creator reads them. Kept local rather than imported from the
@@ -30,16 +32,23 @@ function firstLine(caption: string, max = 110): string {
 export default function NicheSearch({
   initialQuery,
   autoRun = false,
+  initialView,
 }: {
   initialQuery?: string;
   /** only when the phrase is already on disk, so mounting cannot spend */
   autoRun?: boolean;
+  /** a view rebuilt from disk by the page — free, and never a fetch */
+  initialView?: NicheView | null;
 }) {
   const [query, setQuery] = useState(initialQuery ?? "");
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<NicheView | null>(null);
-  const [planHref, setPlanHref] = useState<string | null>(null);
+  const [view, setView] = useState<NicheView | null>(initialView ?? null);
+  const [planHref, setPlanHref] = useState<string | null>(
+    initialView ? `/room?q=${encodeURIComponent(initialView.query)}` : null,
+  );
   const [error, setError] = useState<string | null>(null);
+  /** A fresh niche needs an owner; a 401 deserves a button, not an apology. */
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const ran = useRef(false);
 
   const search = useCallback(async (raw: string) => {
@@ -51,6 +60,7 @@ export default function NicheSearch({
 
     setBusy(true);
     setError(null);
+    setNeedsSignIn(false);
     setView(null);
     setPlanHref(null);
 
@@ -66,16 +76,24 @@ export default function NicheSearch({
         planHref?: string;
         error?: string;
       };
+      if (res.status === 401) {
+        setNeedsSignIn(true);
+        setError(plain(json.error ?? "Sign in to read this niche."));
+        return;
+      }
       if (!res.ok || !json.ok || !json.view) {
         throw new Error(
-          json.error ?? "That search did not work. Try again in a moment.",
+          plain(json.error ?? "That search did not work. Try again in a moment."),
         );
       }
       setView(json.view);
       setPlanHref(json.planHref ?? null);
     } catch (err) {
       setError(
-        (err as Error).message || "That search did not work. Try again in a moment.",
+        plain(
+          (err as Error).message ||
+            "That search did not work. Try again in a moment.",
+        ),
       );
     } finally {
       setBusy(false);
@@ -83,10 +101,10 @@ export default function NicheSearch({
   }, []);
 
   useEffect(() => {
-    if (ran.current || !autoRun || !initialQuery) return;
+    if (ran.current || initialView || !autoRun || !initialQuery) return;
     ran.current = true;
     void search(initialQuery);
-  }, [autoRun, initialQuery, search]);
+  }, [autoRun, initialQuery, initialView, search]);
 
   return (
     <div className="space-y-5">
@@ -122,7 +140,26 @@ export default function NicheSearch({
         </p>
       </form>
 
-      {error ? (
+      {needsSignIn ? (
+        <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
+          <p className="text-[13px] font-medium text-text">
+            Sign in to read this niche
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            Niches already looked at stay free. A new one needs a signed-in
+            account.
+          </p>
+          {error ? (
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted/70">
+              {error}
+            </p>
+          ) : null}
+          <SignInButton
+            label="Continue with Google"
+            className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+          />
+        </div>
+      ) : error ? (
         <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
           {error}
         </p>

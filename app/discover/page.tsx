@@ -2,7 +2,13 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import NicheSearch from "@/components/NicheSearch";
-import { cachedNiches, nicheCacheStatus } from "@/lib/niche";
+import {
+  cachedNiches,
+  nicheCacheStatus,
+  nicheView,
+  researchFromCache,
+  type NicheView,
+} from "@/lib/niche";
 
 export const instant = false;
 
@@ -29,17 +35,40 @@ export default async function DiscoverPage({
   const { q } = await searchParams;
   const query = (q ?? "").trim();
 
+  // Payloads are only read when a phrase was asked for; without one this page
+  // only needs the list of rooms already looked at.
   const [niches, status] = await Promise.all([
-    cachedNiches(),
+    cachedNiches({ withPayload: Boolean(query) }),
     query ? nicheCacheStatus(query) : Promise.resolve(null),
   ]);
 
   /**
-   * Auto-running the search is only safe when the phrase is already on disk.
-   * For anything else it would spend credits the moment the page opened —
-   * a link, a refresh or a back button should never cost money.
+   * A room that is already on disk is rebuilt here, on the server, and shown
+   * without a request that could spend or ask anyone to sign in. This is the
+   * path a trending bubble follows: the ranking is old enough to be "stale" by
+   * the pull TTL, but the pull itself is already paid for, so reading it is
+   * still free. Staleness is the cron's concern, not the visitor's.
+   *
+   * A phrase that is not on disk keeps the normal client search, which is where
+   * a fresh pull (and therefore sign-in and credits) is decided.
    */
-  const autoRun = Boolean(status?.cached);
+  const onDisk = query ? niches.find((n) => n.slug === status?.slug) : undefined;
+  let initialView: NicheView | null = null;
+  if (onDisk?.payload?.length) {
+    try {
+      initialView = nicheView(
+        researchFromCache(onDisk.query, onDisk.payload, {
+          fetchedAt: onDisk.fetchedAt,
+        }),
+      );
+    } catch {
+      // An unreadable cache file falls through to the normal search rather
+      // than taking the page down.
+      initialView = null;
+    }
+  }
+
+  const autoRun = Boolean(status?.cached) && !initialView;
 
   return (
     <div className="space-y-7">
@@ -57,7 +86,12 @@ export default async function DiscoverPage({
         </p>
       </section>
 
-      <NicheSearch initialQuery={query || undefined} autoRun={autoRun} />
+      <NicheSearch
+        key={query || "discover"}
+        initialQuery={query || undefined}
+        autoRun={autoRun}
+        initialView={initialView}
+      />
 
       {niches.length ? (
         <section className="border-t border-line/70 pt-5">

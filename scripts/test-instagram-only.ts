@@ -35,7 +35,7 @@ const ROOT = process.cwd();
  *
  * `lib/niche.ts` resolves its directory at import time, so the root has to be
  * chosen before the module is first loaded. `lib/plan.ts` files handles under
- * `<cwd>/data/handles`, so the working directory moves with it.
+ * `<CREATORS_DATA_DIR>/handles`, the same shared root as the niche cache.
  */
 const TMP = mkdtempSync(path.join(os.tmpdir(), "reel-engine-instagram-only-"));
 process.chdir(TMP);
@@ -395,7 +395,7 @@ test("a niche aged 100 hours is cached at NICHE_CACHE_HOURS=168 and stale by def
 test("a handle aged 100 hours is cached at HANDLE_CACHE_HOURS=168 and stale by default", async () => {
   const { handleIsCached } = await import("../lib/plan");
 
-  const dir = path.join(TMP, "data", "handles");
+  const dir = path.join(TMP, "handles");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     path.join(dir, "cachehandle.json"),

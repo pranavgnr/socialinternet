@@ -55,7 +55,19 @@ import type {
  *    (lib/playbook.ts).
  */
 
-const HANDLE_DIR = path.join(process.cwd(), "data", "handles");
+/**
+ * Where handle reads live.
+ *
+ * Resolved per call, like the niche cache and the owner cache, so
+ * `CREATORS_DATA_DIR` points the whole data layer at one root. Before this the
+ * handle directory ignored it and a live run from a worktree wrote its handle
+ * reads under the worktree while the shared preview read the other directory —
+ * the plan rebuilt on every open and the warmed cache was never the one served.
+ */
+const handleDir = (): string =>
+  process.env.CREATORS_DATA_DIR
+    ? path.join(path.resolve(process.env.CREATORS_DATA_DIR), "handles")
+    : path.join(process.cwd(), "data", "handles");
 /**
  * How long a handle read stays fresh. Read per call rather than captured at
  * import, so a test (or a restart-free `.env.local` change) can move it. Empty,
@@ -166,7 +178,7 @@ async function readHandle(
 ): Promise<StoredHandle | null> {
   try {
     const raw = await fs.readFile(
-      path.join(HANDLE_DIR, `${handleKey(handle, platform)}.json`),
+      path.join(handleDir(), `${handleKey(handle, platform)}.json`),
       "utf8",
     );
     const parsed = JSON.parse(raw) as StoredHandle;
@@ -199,9 +211,10 @@ async function readHandle(
  * The type makes that mistake a compile error instead of a permanent cache miss.
  */
 async function writeHandle(value: StoredHandle & { platform: Platform }): Promise<void> {
-  await fs.mkdir(HANDLE_DIR, { recursive: true });
+  const dir = handleDir();
+  await fs.mkdir(dir, { recursive: true });
   const target = path.join(
-    HANDLE_DIR,
+    dir,
     `${handleKey(value.handle, value.platform ?? "instagram")}.json`,
   );
   const tmp = `${target}.tmp`;

@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { migrate } from "../lib/migrate";
+import { closeDb } from "../lib/db";
 import type { Queryable } from "../lib/db";
 // PGlite's own query type is close to but not exactly Queryable; adapt it.
 function asQueryable(pg: PGlite): Queryable {
@@ -54,4 +55,11 @@ test("migrate rejects a pool-like object", async () => {
     },
   } as unknown as Queryable;
   await assert.rejects(() => migrate(poolLike), /Pool/);
+});
+
+test("closeDb is a no-op when no pool exists", async () => {
+  // Neither the pool nor a test client exists in this run: closeDb must
+  // simply resolve. Also resolves when testClient is set but no pool was
+  // ever created.
+  await closeDb();
 });

@@ -33,6 +33,17 @@ export function currentDb(): Queryable {
   return testClient ?? db();
 }
 
+// Closes the shared pool, if one was ever created. No-op under tests (the
+// injected PGlite needs nothing) and before the first db() call. Called by
+// CLI entry points so they exit instead of waiting on idle pool sockets.
+export async function closeDb(): Promise<void> {
+  if (pool) {
+    const p = pool;
+    pool = null; // allow a later db() to start a fresh pool
+    await p.end();
+  }
+}
+
 // Runs `fn` against one connection for the whole call. Under tests that is the
 // injected PGlite directly; in the app a client is checked out of the pool and
 // released afterwards (even when fn throws). Everything that must stay on a

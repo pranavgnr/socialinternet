@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { creditLedger, fetchInstagramPost, type PostPayload } from "./harvest";
-import { mediaReady, readHooks } from "./media";
+import { mediaReadyFor, mediaTools, readHooks, type MediaTools } from "./media";
 import { availableProviders, checkBalance, fetchComments } from "./providers";
 import type { HookReading, RawComment, RawReel } from "./types";
 
@@ -62,6 +62,18 @@ export interface EnrichResult {
   report: EnrichReport;
 }
 
+/** What the plan says when this machine cannot watch video (Linux, V1). */
+export const DEEP_UNAVAILABLE = "local video tools missing";
+
+/**
+ * The gate in one place: ffmpeg, whisper and OCR all have to be here. On a
+ * Linux container OCR never is, so this returns the reason and the caller
+ * keeps the caption readings rather than half-watching a video.
+ */
+export function deepSkipReason(tools: MediaTools): string | null {
+  return mediaReadyFor(tools) ? null : DEEP_UNAVAILABLE;
+}
+
 /**
  * Which posts are worth six credits.
  *
@@ -116,7 +128,7 @@ export function pickForEnrichment(
 /** Pull the payloads (cached, then paid) and read the videos locally. */
 export async function enrich(
   reels: RawReel[],
-  opts: { maxCredits?: number; watch?: number; force?: boolean } = {},
+  opts: { maxCredits?: number; watch?: number; force?: boolean; tools?: MediaTools } = {},
 ): Promise<EnrichResult> {
   const cache = readCache();
   const report: EnrichReport = { posts: 0, watched: 0, spent: 0, errors: [] };
@@ -269,8 +281,9 @@ export async function enrich(
     }
   }
 
-  if (!mediaReady()) {
-    return { reels: out, hooks: new Map(), report: { ...report, skipped: "local video tools missing" } };
+  const skip = deepSkipReason(opts.tools ?? mediaTools());
+  if (skip) {
+    return { reels: out, hooks: new Map(), report: { ...report, skipped: skip } };
   }
 
   const watch = out

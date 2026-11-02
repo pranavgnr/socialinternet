@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import RoomPlanView from "@/components/RoomPlanView";
+import SignInButton from "@/components/SignInButton";
 import type { RoomPlan } from "@/lib/newcomer";
 
 /**
@@ -18,12 +19,15 @@ export default function RoomBuilder({ query }: { query: string }) {
   const [room, setRoom] = useState<RoomPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A fresh room needs an owner: a 401 deserves a button, not a bare error. */
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const started = useRef(false);
 
   const run = useCallback(async (q: string) => {
     setBusy(true);
     setError(null);
+    setNeedsSignIn(false);
     try {
       const res = await fetch("/api/room", {
         method: "POST",
@@ -35,6 +39,11 @@ export default function RoomBuilder({ query }: { query: string }) {
         room?: RoomPlan;
         error?: string;
       };
+      if (res.status === 401) {
+        setNeedsSignIn(true);
+        setError(json.error ?? "Sign in to read a new one");
+        return;
+      }
       if (!res.ok || !json.ok || !json.room) {
         throw new Error(json.error ?? "That did not work. Try again in a moment.");
       }
@@ -103,7 +112,24 @@ export default function RoomBuilder({ query }: { query: string }) {
         {query}
       </h1>
 
-      {error ? (
+      {needsSignIn ? (
+        <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
+          <p className="text-[13px] font-medium text-text">Sign in to read this room</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            {error ?? "A new space is a paid read. Rooms already read stay free."}
+          </p>
+          <SignInButton
+            label="Continue with Google"
+            className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+          />
+          <Link
+            href="/start"
+            className="mt-2 block text-center text-[12px] text-muted underline decoration-line underline-offset-2 hover:text-text"
+          >
+            Pick a different space
+          </Link>
+        </div>
+      ) : error ? (
         <>
           <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
             {error}

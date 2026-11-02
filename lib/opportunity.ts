@@ -657,6 +657,6 @@ function entryAngle(bs: Breakout[], query: string): string {
 }
 
 /** Sort by score, best first. */
-export function rankNiches(list: NicheOpportunity[]): NicheOpportunity[] {
+export function rankNiches<T extends NicheOpportunity>(list: T[]): T[] {
   return [...list].sort((a, b) => b.score - a.score);
 }

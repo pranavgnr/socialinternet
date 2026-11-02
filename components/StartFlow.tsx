@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import SignInButton from "./SignInButton";
+
 /**
  * The new-creator flow: pick what you know, get ranked rooms.
  *
@@ -68,6 +70,10 @@ export default function StartFlow() {
   const [spent, setSpent] = useState<number | null>(null);
   const [partial, setPartial] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** A fresh comparison needs an owner: a 401 deserves a button, not a bare error. */
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  /** set when the server stopped on credits but kept the rooms already paid for */
+  const [note, setNote] = useState<string | null>(null);
   /** neighbouring rooms, free — what else they could post about */
   const [adjacent, setAdjacent] = useState<Room[]>([]);
   /** what the engine understood from the description */
@@ -101,6 +107,8 @@ export default function StartFlow() {
     }
     setBusy(true);
     setError(null);
+    setNeedsSignIn(false);
+    setNote(null);
     setRanked(null);
     setPartial(null);
     setAdjacent([]);
@@ -119,8 +127,14 @@ export default function StartFlow() {
         partial?: string[];
         adjacent?: Room[];
         heard?: { input: string; via: string } | null;
+        note?: string;
         error?: string;
       };
+      if (res.status === 401) {
+        setNeedsSignIn(true);
+        setError(json.error ?? "Sign in to read a new one");
+        return;
+      }
       if (!res.ok || !json.ok || !json.ranked?.length) {
         throw new Error(json.error ?? "That did not work. Try again in a moment.");
       }
@@ -129,6 +143,7 @@ export default function StartFlow() {
       setPartial(json.partial?.length ? json.partial : null);
       setAdjacent(json.adjacent ?? []);
       setHeard(json.heard ?? null);
+      setNote(json.note ?? null);
     } catch (err) {
       setError((err as Error).message || "That did not work. Try again in a moment.");
     } finally {
@@ -193,7 +208,18 @@ export default function StartFlow() {
         </p>
       </section>
 
-      {error ? (
+      {needsSignIn ? (
+        <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
+          <p className="text-[13px] font-medium text-text">Sign in to compare niches</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            {error ?? "A fresh comparison needs a signed-in account. Rooms already read stay free."}
+          </p>
+          <SignInButton
+            label="Continue with Google"
+            className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+          />
+        </div>
+      ) : error ? (
         <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
           {error}
         </p>
@@ -314,6 +340,12 @@ export default function StartFlow() {
               );
             })}
           </ol>
+
+          {note ? (
+            <p className="rounded-xl border border-warn/40 bg-warn/5 px-3.5 py-3 text-[12.5px] leading-relaxed text-warn">
+              {note}
+            </p>
+          ) : null}
 
           {partial ? (
             <p className="text-[11px] leading-relaxed text-warn/80">

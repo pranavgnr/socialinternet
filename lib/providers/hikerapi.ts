@@ -26,7 +26,8 @@
  *   - `/v2/media/comments?id=<media id>` is the working comments call.
  *     The old `/v1/media/comments/chunk?media_id=` was a 422: it requires
  *     `id`, and the value must be the media's `id` (`<pk>_<owner>`), not the
- *     shortcode.
+ *     shortcode. Comments are read on every `post()` by default (one extra
+ *     call, +$0.02 at the Start rate); `HIKERAPI_COMMENTS=0` disables them.
  *   - A 500 "Instagram did not respond" (`exc_type: InstagramServerError`) is
  *     transient; `getWithRetry` tries once more after 800 ms. 4xx is never
  *     retried.
@@ -168,6 +169,22 @@ async function get(
  * forever, and a 402/403 means the balance is gone — retrying either only
  * spends more of the founder's money.
  */
+const realSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The pause is a seam, not a constant, so tests can prove the retry happens
+ * without spending 800 ms of wall clock per failure. Production always uses
+ * the real timer below; `setRetrySleepForTests(undefined)` restores it.
+ */
+let retrySleep: (ms: number) => Promise<void> = realSleep;
+
+export function setRetrySleepForTests(
+  sleep?: (ms: number) => Promise<void>,
+): void {
+  retrySleep = sleep ?? realSleep;
+}
+
 async function getWithRetry(
   path: string,
   params: Record<string, string> = {},
@@ -180,7 +197,7 @@ async function getWithRetry(
       err.status >= 500 ||
       (err.excType === "InstagramServerError" && err.status < 400);
     if (!transient) throw err;
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await retrySleep(800);
     return get(path, params);
   }
 }
@@ -277,9 +294,9 @@ function toUnified(
    * `play_count` is the number the live reel endpoint reports (and equals
    * `ig_play_count`). It is deliberately the only field read here: a reel whose
    * play_count is missing must read as "no views known" (0), not silently take
-   * a different, possibly unrepresentative counter.
+   * a different, possibly unrepresentative counter such as view_count.
    */
-  const playCount = num(media.play_count ?? media.video_play_count ?? media.view_count);
+  const playCount = num(media.play_count);
   const takenAt =
     media.taken_at ??
     media.taken_at_timestamp ??
@@ -484,18 +501,22 @@ export const hikerapi: DataProvider = {
     }
 
     /**
-     * Comments arrive on a separate endpoint. They are valuable (what the
-     * audience asks) but not worth a second call per post for the core plan,
-     * so the endpoint is read only when `HIKERAPI_COMMENTS=1`.
+     * Comments are core to the plan ("what people asked for"), so the post
+     * read fetches them by default: this is the second call of a post pull and
+     * adds one call (+$0.02 at the Start rate). `HIKERAPI_COMMENTS=0` turns it
+     * off for a caller that only wants the post itself.
      *
      * Live verification (2026-11-03): `/v2/media/comments?id=<media id>` works
      * and returns `response.comments`. The parameter is `id`; `media_id` is a
      * 422, and the value is the media's `id` (`<pk>_<owner>`), not the code.
+     * There is deliberately no fallback to `pk` or the shortcode: neither is
+     * accepted by the endpoint, and a wrong id would buy a 422 instead of
+     * comments. No id means no comments, quietly.
      */
-    if (process.env.HIKERAPI_COMMENTS === "1") {
+    const commentsMediaId = idStr(media.id);
+    if (process.env.HIKERAPI_COMMENTS !== "0" && commentsMediaId) {
       try {
-        const mediaId = idStr(media.id) ?? idStr(media.pk) ?? code;
-        const c = await get("/v2/media/comments", { id: mediaId });
+        const c = await get("/v2/media/comments", { id: commentsMediaId });
         const list = arr(c.data.comments ?? c.data.items ?? c.data);
         const post = obj(row.post);
         /**

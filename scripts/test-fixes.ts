@@ -60,7 +60,8 @@ async function withFetch<T>(
 test("hikerapi puts comments where the harvester reads them", async () => {
   const snap = snapshotEnv();
   process.env.HIKERAPI_KEY = "test-key";
-  process.env.HIKERAPI_COMMENTS = "1";
+  // Comments are on by default now; only the key needs setting.
+  delete process.env.HIKERAPI_COMMENTS;
   try {
     const { hikerapi } = await import("../lib/providers/hikerapi");
     await withFetch(
@@ -68,6 +69,7 @@ test("hikerapi puts comments where the harvester reads them", async () => {
         if (url.includes("/v2/media/info/by/code")) {
           return new Response(
             JSON.stringify({
+              id: "123_456",
               code: "ABC123",
               user: { username: "creator", follower_count: 1000 },
               play_count: 5000,

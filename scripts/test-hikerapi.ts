@@ -293,46 +293,112 @@ test("a reel with no play_count is zero-safe, not NaN or ig_play_count", async (
   });
 });
 
-test("a transient 500 (InstagramServerError) is retried once, after a pause", async () => {
-  const started = Date.now();
+test("view_count is not a views fallback: no play_count means views 0", async () => {
+  const mixed = clone(fixture("search_reels"));
+  const modules = mixed.reels_serp_modules as Json[];
+  const media = (modules[0].clips as Json[])[0].media as Json;
+  const code = media.code;
+  delete media.play_count;
+  media.view_count = 999;
+  media.ig_play_count = 888;
+
   await withEnv({ HIKERAPI_KEY: "test-key" }, async () => {
     const { hikerapi } = await import("../lib/providers/hikerapi");
-    let usernameCalls = 0;
-    const { result, seen } = await withFetch(
-      (url) => {
-        if (pathOf(url) === "/v2/user/by/username") {
-          usernameCalls += 1;
-          if (usernameCalls === 1) {
-            return respond(
-              { detail: "Instagram did not respond", exc_type: "InstagramServerError" },
-              500,
-            );
-          }
-          return respond(fixture("user_by_username"));
-        }
-        if (pathOf(url) === "/v2/user/clips") return respond(fixture("user_clips"));
-        throw new Error(`unexpected request: ${url}`);
-      },
-      () => hikerapi.profileReels("_shravyapawar_"),
+    const { result } = await withFetch(
+      () => respond(mixed),
+      () => hikerapi.searchReels("kannada songs"),
     );
-    assert.equal(usernameCalls, 2, "the 500 must be retried exactly once");
-    assert.equal(seen.length, 3);
-    assert.equal(rowsOf(result).length, 12);
+    const row = rowsOf(result).find((r) => postOf(r).id === code);
+    assert.ok(row);
+    assert.equal(
+      engagementOf(row).views,
+      0,
+      "views must come from play_count only, even when view_count exists",
+    );
   });
-  assert.ok(Date.now() - started >= 700, "the retry waits about 800 ms before trying again");
+});
+
+test("a transient 500 (InstagramServerError) is retried once", async () => {
+  await withEnv({ HIKERAPI_KEY: "test-key" }, async () => {
+    const { hikerapi, setRetrySleepForTests } = await import(
+      "../lib/providers/hikerapi"
+    );
+    const sleeps: number[] = [];
+    setRetrySleepForTests(async (ms) => {
+      sleeps.push(ms);
+    });
+    try {
+      let usernameCalls = 0;
+      const { result, seen } = await withFetch(
+        (url) => {
+          if (pathOf(url) === "/v2/user/by/username") {
+            usernameCalls += 1;
+            if (usernameCalls === 1) {
+              return respond(
+                { detail: "Instagram did not respond", exc_type: "InstagramServerError" },
+                500,
+              );
+            }
+            return respond(fixture("user_by_username"));
+          }
+          if (pathOf(url) === "/v2/user/clips") return respond(fixture("user_clips"));
+          throw new Error(`unexpected request: ${url}`);
+        },
+        () => hikerapi.profileReels("_shravyapawar_"),
+      );
+      assert.equal(usernameCalls, 2, "the 500 must be retried exactly once");
+      assert.deepEqual(sleeps, [800], "the retry pauses 800 ms once");
+      assert.equal(seen.length, 3);
+      assert.equal(rowsOf(result).length, 12);
+    } finally {
+      setRetrySleepForTests();
+    }
+  });
 });
 
 test("a second 500 throws ProviderUnavailable with exhausted: false", async () => {
   await withEnv({ HIKERAPI_KEY: "test-key" }, async () => {
+    const { hikerapi, setRetrySleepForTests } = await import(
+      "../lib/providers/hikerapi"
+    );
+    setRetrySleepForTests(async () => {});
+    try {
+      let calls = 0;
+      const { seen } = await withFetch(
+        () => {
+          calls += 1;
+          return respond(
+            { detail: "Instagram did not respond", exc_type: "InstagramServerError" },
+            500,
+          );
+        },
+        async () => {
+          await assert.rejects(
+            () => hikerapi.profileReels("_shravyapawar_"),
+            (err: unknown) => {
+              assert.ok(err instanceof ProviderUnavailable);
+              assert.equal(err.exhausted, false);
+              return true;
+            },
+          );
+        },
+      );
+      assert.equal(calls, 2, "one retry, then an honest failure");
+      assert.equal(seen.length, 2);
+    } finally {
+      setRetrySleepForTests();
+    }
+  });
+});
+
+test("a 422 is never retried", async () => {
+  await withEnv({ HIKERAPI_KEY: "test-key" }, async () => {
     const { hikerapi } = await import("../lib/providers/hikerapi");
     let calls = 0;
-    const { seen } = await withFetch(
+    await withFetch(
       () => {
         calls += 1;
-        return respond(
-          { detail: "Instagram did not respond", exc_type: "InstagramServerError" },
-          500,
-        );
+        return respond({ detail: "Unprocessable Entity", exc_type: "ValidationError" }, 422);
       },
       async () => {
         await assert.rejects(
@@ -345,8 +411,7 @@ test("a second 500 throws ProviderUnavailable with exhausted: false", async () =
         );
       },
     );
-    assert.equal(calls, 2, "one retry, then an honest failure");
-    assert.equal(seen.length, 2);
+    assert.equal(calls, 1, "4xx must never be retried");
   });
 });
 
@@ -401,12 +466,12 @@ test("402 and 403 mark the vendor exhausted", async () => {
   }
 });
 
-test("post reads comments from /v2/media/comments?id= into post.ext.top_comments", async () => {
+test("post reads comments from /v2/media/comments?id= into post.ext.top_comments by default", async () => {
   const media = clone(firstClipMedia());
   const comments = fixture("comments");
 
   await withEnv(
-    { HIKERAPI_KEY: "test-key", HIKERAPI_COMMENTS: "1" },
+    { HIKERAPI_KEY: "test-key" },
     async () => {
       const { hikerapi } = await import("../lib/providers/hikerapi");
       const { result, seen } = await withFetch(
@@ -443,6 +508,64 @@ test("post reads comments from /v2/media/comments?id= into post.ext.top_comments
       assert.equal(first.published_at, 1761149436);
       assert.equal(result.units, 2);
       assert.equal(result.usd, 0.04);
+    },
+  );
+});
+
+test("HIKERAPI_COMMENTS=0 turns the comments call off", async () => {
+  const media = clone(firstClipMedia());
+
+  await withEnv(
+    { HIKERAPI_KEY: "test-key", HIKERAPI_COMMENTS: "0" },
+    async () => {
+      const { hikerapi } = await import("../lib/providers/hikerapi");
+      const { result, seen } = await withFetch(
+        (url) => {
+          const u = new URL(url);
+          if (u.pathname === "/v2/media/info/by/code") {
+            return respond({ status: "ok", media });
+          }
+          throw new Error(`unexpected request: ${url}`);
+        },
+        () => hikerapi.post("https://www.instagram.com/reel/DQBw9CVk7C4/"),
+      );
+
+      assert.deepEqual(seen.map(pathOf), ["/v2/media/info/by/code"]);
+      const post = postOf(result.data as Json);
+      assert.equal((post.ext as Json | undefined)?.top_comments, undefined);
+      assert.equal(result.units, 1);
+      assert.equal(result.usd, 0.02);
+    },
+  );
+});
+
+test("post skips comments quietly when the media has no id (no pk/shortcode fallback)", async () => {
+  const media = clone(firstClipMedia());
+  // The comments endpoint only accepts the `<pk>_<owner>` id. pk and code are
+  // present, and neither is a valid substitute, so no second call is made.
+  delete media.id;
+  assert.ok(media.pk, "the fixture must still carry a pk to prove it is not used");
+  assert.ok(media.code, "the fixture must still carry a code to prove it is not used");
+
+  await withEnv(
+    { HIKERAPI_KEY: "test-key" },
+    async () => {
+      const { hikerapi } = await import("../lib/providers/hikerapi");
+      const { result, seen } = await withFetch(
+        (url) => {
+          const u = new URL(url);
+          if (u.pathname === "/v2/media/info/by/code") {
+            return respond({ status: "ok", media });
+          }
+          throw new Error(`unexpected request: ${url}`);
+        },
+        () => hikerapi.post("https://www.instagram.com/reel/DQBw9CVk7C4/"),
+      );
+
+      assert.deepEqual(seen.map(pathOf), ["/v2/media/info/by/code"]);
+      const post = postOf(result.data as Json);
+      assert.equal((post.ext as Json | undefined)?.top_comments, undefined);
+      assert.equal(result.units, 1);
     },
   );
 });

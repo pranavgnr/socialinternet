@@ -13,14 +13,17 @@
  *   node --env-file=.env.local scripts/capture-hikerapi-fixtures.mjs
  *   node --env-file=.env.local scripts/capture-hikerapi-fixtures.mjs --comments
  *
- * Costs four calls (five with `--comments`). The output is sanitised twice:
- * every list is truncated to 12 items (a fixture is a sample, not a dump) and
- * every URL loses its query string, because Instagram's CDN URLs carry signed
- * tokens that must not be committed.
+ * Costs four calls (five with `--comments`). The output is sanitised three
+ * times: every list is truncated to 12 items (a fixture is a sample, not a
+ * dump), every URL loses its query string, and `sanitize-hikerapi-fixtures.mjs`
+ * removes tracking keys, cursors and unused bulk (DASH manifests and friends)
+ * that no test or adapter field reads.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { sanitiseFixture } from "./sanitize-hikerapi-fixtures.mjs";
 
 const BASE = "https://api.hikerapi.com";
 const OUT = path.join(process.cwd(), "lib/providers/__fixtures__/hikerapi");
@@ -127,11 +130,11 @@ async function main() {
       continue;
     }
     /**
-     * Pagination cursors are opaque server state, not data the adapter reads;
-     * dropping them keeps a session-scoped token out of the repository.
+     * Pagination cursors and tracking keys are opaque server state, and the
+     * bulk fields are not read; `sanitiseFixture` owns that policy. The
+     * capture script only samples and strips signed URL query strings.
      */
-    delete body.next_page_id;
-    const safe = sanitise(body);
+    const safe = sanitiseFixture(call.name, sanitise(body));
     const file = path.join(OUT, `${call.name}.json`);
     await writeFile(file, `${JSON.stringify(safe, null, 2)}\n`);
     console.log(`${call.name}: HTTP ${res.status} -> ${path.relative(process.cwd(), file)}`);

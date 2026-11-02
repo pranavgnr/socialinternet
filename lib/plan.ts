@@ -360,6 +360,30 @@ export async function pullOwn(
   return { handle: clean, platform, reels, cached: false };
 }
 
+/**
+ * Would this handle be read off disk rather than bought?
+ *
+ * The credit gate asks this before any pull, so a handle whose feed is already
+ * on disk and inside the TTL opens for free even for a stranger who has not
+ * signed in. Same test `pullOwn` applies when deciding to serve from disk — a
+ * stored feed inside `HANDLE_TTL_HOURS` — so the answer here always agrees with
+ * what the pull would do. A deliberate refresh (`force: true`) is decided by
+ * the caller, not here: the gate refuses to treat a forced read as cached.
+ * With no platform named, Instagram is assumed — the same default `pullOwn`
+ * starts from.
+ */
+export async function handleIsCached(
+  handle: string,
+  platform: Platform = "instagram",
+): Promise<boolean> {
+  const clean = cleanHandle(handle);
+  if (!clean) return false;
+  const stored = await readHandle(clean, platform);
+  if (!stored) return false;
+  const ageHours = (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5;
+  return ageHours < HANDLE_TTL_HOURS;
+}
+
 /* ------------------------------------------------------------------ *
  * Niche inference
  * ------------------------------------------------------------------ */

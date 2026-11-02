@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 
+import ChatPanel from "@/components/ChatPanel";
 import Landing from "@/components/Landing";
 import PlanView from "@/components/PlanView";
 import { currentUser } from "@/lib/auth";
@@ -40,6 +41,7 @@ export default async function Home({
     return (
       <div className="space-y-6">
         <PlanView plan={plan} />
+        <ChatPanel />
       </div>
     );
   }

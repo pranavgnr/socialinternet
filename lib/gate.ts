@@ -93,14 +93,27 @@ function nextIstMidnight(now: Date): Date {
  * The 402 a drained pool earns. Says the price, the balance left, and when the
  * pool comes back — both "tomorrow at 12:00 am IST" and the rough wait, because
  * a visitor deciding whether to wait deserves both formats.
+ *
+ * Exported so every charged route — the gate's pulls and the chat route — says
+ * the same sentence about the same pool instead of growing a second wording
+ * that drifts from this one.
  */
-function outOfCredits(kind: GateKind, cost: number, balance: number, now: Date): string {
+export function outOfCreditsMessage(
+  label: string,
+  cost: number,
+  balance: number,
+  now: Date,
+): string {
   const msToReset = nextIstMidnight(now).getTime() - now.getTime();
   const hours = Math.max(1, Math.ceil(msToReset / HOUR));
   return (
-    `A fresh ${LABEL[kind]} costs ${cost} credits and you have ${balance} left today. ` +
+    `A fresh ${label} costs ${cost} credit${cost === 1 ? "" : "s"} and you have ${balance} left today. ` +
     `Your free pool resets tomorrow at 12:00 am IST — about ${hours} hour${hours === 1 ? "" : "s"} from now.`
   );
+}
+
+function outOfCredits(kind: GateKind, cost: number, balance: number, now: Date): string {
+  return outOfCreditsMessage(LABEL[kind], cost, balance, now);
 }
 
 /**

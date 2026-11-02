@@ -20,7 +20,14 @@ const STAGES = [
  * thing worth keeping — the handle they already typed — rides in session
  * storage for this tab only.
  */
-const PENDING_KEY = "c101:pendingHandle";
+export const PENDING_HANDLE_KEY = "c101:pendingHandle";
+
+/**
+ * The same key is used by the niche bar when a competitor read needs sign-in,
+ * so the handle a visitor typed survives the trip through Google whichever
+ * input they used.
+ */
+const PENDING_KEY = PENDING_HANDLE_KEY;
 
 const GET = [
   {

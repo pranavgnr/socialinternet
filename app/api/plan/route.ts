@@ -3,10 +3,14 @@ import { NextResponse, after } from "next/server";
 import { gate, settleAfter } from "@/lib/gate";
 import { normalizeHandle } from "@/lib/handle";
 import { take, tooMany, refund } from "@/lib/limits";
-import { profileFromNiche } from "@/lib/niche";
 import { runPipeline } from "@/lib/pipeline";
 import { creditLedger } from "@/lib/providers";
-import { analyseHandle, ownWinnerCaptions } from "@/lib/plan";
+import { analyseHandle } from "@/lib/plan";
+import {
+  parsePlanMode,
+  planModeRejection,
+  runPlanBuild,
+} from "@/lib/planRequest";
 import { attachCookie, currentAccount, ensureAccount } from "@/lib/session";
 import { friendly } from "@/lib/userError";
 
@@ -22,11 +26,16 @@ export async function GET() {
 }
 
 /**
- * POST /api/plan  { handle, niche?, force? }
+ * POST /api/plan  { handle, niche?, force?, mode? }
  *
  * One handle in: read the account, work out the niche from its own posts, pull
  * what is working there, compare against size-matched peers, write a plan where
  * every move cites a reel. Everything lands in that visitor's own directory.
+ *
+ * `mode: "competitor"` runs the same read of a public account, but returns it in
+ * the response body with the advice stripped and writes nothing to the visitor:
+ * no plan, no profile, no idea feed, no remembered niche. It is charged and
+ * settled exactly like an own plan.
  */
 export async function POST(req: Request) {
   try {
@@ -36,7 +45,22 @@ export async function POST(req: Request) {
       niche?: string;
       /** skip transcript/OCR so a plan costs nothing — used by tests and retries */
       shallow?: boolean;
+      /** "own" (default) keeps the plan; "competitor" only reads a public account */
+      mode?: unknown;
     };
+
+    /**
+     * Refuse an unknown mode before the rate limiter, the gate or any pull, so
+     * a typo cannot charge a credit or write a partial account.
+     */
+    const rejection = planModeRejection(body.mode);
+    if (rejection) {
+      return NextResponse.json(
+        { ok: false, error: rejection.error },
+        { status: rejection.status },
+      );
+    }
+    const mode = parsePlanMode(body.mode)!;
 
     const handle = normalizeHandle(body.handle ?? "");
     if (!handle) throw new Error("handle is required");
@@ -91,86 +115,43 @@ export async function POST(req: Request) {
     return await settleAfter(
       verdict.entryId,
       async () => {
-        /**
-         * The deep pass runs on every plan, not behind a flag: six posts, one
-         * credit each, cached for a week. It is the only way to answer whether the
-         * scroll was stopped by a sentence, a caption, or the picture itself — and
-         * that answer decides which of the moves is worth doing first.
-         */
-        const { plan, research: pulled, seedReels, archetype, own } = await analyseHandle(handle, {
-          force,
-          niche: body.niche?.trim() || undefined,
-          deep: !body.shallow,
-        });
+        const { plan, spent } = await runPlanBuild(
+          {
+            mode,
+            handle,
+            force,
+            niche: body.niche?.trim() || undefined,
+            shallow: body.shallow,
+            store: account.store,
+          },
+          {
+            analyseHandle,
+            savePlan: (p) => account.store.savePlan(p),
+            getProfile: () => account.store.getProfile(),
+            runPipeline,
+            /**
+             * Own mode queues the idea feed; competitor mode never reaches this
+             * dep, so no profile, signal or idea is written for the visitor.
+             * `after` runs the work once the response has been sent — see the
+             * note in `lib/planRequest.ts`.
+             */
+            scheduleAfter: (fn) => after(fn),
+            logError: (err) =>
+              console.error("[plan] idea feed failed:", (err as Error).message),
+          },
+        );
 
         /** Nothing was bought, so nothing is charged: a handle already on disk is
          * free to open, and the allowance is there to cap spending, not visits. */
-        if (pulled.credits.spent === 0) refund(limitKey);
-
-        await account.store.savePlan(plan);
-
-        // The idea feed is rebuilt from the reels the analysis already paid for,
-        // so this never pulls anything twice.
-        const previous = await account.store.getProfile();
-        const profile = profileFromNiche(pulled, previous, archetype);
+        if (spent === 0) refund(limitKey);
 
         /**
-         * Winners are the creator's own posts, so they come from the creator's own
-         * feed — never from the room or from a previous record.
-         *
-         * `profileFromNiche` falls back to the previous profile when the pull found
-         * no row for this handle, and that fallback is how a benchmark creator's
-         * caption ("Ali Sigma slapped us for Range Rover") was being listed as
-         * natgeo's own winning post. The feed is on disk and already paid for, so
-         * there is no reason to inherit a claim about whose post it was.
+         * Own mode keeps its existing response (the plan is on disk). Competitor
+         * mode wrote nothing, so the body is the only place the read can live.
          */
-        profile.ownWinners = ownWinnerCaptions(own.reels);
-
-        /**
-         * The songs the plan named are the songs the idea feed has to be built on:
-         * a singer's reels are covers, and a cover idea without a song is not an
-         * idea. Kept on the profile so a later refresh does not lose them.
-         */
-        profile.songs = plan.songs?.map((s) => s.title) ?? previous?.songs;
-
-        /**
-         * Same rule for video shapes: when the plan named shapes, the idea feed is
-         * built on exactly those. Cleared for a song-led account, so a stale vlog
-         * shape can never leak into a singer's covers.
-         */
-        if (plan.formats?.length) profile.formats = plan.formats.map((f) => f.label);
-        else if (archetype.songLed) profile.formats = undefined;
-
-        /**
-         * `ownWinners` stays exactly as set above: the creator's own captions.
-         *
-         * A second assignment used to overwrite it with every move's evidence
-         * captions, which are mostly *peer* posts. That is the same wrong-attribution
-         * bug the paragraph above describes — a competitor's caption presented to
-         * the idea generator as "a post that worked for you" — and it silently
-         * undid the correct value set two lines earlier.
-         */
-
-        /**
-         * The plan is saved, so the visitor can be shown it now. Writing the idea
-         * feed is the long half — a model call per card plus a copy audit — and
-         * holding the response open for it meant a save took 10s on a warm cache
-         * and over two minutes cold. On a phone that is a dropped request and a
-         * spent credit with nothing to show.
-         *
-         * `after` runs it once the response has been sent, so the same work happens
-         * and lands in the same place; the ideas page shows the plan immediately and
-         * refreshes itself until the feed arrives.
-         */
-        after(async () => {
-          try {
-            await runPipeline({ profile, seedReels, db: account.store, ownHandle: handle });
-          } catch (err) {
-            console.error("[plan] idea feed failed:", (err as Error).message);
-          }
-        });
-
-        return await attachCookie(NextResponse.json({ ok: true }), account);
+        const payload =
+          mode === "competitor" ? { ok: true, plan } : { ok: true };
+        return await attachCookie(NextResponse.json(payload), account);
       },
       () => {
         /**

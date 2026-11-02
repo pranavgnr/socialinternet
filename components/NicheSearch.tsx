@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import PlanView from "./PlanView";
 import SignInButton from "./SignInButton";
+import { PENDING_HANDLE_KEY } from "./ConnectHandle";
+import { looksLikeHandle, normalizeHandle } from "@/lib/handle";
 import type { NicheView } from "@/lib/niche";
 import { plain } from "@/lib/plain";
+import type { GrowthPlan } from "@/lib/types";
 
 /**
  * Numbers as a creator reads them. Kept local rather than imported from the
@@ -47,8 +51,12 @@ export default function NicheSearch({
     initialView ? `/room?q=${encodeURIComponent(initialView.query)}` : null,
   );
   const [error, setError] = useState<string | null>(null);
-  /** A fresh niche needs an owner; a 401 deserves a button, not an apology. */
-  const [needsSignIn, setNeedsSignIn] = useState(false);
+  /** A fresh read needs an owner; a 401 deserves a button, not an apology. */
+  const [signInFor, setSignInFor] = useState<"niche" | "competitor" | null>(null);
+  /** the handle currently being read, so the progress line can name it */
+  const [readingHandle, setReadingHandle] = useState<string | null>(null);
+  /** a competitor read lives only in this response, never in the visitor's account */
+  const [competitorPlan, setCompetitorPlan] = useState<GrowthPlan | null>(null);
   const ran = useRef(false);
 
   const search = useCallback(async (raw: string) => {
@@ -60,7 +68,9 @@ export default function NicheSearch({
 
     setBusy(true);
     setError(null);
-    setNeedsSignIn(false);
+    setSignInFor(null);
+    setReadingHandle(null);
+    setCompetitorPlan(null);
     setView(null);
     setPlanHref(null);
 
@@ -77,7 +87,7 @@ export default function NicheSearch({
         error?: string;
       };
       if (res.status === 401) {
-        setNeedsSignIn(true);
+        setSignInFor("niche");
         setError(plain(json.error ?? "Sign in to read this niche."));
         return;
       }
@@ -100,6 +110,85 @@ export default function NicheSearch({
     }
   }, []);
 
+  /**
+   * A profile read. The response is the whole plan (competitor mode writes
+   * nothing to the visitor), so it can be rendered inline without a second
+   * request or a saved plan the ideas page would then mistake for their own.
+   */
+  const readCompetitor = useCallback(async (raw: string) => {
+    const handle = normalizeHandle(raw);
+    if (!handle) {
+      setError("That does not look like an Instagram handle. Try @yourname.");
+      setSignInFor(null);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setSignInFor(null);
+    setReadingHandle(handle);
+    setCompetitorPlan(null);
+    setView(null);
+    setPlanHref(null);
+
+    /** A profile read can take the better part of a minute; never hang forever. */
+    const ctl = new AbortController();
+    const killer = setTimeout(() => ctl.abort(), 150_000);
+
+    try {
+      const res = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle, mode: "competitor" }),
+        signal: ctl.signal,
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        plan?: GrowthPlan;
+        error?: string;
+      };
+
+      if (res.status === 401) {
+        /**
+         * Keep the handle across Google sign-in using the same key and shape
+         * as `ConnectHandle`, so the form recovers it on the way back. Only a
+         * click on "Continue with Google" follows; nothing is auto-submitted.
+         */
+        try {
+          window.sessionStorage.setItem(
+            PENDING_HANDLE_KEY,
+            JSON.stringify({ handle }),
+          );
+        } catch {
+          // Storage blocked: sign-in still works, the handle just is not kept.
+        }
+        setSignInFor("competitor");
+        setError(plain(json.error ?? "Sign in to read this account."));
+        return;
+      }
+      if (!res.ok || !json.ok || !json.plan) {
+        throw new Error(
+          plain(json.error ?? "That did not work. Try again in a moment."),
+        );
+      }
+      setCompetitorPlan(json.plan);
+    } catch (err) {
+      const aborted = (err as Error)?.name === "AbortError";
+      setError(
+        aborted
+          ? "That took too long to read. Try again — or try a smaller account."
+          : plain(
+              (err as Error).message ||
+                "That did not work. Try again in a moment.",
+            ),
+      );
+    } finally {
+      clearTimeout(killer);
+      setBusy(false);
+      setReadingHandle(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (ran.current || initialView || !autoRun || !initialQuery) return;
     ran.current = true;
@@ -111,18 +200,20 @@ export default function NicheSearch({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void search(query);
+          const clean = query.trim();
+          if (looksLikeHandle(clean)) void readCompetitor(clean);
+          else void search(clean);
         }}
       >
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="telugu music covers"
+            placeholder="telugu music covers or @handle"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
-            aria-label="The niche to look at"
+            aria-label="A niche to look at, or a public account to read"
             className="min-w-0 flex-1 rounded-xl border border-line bg-panel px-3.5 py-3.5 text-[16px] outline-none placeholder:text-muted/50 focus:border-accent/60"
           />
           <button
@@ -130,24 +221,41 @@ export default function NicheSearch({
             disabled={busy}
             className="rounded-xl bg-accent px-5 py-3.5 text-[14px] font-semibold text-black transition active:scale-[0.99] disabled:opacity-50"
           >
-            {busy ? "Reading…" : "Look at this niche"}
+            {busy
+              ? "Reading…"
+              : looksLikeHandle(query)
+                ? "Read this account"
+                : "Look at this niche"}
           </button>
         </div>
         <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted/70">
-          A space, not a handle — &ldquo;fitness for beginners&rdquo;,
-          &ldquo;kannada singing&rdquo;, &ldquo;AI tools&rdquo;. Niches already
-          looked at are free to reopen.
+          A space — &ldquo;fitness for beginners&rdquo;, &ldquo;kannada
+          singing&rdquo; — or an <span className="text-text">@handle</span> to
+          read a public account. Niches already looked at are free to reopen.
         </p>
       </form>
 
-      {needsSignIn ? (
+      {busy && readingHandle ? (
+        <div className="rounded-xl border border-line bg-panel px-4 py-3.5">
+          <p className="text-[13px] text-text">Reading @{readingHandle}…</p>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted">
+            Public posts only, and nothing is posted for them. A busy account can
+            take up to a minute — keep this page open.
+          </p>
+        </div>
+      ) : null}
+
+      {signInFor ? (
         <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
           <p className="text-[13px] font-medium text-text">
-            Sign in to read this niche
+            {signInFor === "competitor"
+              ? "Sign in to read this account"
+              : "Sign in to read this niche"}
           </p>
           <p className="mt-1 text-[12px] leading-relaxed text-muted">
-            Niches already looked at stay free. A new one needs a signed-in
-            account.
+            {signInFor === "competitor"
+              ? "Reading a public account is a paid read. Sign in with Google to continue; the handle you typed is kept."
+              : "Niches already looked at stay free. A new one needs a signed-in account."}
           </p>
           {error ? (
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted/70">
@@ -322,6 +430,12 @@ export default function NicheSearch({
               Part of this pull did not come back: {view.errors.join(" · ")}
             </p>
           ) : null}
+        </section>
+      ) : null}
+
+      {competitorPlan ? (
+        <section className="border-t border-line/70 pt-5">
+          <PlanView plan={competitorPlan} readOnly />
         </section>
       ) : null}
     </div>

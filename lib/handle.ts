@@ -43,6 +43,26 @@ const CONTENT_ROUTES = new Set([
 /** `https://…`, `http://…` or a bare `instagram.com/…`, with optional www. */
 const INSTAGRAM_URL = /^(?:https?:\/\/)?(?:www\.)?instagram\.com\//i;
 
+/**
+ * Is this input shaped like a profile — an `@handle` or an `instagram.com`
+ * profile URL — rather than a niche phrase?
+ *
+ * The search box has one input and two jobs: "telugu music covers" is a niche,
+ * "@priya" is an account. Only the two profile shapes switch to a competitor
+ * read; a bare word such as "cooking" stays a niche phrase exactly as it always
+ * was, even though it is a legal Instagram handle.
+ *
+ * The URL uses the same parser as `normalizeHandle`, so a content URL
+ * (`instagram.com/p/…`) is still not a profile and keeps the niche path.
+ */
+export function looksLikeHandle(input: string): boolean {
+  if (typeof input !== "string") return false;
+  const value = input.trim();
+  if (!value) return false;
+  if (!value.startsWith("@") && !INSTAGRAM_URL.test(value)) return false;
+  return normalizeHandle(value) !== null;
+}
+
 export function normalizeHandle(input: string): string | null {
   if (typeof input !== "string") return null;
 

@@ -1,5 +1,6 @@
 import ConnectHandle from "./ConnectHandle";
 import NicheBubbles from "./NicheBubbles";
+import NicheSearch from "./NicheSearch";
 import SignInButton from "./SignInButton";
 import { currentUser } from "@/lib/auth";
 import { balance } from "@/lib/credits";
@@ -77,36 +78,12 @@ export default async function Landing({
       <ConnectHandle initialNiche={initialNiche} signedIn={Boolean(user)} />
 
       <section className="border-t border-line/70 pt-5">
-        <form action="/discover" method="get">
-          <label
-            htmlFor="niche-search"
-            className="block text-[13px] font-medium text-text"
-          >
-            Or look at what&rsquo;s working in a niche
-          </label>
-          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
-            <input
-              id="niche-search"
-              name="q"
-              placeholder="telugu music covers"
-              autoComplete="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              className="min-w-0 flex-1 rounded-xl border border-line bg-panel px-3.5 py-3.5 text-[16px] outline-none placeholder:text-muted/50 focus:border-accent/60"
-            />
-            <button
-              type="submit"
-              className="rounded-xl border border-line bg-panel px-5 py-3.5 text-[14px] font-semibold text-text transition active:scale-[0.99] hover:border-accent/50"
-            >
-              Look at this niche
-            </button>
-          </div>
-          <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted/70">
-            A space, not a handle — &ldquo;fitness for beginners&rdquo;,
-            &ldquo;kannada singing&rdquo;, &ldquo;AI tools&rdquo;. Niches
-            already looked at are free to reopen.
-          </p>
-        </form>
+        <p className="text-[13px] font-medium text-text">
+          Or look at a niche — or read another account
+        </p>
+        <div className="mt-2.5">
+          <NicheSearch initialQuery={initialNiche} />
+        </div>
       </section>
 
       <NicheBubbles niches={niches} />

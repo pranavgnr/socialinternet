@@ -34,7 +34,18 @@ function tone(pct: number): string {
   return "Most accounts your size are doing better right now. The plan below is about closing that.";
 }
 
-export default function PlanView({ plan }: { plan: GrowthPlan }) {
+export default function PlanView({
+  plan,
+  readOnly = false,
+}: {
+  plan: GrowthPlan;
+  /**
+   * A public account read for a visitor who does not own it. The same measured
+   * page, minus the advice: no next move, no move list, no ideas link, and no
+   * "your plan"/"this week" framing.
+   */
+  readOnly?: boolean;
+}) {
   /**
    * A plan with no shape cannot be rendered honestly, but it must not take the
    * page down either — a stored plan from an older build is a real possibility.
@@ -98,6 +109,11 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
           className="inline-flex min-h-[34px] items-center text-[23px] font-semibold leading-tight tracking-tight transition hover:text-accent"
         >
           @{plan.handle}
+          {readOnly ? (
+            <span className="ml-2 align-middle text-[14px] font-normal text-muted">
+              — what&rsquo;s working for this account
+            </span>
+          ) : null}
         </a>
         <p className="mt-1 text-[12.5px] text-muted">
           {shape}
@@ -114,12 +130,15 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
             <strong className="font-semibold">
               We could read @{plan.handle}, but not their recent posts.
             </strong>{" "}
-            So the follower count is yours and the post numbers below are the
-            room&rsquo;s, not yours.{" "}
+            {readOnly
+              ? "So the follower count is this account's and the post numbers below are the room's, not theirs."
+              : "So the follower count is yours and the post numbers below are the room's, not yours."}{" "}
             {plan.standing.unreadReason ? (
               <span className="text-muted">{plan.standing.unreadReason}.</span>
             ) : null}{" "}
-            Connect an Instagram source to measure your own posts.
+            {readOnly
+              ? "The account's own posts are not in this read."
+              : "Connect an Instagram source to measure your own posts."}
           </div>
         ) : null}
         {plan.standing.accountRead === false ? (
@@ -131,10 +150,12 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
               We could not read @{plan.handle}.
             </strong>{" "}
             So there is no follower count or profile here — the numbers below
-            describe the niche, not your account.{" "}
+            describe the niche, not {readOnly ? "this account" : "your account"}.{" "}
             {plan.standing.readFrom && plan.standing.readFrom !== "instagram"
-              ? `The posts we measured came from ${platformName(plan.standing.readFrom)}, which found a channel of the same name; that is a different creator and we have not used it as yours.`
-              : "Connect an Instagram source to get your own standing."}
+              ? `The posts we measured came from ${platformName(plan.standing.readFrom)}, which found a channel of the same name; that is a different creator and we have not used it as ${readOnly ? "this account's" : "yours"}.`
+              : readOnly
+                ? "There is no account read to measure."
+                : "Connect an Instagram source to get your own standing."}
           </div>
         ) : null}
         {plan.accountPlatform &&
@@ -168,18 +189,22 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
               <div className="text-[19px] font-medium leading-none tabular-nums">
                 {fmtViews(usual)}
               </div>
-              <div className="mt-1.5 text-[11px] leading-tight text-muted">your usual post</div>
+              <div className="mt-1.5 text-[11px] leading-tight text-muted">
+                {readOnly ? "usual post" : "your usual post"}
+              </div>
             </div>
             <div className="px-3 py-3">
               <div className="text-[19px] font-medium leading-none tabular-nums">
                 {fmtViews(best)}
               </div>
-              <div className="mt-1.5 text-[11px] leading-tight text-muted">your best</div>
+              <div className="mt-1.5 text-[11px] leading-tight text-muted">
+                {readOnly ? "best" : "your best"}
+              </div>
             </div>
             <div className="px-3 py-3">
               <div className="text-[19px] font-medium leading-none tabular-nums">{pct}%</div>
               <div className="mt-1.5 text-[11px] leading-tight text-muted">
-                of accounts you beat
+                {readOnly ? "of cohort beaten" : "of accounts you beat"}
               </div>
             </div>
           </div>
@@ -209,31 +234,49 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
         <p className="text-[14.5px] leading-relaxed">{plain(arch.blurb)}</p>
         <p className="mt-2.5 border-t border-line/60 pt-2.5 text-[13px] leading-relaxed text-muted">
           {mine ? (
-            <>
-              You usually get around {fmtViews(usual)} views a post
-              {peerTypical ? `, against ${peerTypical} for accounts your size` : ""}. {tone(pct)}
-            </>
+            readOnly ? (
+              <>
+                @{plan.handle} usually gets around {fmtViews(usual)} views a post
+                {peerTypical ? `, against ${peerTypical} for accounts its size` : ""}.
+              </>
+            ) : (
+              <>
+                You usually get around {fmtViews(usual)} views a post
+                {peerTypical ? `, against ${peerTypical} for accounts your size` : ""}. {tone(pct)}
+              </>
+            )
           ) : (
             <>
               {identified
-                ? "Once we can read your recent posts"
-                : "Once we can read your account"}{" "}
-              this line becomes your own numbers against the{" "}
-              {fmtViews(plan.cohort.nicheMedianViews)} a post that is normal in
-              this niche.
+                ? readOnly
+                  ? "We can name this account, but its recent posts are out of reach"
+                  : "Once we can read your recent posts"
+                : readOnly
+                  ? "We cannot read this account"
+                  : "Once we can read your account"}{" "}
+              {readOnly
+                ? `— so the ${fmtViews(plan.cohort.nicheMedianViews)} a post that is normal in this niche is the only yardstick here.`
+                : `this line becomes your own numbers against the ${fmtViews(
+                    plan.cohort.nicheMedianViews,
+                  )} a post that is normal in this niche.`}
             </>
           )}
         </p>
         {mine && spread >= 3 ? (
           <p className="mt-2 text-[13px] leading-relaxed text-muted">
-            Your best did {times(spread)} your usual, so the ceiling is clearly there — it just
+            {readOnly ? "The best post did" : "Your best did"} {times(spread)}{" "}
+            {readOnly ? "the usual" : "your usual"}, so the ceiling is clearly there — it just
             has not happened twice.
           </p>
         ) : null}
         <p className="mt-3 border-t border-line/60 pt-2.5 text-[11.5px] leading-relaxed text-muted/70">
           {mine
-            ? `Built from ${plan.standing.reelsRead} of your posts and ${accounts} accounts your size in the same space.`
-            : `Built from ${accounts} accounts in this space. Your own posts are not in here yet.`}
+            ? readOnly
+              ? `Built from ${plan.standing.reelsRead} of this account's posts and ${accounts} accounts its size in the same space.`
+              : `Built from ${plan.standing.reelsRead} of your posts and ${accounts} accounts your size in the same space.`
+            : readOnly
+              ? `Built from ${accounts} accounts in this space. This account's own posts are not in here.`
+              : `Built from ${accounts} accounts in this space. Your own posts are not in here yet.`}
           {plan.nicheFit && !plan.nicheFit.ok
             ? plan.nicheFit.verdict === "wrong"
               ? ` That group may be the wrong room — we searched “${plan.nicheFit.searched}” — so treat the numbers as provisional.`
@@ -243,7 +286,7 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
       </section>
 
       {/* The one move. Ten ideas compete with each other; one does not. */}
-      {plan.nextMove ? (
+      {!readOnly && plan.nextMove ? (
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">This week, do one thing</h2>
@@ -335,10 +378,13 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
       {mine && plan.audit && plan.audit.gaps.length ? (
         <section className="space-y-3">
           <div>
-            <h2 className="text-[17px] font-semibold tracking-tight">Your own posts, compared</h2>
+            <h2 className="text-[17px] font-semibold tracking-tight">
+              {readOnly ? "Best and worst posts" : "Your own posts, compared"}
+            </h2>
             <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
-              Your best and worst post, side by side. This is the only evidence that is about you
-              and not about someone bigger.
+              {readOnly
+                ? "The best and worst post on this account, side by side, with what separated them."
+                : "Your best and worst post, side by side. This is the only evidence that is about you and not about someone bigger."}
             </p>
           </div>
           <div className="card divide-y divide-line/70">
@@ -376,10 +422,12 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
               </div>
             ))}
             <div className="px-4 py-2.5 text-[11.5px] leading-relaxed text-muted/60">
-              {plan.audit.posts} of your posts read
+              {plan.audit.posts} of {readOnly ? "this account's" : "your"} posts read
               {plan.audit.watched ? `, ${plan.audit.watched} watched` : ""}
               {plan.audit.cadence.medianGapDays
-                ? ` · you post about every ${Math.round(plan.audit.cadence.medianGapDays)} days`
+                ? ` · ${readOnly ? "they post" : "you post"} about every ${Math.round(
+                    plan.audit.cadence.medianGapDays,
+                  )} days`
                 : ""}
               {plan.audit.breadth
                 ? ` · ${plan.audit.breadth} different format${plan.audit.breadth === 1 ? "" : "s"} tried`
@@ -464,7 +512,7 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
       {plan.account?.bio || plan.account?.category ? (
         <section className="card px-4 py-4">
           <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted/60">
-            How your account reads
+            {readOnly ? "How the account reads" : "How your account reads"}
           </p>
           {plan.account.category ? (
             <p className="mt-1.5 text-[13px] leading-relaxed">
@@ -628,6 +676,7 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
         </section>
       ) : null}
 
+      {readOnly ? null : (
       <section className="space-y-3">
         <div>
           <h2 className="text-[17px] font-semibold tracking-tight">Do these next, in order</h2>
@@ -686,17 +735,20 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
           </p>
         )}
       </section>
+      )}
 
-      <Link
-        href="/ideas"
-        className="block rounded-xl bg-accent px-4 py-3.5 text-center text-[14px] font-semibold text-black transition active:scale-[0.995]"
-      >
-        {songs.length
-          ? "This week’s covers →"
-          : formats.length
-            ? "This week’s videos →"
-            : "This week’s posts →"}
-      </Link>
+      {readOnly ? null : (
+        <Link
+          href="/ideas"
+          className="block rounded-xl bg-accent px-4 py-3.5 text-center text-[14px] font-semibold text-black transition active:scale-[0.995]"
+        >
+          {songs.length
+            ? "This week’s covers →"
+            : formats.length
+              ? "This week’s videos →"
+              : "This week’s posts →"}
+        </Link>
+      )}
 
       <p className="pb-1 text-center text-[11px] leading-relaxed text-muted/60">
         Updated{" "}
@@ -704,7 +756,7 @@ export default function PlanView({ plan }: { plan: GrowthPlan }) {
           day: "numeric",
           month: "short",
         })}
-        . Open any post to check it yourself.
+        . {readOnly ? "Read from public posts." : "Open any post to check it yourself."}
       </p>
     </div>
   );

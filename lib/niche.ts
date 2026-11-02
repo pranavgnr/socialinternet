@@ -85,7 +85,14 @@ const COMMENT_MAX = Number(process.env.LANG_COMMENT_MAX ?? 4);
 const COMMENT_CREDITS = Number(process.env.LANG_COMMENT_CREDITS ?? 4);
 const MAX_CREDITS_PER_SEARCH = 1 + ENRICH_MAX + COMMENT_CREDITS;
 const CACHE_TTL_HOURS = 12;
-const NICHE_DIR = path.join(process.cwd(), "data", "niches");
+/**
+ * Where cached pulls live. CREATORS_DATA_DIR is the same override the rest of
+ * the data layer uses (store, weekly), so a test or a second checkout can point
+ * the whole app at one data root instead of copying files around.
+ */
+const NICHE_DIR = process.env.CREATORS_DATA_DIR
+  ? path.join(path.resolve(process.env.CREATORS_DATA_DIR), "niches")
+  : path.join(process.cwd(), "data", "niches");
 
 /**
  * Verdicts that rest on evidence about the reel itself rather than on the
@@ -1370,6 +1377,14 @@ export interface CachedNiche {
   accounts: number;
   /** older than the TTL, so opening it would re-pull and spend a credit */
   stale: boolean;
+  /**
+   * The stored reels, only when the caller asked for them.
+   *
+   * Listing the cache for a page needs the summary fields only; ranking the
+   * rooms by opportunity needs the pulls themselves. Keeping this optional lets
+   * both callers reuse this one reader instead of re-reading every file.
+   */
+  payload?: RawReel[];
 }
 
 /**
@@ -1377,7 +1392,9 @@ export interface CachedNiche {
  * which is what makes the discover page usable without spending anything: the
  * work was already paid for once.
  */
-export async function cachedNiches(): Promise<CachedNiche[]> {
+export async function cachedNiches(
+  opts: { withPayload?: boolean } = {},
+): Promise<CachedNiche[]> {
   let files: string[];
   try {
     files = await fs.readdir(NICHE_DIR);
@@ -1400,6 +1417,7 @@ export async function cachedNiches(): Promise<CachedNiche[]> {
       reels: stored.payload.length,
       accounts: new Set(stored.payload.map((r) => r.account.toLowerCase())).size,
       stale: ageHours >= CACHE_TTL_HOURS,
+      ...(opts.withPayload ? { payload: stored.payload } : {}),
     });
   }
 

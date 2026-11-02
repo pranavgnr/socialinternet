@@ -5,14 +5,20 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:file": "sh scripts/run-test.sh",
+    "migrate": "npx tsc scripts/migrate.ts --module commonjs --target es2022 --moduleResolution node --outDir .tmp-build --skipLibCheck --esModuleInterop --lib es2022,dom --types node && node .tmp-build/scripts/migrate.js"
   },
   "dependencies": {
+    "@types/pg": "^8.23.1",
+    "arctic": "^3.7.0",
     "next": "16.4.3",
+    "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.14",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

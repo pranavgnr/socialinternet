@@ -9,10 +9,12 @@ export const maxDuration = 800;
 /**
  * GET /api/cron/canary  (header `x-cron-secret`)
  *
- * One profile read per configured Instagram vendor, written to `vendor_canary`.
- * `?vendor=apify` tests a single vendor. The secret is accepted **only** through
- * the header: unlike the trending route, a query-string secret is not honoured,
- * because this endpoint spends real money at every vendor.
+ * One profile read per usable Instagram vendor, written to `vendor_canary`.
+ * Vendors with no key, no balance or a read that would cross `CANARY_MAX_USD`
+ * are returned in `skipped` and are not failures. `?vendor=apify` targets a
+ * single vendor. The secret is accepted **only** through the header: unlike the
+ * trending route, a query-string secret is not honoured, because this endpoint
+ * spends real money at every vendor.
  */
 function secretOk(given: string, secret: string): boolean {
   const a = createHash("sha256").update(given).digest();
@@ -38,13 +40,13 @@ async function run(req: Request) {
   const vendor = url.searchParams.get("vendor")?.trim() || undefined;
 
   try {
-    const results = await runCanary(vendor ? { vendor } : {});
+    const { results, skipped } = await runCanary(vendor ? { vendor } : {});
 
-    if (vendor && !results.length) {
+    if (vendor && !results.length && !skipped.length) {
       return NextResponse.json(
         {
           ok: false,
-          error: `No configured Instagram vendor matches "${vendor}".`,
+          error: `No Instagram vendor matches "${vendor}".`,
         },
         { status: 404 },
       );
@@ -53,6 +55,7 @@ async function run(req: Request) {
     return NextResponse.json({
       ok: results.every((result) => result.ok),
       results,
+      skipped,
     });
   } catch (err) {
     return NextResponse.json(

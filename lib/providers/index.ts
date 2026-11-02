@@ -160,6 +160,32 @@ export function configuredProviders(): DataProvider[] {
   return ALL.filter((p) => p.configured());
 }
 
+/**
+ * Every known vendor, configured or not. The canary uses this so a requested
+ * vendor with no key can be reported as skipped instead of silently looking
+ * like a name that does not exist.
+ */
+export function allProviders(): DataProvider[] {
+  return [...ALL];
+}
+
+/**
+ * Record a vendor call made outside the router (the canary deliberately calls
+ * adapters directly, bypassing failover). Without this the shared ledger would
+ * claim a canary run cost nothing, and the per-run spend ceiling could never
+ * see the money it had just spent.
+ */
+export function recordDirectSpend(
+  providerId: ProviderId,
+  result: Pick<PullResult, "usd" | "units">,
+): void {
+  ledger.spent += result.units;
+  ledger.calls += 1;
+  ledger.usd += result.usd;
+  ledger.byVendor[providerId] = (ledger.byVendor[providerId] ?? 0) + result.units;
+  ledger.servedBy[providerId] = (ledger.servedBy[providerId] ?? 0) + 1;
+}
+
 export function providerSummary() {
   return ALL.map((p) => ({
     id: p.id,

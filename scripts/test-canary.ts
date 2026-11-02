@@ -13,6 +13,7 @@ import { migrate } from "../lib/migrate";
 import { resetDbForTests, setDbForTests } from "../lib/db";
 import type { Queryable } from "../lib/db";
 import { checkCanary, runCanary } from "../lib/canary";
+import { resetCreditLedger } from "../lib/providers";
 import { price } from "../lib/providers/apify";
 import type { DataProvider, ProviderId } from "../lib/providers/types";
 import { main, probeBusinessDiscovery } from "./probe-business-discovery";
@@ -32,6 +33,7 @@ async function withFreshDb<T>(fn: (q: Queryable) => Promise<T>): Promise<T> {
   const pg = new PGlite();
   const q = asQueryable(pg);
   setDbForTests(q);
+  resetCreditLedger();
   try {
     await migrate(q);
     return await fn(q);
@@ -79,6 +81,11 @@ interface FakeOpts {
   balance?: { remaining: number | null; ok: boolean; unit?: string };
   throws?: Error;
   calls?: { n: number };
+  configured?: boolean;
+  /** USD charged for one read */
+  usd?: number;
+  /** advertised price per call */
+  priceUsd?: number;
 }
 
 function fakeProvider(id: ProviderId, opts: FakeOpts = {}): DataProvider {
@@ -86,14 +93,14 @@ function fakeProvider(id: ProviderId, opts: FakeOpts = {}): DataProvider {
   return {
     id,
     name: `Fake ${id}`,
-    cost: { usdPerCall: 0.01, label: "test" },
-    configured: () => true,
+    cost: { usdPerCall: opts.priceUsd ?? 0.01, label: "test" },
+    configured: () => opts.configured ?? true,
     async profileReels() {
       calls.n += 1;
       if (opts.throws) throw opts.throws;
       return {
         data: { items: opts.rows ?? unifiedRows(10) },
-        usd: 0,
+        usd: opts.usd ?? 0,
         units: 1,
         remaining: null,
       };
@@ -172,18 +179,32 @@ test("checkCanary accepts exactly 50% of rows with views", () => {
   assert.equal(checkCanary("apify", sample).ok, true);
 });
 
-test("checkCanary fails when followers is missing on every row", () => {
+test("checkCanary fails when a follower-providing vendor omits followers on every row", () => {
   const sample = Array.from({ length: 10 }, () => row({ followers: null }));
-  const result = checkCanary("apify", sample);
+  const result = checkCanary("hikerapi", sample);
   assert.equal(result.ok, false);
   assert.match(result.detail, /followers/i);
+});
+
+test("checkCanary passes apify without followers and notes the missing field", () => {
+  const sample = Array.from({ length: 10 }, () => row({ followers: null }));
+  const result = checkCanary("apify", sample);
+  assert.equal(result.ok, true);
+  assert.match(result.detail, /followers not provided by this vendor/i);
+});
+
+test("checkCanary treats unknown vendors as not expecting followers", () => {
+  const sample = Array.from({ length: 10 }, () => row({ followers: null }));
+  const result = checkCanary("mystery" as ProviderId, sample);
+  assert.equal(result.ok, true);
+  assert.match(result.detail, /followers not provided by this vendor/i);
 });
 
 test("checkCanary passes when only one row carries followers", () => {
   const sample = Array.from({ length: 10 }, (_, i) =>
     row({ followers: i === 0 ? 268_267_261 : null }),
   );
-  assert.equal(checkCanary("apify", sample).ok, true);
+  assert.equal(checkCanary("hikerapi", sample).ok, true);
 });
 
 // --- Apify price ----------------------------------------------------------
@@ -207,10 +228,11 @@ test("runCanary tests every vendor once and writes a row per vendor", async () =
       throws: new Error("vendor is down"),
     });
 
-    const results = await runCanary({ providers: [good, bad] });
+    const { results, skipped } = await runCanary({ providers: [good, bad] });
 
     assert.equal(goodCalls.n, 1, "exactly one profile read per vendor");
     assert.equal(badCalls.n, 1);
+    assert.deepEqual(skipped, []);
     assert.equal(results.length, 2);
     assert.deepEqual(
       results.map((r) => r.vendor),
@@ -234,7 +256,7 @@ test("runCanary tests every vendor once and writes a row per vendor", async () =
 test("runCanary does not throw when one vendor fails", async () => {
   await withFreshDb(async () => {
     const bad = fakeProvider("apify", { throws: new Error("boom") });
-    const results = await runCanary({ providers: [bad] });
+    const { results } = await runCanary({ providers: [bad] });
     assert.equal(results.length, 1);
     assert.equal(results[0]!.ok, false);
   });
@@ -250,7 +272,8 @@ test("runCanary redacts secrets from a vendor's error message", async () => {
           "POST https://api.apify.com/v2/acts/x/run?token=super-secret-token failed",
         ),
       });
-      const [result] = await runCanary({ providers: [bad] });
+      const { results } = await runCanary({ providers: [bad] });
+      const [result] = results;
       assert.equal(result!.ok, false);
       assert.ok(!result!.detail.includes("super-secret-token"));
       assert.match(result!.detail, /redacted/i);
@@ -269,17 +292,84 @@ test("runCanary skips a vendor whose balance reports nothing left", async () => 
       balance: { remaining: 0, ok: true, unit: "credits" },
     });
 
-    const [result] = await runCanary({ providers: [empty] });
+    const { results, skipped } = await runCanary({ providers: [empty] });
 
     assert.equal(calls.n, 0, "must not spend a call on an empty vendor");
-    assert.equal(result!.ok, false);
-    assert.match(result!.detail, /skipped/i);
-    assert.match(result!.detail, /credits/i);
+    assert.deepEqual(results, []);
+    assert.deepEqual(skipped, [
+      { vendor: "socialcrawl", reason: "vendor reports 0 credits left" },
+    ]);
 
     const { rows } = await q.query<{ n: number }>(
       "SELECT count(*)::int AS n FROM vendor_canary",
     );
-    assert.equal(rows[0]!.n, 1);
+    assert.equal(rows[0]!.n, 0, "a skipped vendor writes no canary row");
+  });
+});
+
+test("runCanary does not alert for a skipped vendor", async () => {
+  await withFreshDb(async () => {
+    const previous = process.env.CANARY_WEBHOOK_URL;
+    process.env.CANARY_WEBHOOK_URL = "https://hooks.example.test/canary";
+    let posts = 0;
+    const fakeFetch = (async () => {
+      posts += 1;
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    try {
+      const { results, skipped } = await runCanary({
+        providers: [
+          fakeProvider("socialcrawl", {
+            balance: { remaining: 0, ok: true, unit: "credits" },
+          }),
+        ],
+        fetch: fakeFetch,
+      });
+      assert.deepEqual(results, []);
+      assert.equal(skipped.length, 1);
+      assert.equal(posts, 0, "skipped vendors are not failures");
+    } finally {
+      if (previous === undefined) delete process.env.CANARY_WEBHOOK_URL;
+      else process.env.CANARY_WEBHOOK_URL = previous;
+    }
+  });
+});
+
+test("runCanary skips an unconfigured vendor without calling it", async () => {
+  await withFreshDb(async () => {
+    const calls = { n: 0 };
+    const { results, skipped } = await runCanary({
+      providers: [fakeProvider("scrapecreators", { calls, configured: false })],
+    });
+    assert.equal(calls.n, 0);
+    assert.deepEqual(results, []);
+    assert.deepEqual(skipped, [
+      { vendor: "scrapecreators", reason: "not configured" },
+    ]);
+  });
+});
+
+test("runCanary stops at the per-run spend ceiling", async () => {
+  await withFreshDb(async () => {
+    const first = { n: 0 };
+    const second = { n: 0 };
+    const { results, skipped } = await runCanary({
+      providers: [
+        fakeProvider("apify", { calls: first, priceUsd: 0.2, usd: 0.2 }),
+        fakeProvider("hikerapi", { calls: second, priceUsd: 0.2, usd: 0.2 }),
+      ],
+    });
+
+    assert.equal(first.n, 1);
+    assert.equal(second.n, 0, "the ceiling must stop the later read");
+    assert.deepEqual(
+      results.map((r) => r.vendor),
+      ["apify"],
+    );
+    assert.deepEqual(skipped, [
+      { vendor: "hikerapi", reason: "canary spend ceiling" },
+    ]);
   });
 });
 
@@ -287,7 +377,7 @@ test("runCanary ?vendor= tests only the named vendor", async () => {
   await withFreshDb(async () => {
     const a = { n: 0 };
     const b = { n: 0 };
-    const results = await runCanary({
+    const { results } = await runCanary({
       providers: [
         fakeProvider("apify", { calls: a }),
         fakeProvider("hikerapi", { calls: b }),
@@ -307,9 +397,10 @@ test("runCanary never tests a YouTube vendor", async () => {
   await withFreshDb(async () => {
     const calls = { n: 0 };
     const youtube = fakeProvider("youtubeweb", { calls });
-    const results = await runCanary({ providers: [youtube] });
+    const { results, skipped } = await runCanary({ providers: [youtube] });
     assert.equal(calls.n, 0);
     assert.deepEqual(results, []);
+    assert.deepEqual(skipped, []);
   });
 });
 
@@ -324,7 +415,7 @@ test("runCanary posts failures to an http(s) webhook and swallows its errors", a
     }) as typeof fetch;
 
     try {
-      const results = await runCanary({
+      const { results } = await runCanary({
         providers: [fakeProvider("apify", { throws: new Error("no data") })],
         fetch: fakeFetch,
       });

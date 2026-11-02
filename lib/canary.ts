@@ -13,7 +13,7 @@
  */
 import { currentDb } from "./db";
 import { normaliseProviderRows } from "./harvest";
-import { configuredProviders } from "./providers";
+import { allProviders, creditLedger, recordDirectSpend } from "./providers";
 import type { DataProvider, ProviderId } from "./providers/types";
 
 export interface CanaryCheck {
@@ -24,6 +24,43 @@ export interface CanaryCheck {
 export interface CanaryResult extends CanaryCheck {
   vendor: ProviderId;
 }
+
+export interface CanarySkipped {
+  vendor: ProviderId;
+  reason: string;
+}
+
+export interface CanaryRun {
+  /** vendors actually read and recorded in `vendor_canary` */
+  results: CanaryResult[];
+  /** vendors not read at all — no row, no webhook failure */
+  skipped: CanarySkipped[];
+}
+
+/**
+ * Which adapters are expected to return a follower count on normalised rows.
+ *
+ * Confirmed from the adapters, not guessed:
+ *   - `hikerapi` reads the profile first and passes its `follower_count` into
+ *     every media row as an author hint;
+ *   - `scrapecreators` maps `owner.follower_count`/`owner.followers` onto
+ *     `post.author.followers` in `reelRow()`;
+ *   - `socialcrawl` returns the vendor's own unified `post.author.followers`
+ *     through unchanged, which is the field `harvest.fromUnified()` reads.
+ *
+ * `apify`'s posts payload has an empty `owner` (live-verified), so a missing
+ * follower count there is a known shape, not an outage. Unknown ids default to
+ * "does not promise followers" below: absence is only a failure when the
+ * adapter says it should be present.
+ */
+export const EXPECTS_FOLLOWERS: Readonly<Record<ProviderId, boolean>> = {
+  hikerapi: true,
+  scrapecreators: true,
+  socialcrawl: true,
+  apify: false,
+  youtube: false,
+  youtubeweb: false,
+};
 
 /** YouTube vendors are discovery readers, not Instagram measurement vendors. */
 function isYoutube(provider: DataProvider): boolean {
@@ -42,14 +79,15 @@ export function canaryHandle(): string {
  *   1. no rows at all is a failure — the vendor answered with nothing;
  *   2. fewer than half the rows carrying `views > 0` is a failure — the ranking
  *      cannot price a room from a page of zeros;
- *   3. `followers` absent on every row is a failure — headroom needs to know
- *      whether the account breaking out is small.
+ *   3. `followers` absent on every row is a failure **only for vendors whose
+ *      adapter promises a follower count** (`EXPECTS_FOLLOWERS`). For the rest,
+ *      absence is noted in the detail and is not a failure.
  *
  * The detail names the rule that broke, because "failed" alone sends the
  * operator looking at the wrong thing.
  */
 export function checkCanary(
-  _vendor: ProviderId,
+  vendor: ProviderId,
   sample: Record<string, unknown>[],
 ): CanaryCheck {
   if (!sample.length) {
@@ -76,17 +114,22 @@ export function checkCanary(
     );
   }).length;
 
+  const base = `${sample.length} rows, ${withViews} with views`;
+
   if (!withFollowers) {
+    if (EXPECTS_FOLLOWERS[vendor] ?? false) {
+      return {
+        ok: false,
+        detail: `followers missing on every row (${sample.length} rows)`,
+      };
+    }
     return {
-      ok: false,
-      detail: `followers missing on every row (${sample.length} rows)`,
+      ok: true,
+      detail: `${base}; followers not provided by this vendor`,
     };
   }
 
-  return {
-    ok: true,
-    detail: `${sample.length} rows, ${withViews} with views, ${withFollowers} with followers`,
-  };
+  return { ok: true, detail: `${base}, ${withFollowers} with followers` };
 }
 
 /** Env vars whose values must never reach a canary row or a webhook body. */
@@ -117,19 +160,30 @@ export function redactSecrets(message: string): string {
   return out.slice(0, 500);
 }
 
+/** Per-run real-money ceiling, defaulting to 25 cents. */
+function maxUsd(): number {
+  const raw = process.env.CANARY_MAX_USD;
+  if (!raw) return 0.25;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 0.25;
+}
+
 /**
  * Why a vendor must not be called, or `null` when it looks usable.
  *
- * Only an explicit "nothing left" skips the read. A balance endpoint that errors
- * is treated as unknown, exactly as the router does: refusing to test a vendor
+ * Unconfigured vendors are skipped without a balance call. Only an explicit
+ * "nothing left" skips a configured one. A balance endpoint that errors is
+ * treated as unknown, exactly as the router does: refusing to test a vendor
  * because it was shy about its balance would hide the outage the canary exists
- * to find. `configured()` has already filtered key-less vendors.
+ * to find.
  */
 async function skipReason(provider: DataProvider): Promise<string | null> {
+  if (!provider.configured()) return "not configured";
+
   try {
     const balance = await provider.balance();
     if (typeof balance.remaining === "number" && balance.remaining < 1) {
-      return `skipped: vendor reports 0 ${balance.unit} left`;
+      return `vendor reports 0 ${balance.unit} left`;
     }
   } catch {
     /* unknown is not evidence of an empty account */
@@ -149,6 +203,7 @@ async function record(result: CanaryResult): Promise<void> {
  *
  * Deliberately best-effort: the canary's job is to observe vendors, not to be a
  * second thing that can page someone at 3am because a webhook host is down.
+ * Skipped vendors are not failures and never appear here.
  */
 async function notifyFailures(
   results: CanaryResult[],
@@ -188,7 +243,7 @@ async function notifyFailures(
 export interface CanaryOptions {
   /** test only this vendor id */
   vendor?: string;
-  /** inject fake vendors in tests; defaults to every configured Instagram vendor */
+  /** inject fake vendors in tests; defaults to every known Instagram vendor */
   providers?: DataProvider[];
   /** override `CANARY_HANDLE` */
   handle?: string;
@@ -205,10 +260,14 @@ export interface CanaryOptions {
  * failover: the point is to learn which vendors work, not which one the router
  * would prefer today. A vendor failure becomes a failed row with a redacted
  * message; it never aborts the other vendors or throws out of this function.
+ *
+ * Unconfigured or unaffordable vendors are *skipped*: no row, no webhook, and
+ * no spend. They are returned separately so the route can say why they were not
+ * tested without turning a normal "no key" into a pager alert.
  */
-export async function runCanary(opts: CanaryOptions = {}): Promise<CanaryResult[]> {
+export async function runCanary(opts: CanaryOptions = {}): Promise<CanaryRun> {
   const handle = (opts.handle?.trim() || canaryHandle()).replace(/^@/, "") || "natgeo";
-  const source = (opts.providers ?? configuredProviders()).filter(
+  const source = (opts.providers ?? allProviders()).filter(
     (provider) => !isYoutube(provider),
   );
   const chosen = opts.vendor
@@ -216,16 +275,41 @@ export async function runCanary(opts: CanaryOptions = {}): Promise<CanaryResult[
     : source;
 
   const results: CanaryResult[] = [];
+  const skipped: CanarySkipped[] = [];
+  const ceiling = maxUsd();
+  /** Real money spent by this run, read as a ledger delta around each read. */
+  let spentThisRun = 0;
 
   for (const provider of chosen) {
-    const skipped = await skipReason(provider);
-    if (skipped) {
-      results.push({ vendor: provider.id, ok: false, detail: skipped });
+    const reason = await skipReason(provider);
+    if (reason) {
+      skipped.push({ vendor: provider.id, reason });
+      continue;
+    }
+
+    /**
+     * The next read is only allowed if its expected price still fits under the
+     * ceiling. `effectiveUsdPerCall` can be zero inside a free allowance, which
+     * is exactly right: a free read cannot cross a real-money ceiling.
+     */
+    const estimate =
+      provider.cost.effectiveUsdPerCall?.() ?? provider.cost.usdPerCall;
+    if (spentThisRun + estimate > ceiling) {
+      skipped.push({ vendor: provider.id, reason: "canary spend ceiling" });
       continue;
     }
 
     try {
+      const before = creditLedger().usd;
       const pulled = await provider.profileReels(handle);
+      /**
+       * Direct adapter calls bypass the router, so the shared ledger has to be
+       * told about the spend. Reading the delta back from it is what makes the
+       * ceiling see money actually spent, not an estimate.
+       */
+      recordDirectSpend(provider.id, pulled);
+      spentThisRun += creditLedger().usd - before;
+
       const rows = normaliseProviderRows(pulled.data, "instagram", handle);
       /**
        * `RawReel` is an interface, which TypeScript will not widen to an index
@@ -249,5 +333,5 @@ export async function runCanary(opts: CanaryOptions = {}): Promise<CanaryResult[
   for (const result of results) await record(result);
   await notifyFailures(results, opts);
 
-  return results;
+  return { results, skipped };
 }

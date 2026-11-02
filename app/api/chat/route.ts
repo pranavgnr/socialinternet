@@ -4,7 +4,7 @@ import { balance, refund, spend } from "@/lib/credits";
 import { llmReady, jsonCall } from "@/lib/llm";
 import { currentAccount } from "@/lib/session";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/chat  { message }

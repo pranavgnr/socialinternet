@@ -32,7 +32,7 @@ test("migrate applies once and is idempotent", async () => {
   const q = asQueryable(new PGlite());
 
   const first = await migrate(q);
-  assert.deepEqual(first, ["001_init.sql"]);
+  assert.deepEqual(first, ["001_init.sql", "002_chat_thread_unique.sql"]);
 
   const second = await migrate(q);
   assert.deepEqual(second, []);

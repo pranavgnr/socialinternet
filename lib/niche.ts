@@ -19,6 +19,7 @@ import {
   languageName,
   roomLanguage,
 } from "./lang";
+import { dataPath } from "./dataDir";
 import { platformOn } from "./platform";
 import { providersFor, readiness } from "./providers";
 import { hoursFromEnv } from "./env";
@@ -102,13 +103,13 @@ const MAX_CREDITS_PER_SEARCH =
  */
 const cacheTtlHours = (): number => hoursFromEnv("NICHE_CACHE_HOURS", 12);
 /**
- * Where cached pulls live. CREATORS_DATA_DIR is the same override the rest of
- * the data layer uses (store, weekly), so a test or a second checkout can point
- * the whole app at one data root instead of copying files around.
+ * Where cached pulls live. Resolved per call through the shared data root, so
+ * `CREATORS_DATA_DIR` points the niche cache and every other cache at the same
+ * directory.
  */
-const NICHE_DIR = process.env.CREATORS_DATA_DIR
-  ? path.join(path.resolve(process.env.CREATORS_DATA_DIR), "niches")
-  : path.join(process.cwd(), "data", "niches");
+export function nicheDir(): string {
+  return dataPath("niches");
+}
 
 /**
  * Verdicts that rest on evidence about the reel itself rather than on the
@@ -497,7 +498,7 @@ function knownFollowerCounts(reels: RawReel[]): Map<string, number> {
 
 async function readStored(slug: string): Promise<StoredNiche | null> {
   try {
-    const raw = await fs.readFile(path.join(NICHE_DIR, `${slug}.json`), "utf8");
+    const raw = await fs.readFile(path.join(nicheDir(), `${slug}.json`), "utf8");
     const parsed = JSON.parse(raw) as StoredNiche;
     /**
      * Two ways a cache entry is rejected, both silent to the caller because the
@@ -515,8 +516,9 @@ async function readStored(slug: string): Promise<StoredNiche | null> {
 }
 
 async function writeStored(slug: string, value: StoredNiche): Promise<void> {
-  await fs.mkdir(NICHE_DIR, { recursive: true });
-  const target = path.join(NICHE_DIR, `${slug}.json`);
+  const dir = nicheDir();
+  await fs.mkdir(dir, { recursive: true });
+  const target = path.join(dir, `${slug}.json`);
   const tmp = `${target}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(value), "utf8");
   await fs.rename(tmp, target);
@@ -1523,7 +1525,7 @@ export async function cachedNiches(
 ): Promise<CachedNiche[]> {
   let files: string[];
   try {
-    files = await fs.readdir(NICHE_DIR);
+    files = await fs.readdir(nicheDir());
   } catch {
     return [];
   }

@@ -32,8 +32,8 @@
  * newcomer get in" — never depends on one.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
+import { dataPath } from "../dataDir";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -46,7 +46,9 @@ const UA =
   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 /** Where subscriber lookups are cached between runs. */
-const CACHE_FILE = path.join(process.cwd(), "data", "_yt_subs.json");
+export function subCachePath(): string {
+  return dataPath("_yt_subs.json");
+}
 
 /** How long a subscriber count is trusted. Follower counts move slowly. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -63,7 +65,7 @@ let cache: Record<string, SubCacheEntry> | null = null;
 function loadCache(): Record<string, SubCacheEntry> {
   if (cache) return cache;
   try {
-    cache = JSON.parse(readFileSync(CACHE_FILE, "utf8")) as Record<string, SubCacheEntry>;
+    cache = JSON.parse(readFileSync(subCachePath(), "utf8")) as Record<string, SubCacheEntry>;
   } catch {
     cache = {};
   }
@@ -72,7 +74,7 @@ function loadCache(): Record<string, SubCacheEntry> {
 
 function saveCache(): void {
   try {
-    writeFileSync(CACHE_FILE, JSON.stringify(cache ?? {}), "utf8");
+    writeFileSync(subCachePath(), JSON.stringify(cache ?? {}), "utf8");
   } catch {
     // A read-only data dir must not fail a pull; the cache is an optimisation.
   }

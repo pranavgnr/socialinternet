@@ -24,8 +24,8 @@
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
+import { dataPath } from "./dataDir";
 import { jsonCall, llmReady } from "./llm";
 import {
   INTERESTS,
@@ -35,7 +35,9 @@ import {
   wordWeight,
 } from "./nicheSeeds";
 
-const CACHE_PATH = path.join(process.cwd(), "data", "_intent_cache.json");
+export function intentCachePath(): string {
+  return dataPath("_intent_cache.json");
+}
 /**
  * Bumped whenever the resolver's *decisions* would change, not just its code.
  * Version 4 weights ambiguous words at half and orders a group by how much of
@@ -199,7 +201,7 @@ type Cache = Record<string, CacheRow>;
 
 function readCache(): Cache {
   try {
-    return JSON.parse(readFileSync(CACHE_PATH, "utf8")) as Cache;
+    return JSON.parse(readFileSync(intentCachePath(), "utf8")) as Cache;
   } catch {
     return {};
   }
@@ -207,7 +209,7 @@ function readCache(): Cache {
 
 function writeCache(cache: Cache): void {
   try {
-    writeFileSync(CACHE_PATH, JSON.stringify(cache), "utf8");
+    writeFileSync(intentCachePath(), JSON.stringify(cache), "utf8");
   } catch {
     /* a failed cache write costs one LLM call later, not a broken flow */
   }

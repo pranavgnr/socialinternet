@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
+import { dataPath } from "./dataDir";
 import { creditLedger, fetchInstagramPost, type PostPayload } from "./harvest";
 import { mediaReadyFor, mediaTools, readHooks, type MediaTools } from "./media";
 import { availableProviders, checkBalance, fetchComments } from "./providers";
@@ -16,7 +16,9 @@ import type { HookReading, RawComment, RawReel } from "./types";
  * comments and the MP4 in one credit, and everything after it costs nothing.
  */
 
-const CACHE_PATH = path.join(process.cwd(), "data", "_post_cache.json");
+export function postCachePath(): string {
+  return dataPath("_post_cache.json");
+}
 const TTL_MS = Number(process.env.POST_CACHE_HOURS ?? 24 * 7) * 3_600_000;
 
 /** Default spend for one plan. Six posts is the floor that can prove a pattern. */
@@ -32,7 +34,7 @@ type Cache = Record<string, CacheRow>;
 
 function readCache(): Cache {
   try {
-    return JSON.parse(readFileSync(CACHE_PATH, "utf8")) as Cache;
+    return JSON.parse(readFileSync(postCachePath(), "utf8")) as Cache;
   } catch {
     return {};
   }
@@ -40,7 +42,7 @@ function readCache(): Cache {
 
 function writeCache(cache: Cache): void {
   try {
-    writeFileSync(CACHE_PATH, JSON.stringify(cache), "utf8");
+    writeFileSync(postCachePath(), JSON.stringify(cache), "utf8");
   } catch {
     /* a failed cache write costs one credit later, not a broken plan */
   }

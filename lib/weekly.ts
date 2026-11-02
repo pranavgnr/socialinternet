@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
+import { dataRoot } from "./dataDir";
 import { compact } from "./fmt";
 import { profileFromNiche } from "./niche";
 import { runPipeline } from "./pipeline";
@@ -444,8 +445,4 @@ export function storeAt(dir: string): Store {
   return createStore(dir);
 }
 
-export function dataRoot(): string {
-  return process.env.CREATORS_DATA_DIR
-    ? path.resolve(process.env.CREATORS_DATA_DIR)
-    : path.join(process.cwd(), "data");
-}
+export { dataRoot };

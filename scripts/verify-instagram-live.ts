@@ -30,6 +30,13 @@
  * `--force` re-reads a warm niche instead of serving it from disk.
  */
 import { COSTS } from "../lib/costs";
+import {
+  installGuard,
+  parseArgs,
+  UsageError,
+  type Args,
+  type Tally,
+} from "../lib/liveGuard";
 import { researchNiche } from "../lib/niche";
 import { instagramPeers } from "../lib/peers";
 import { analyseHandle } from "../lib/plan";
@@ -37,60 +44,16 @@ import { creditLedger } from "../lib/providers";
 import type { RawReel } from "../lib/types";
 
 const HIKERAPI = "https://api.hikerapi.com";
-const APIFY = "https://api.apify.com";
 
 /** The real fetch, kept so the balance probe never counts against the cap. */
 const nativeFetch = globalThis.fetch.bind(globalThis);
 
-interface Args {
-  handle?: string;
-  niche?: string;
-  warm?: string;
-  cap: number;
-  force: boolean;
-  /** render the plan from the handle/niche cache instead of re-buying it */
-  cached: boolean;
-  peers: boolean;
-}
-
 function usage(): never {
   console.error(
-    "usage: verify-instagram-live <handle> <niche> [--cap N] [--no-peers]\n" +
+    "usage: verify-instagram-live <handle> <niche> [--cap N] [--no-peers] [--cached]\n" +
       "       verify-instagram-live --warm <niche> [--cap N] [--force]",
   );
   process.exit(2);
-}
-
-function parseArgs(argv: string[]): Args {
-  const args: Args = { cap: 40, force: false, cached: false, peers: true };
-  const rest: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--cap") {
-      const n = Number(argv[++i]);
-      if (!Number.isFinite(n) || n < 1) usage();
-      args.cap = Math.floor(n);
-    } else if (a === "--warm") {
-      args.warm = argv[++i];
-      if (!args.warm) usage();
-    } else if (a === "--force") {
-      args.force = true;
-    } else if (a === "--cached") {
-      args.cached = true;
-    } else if (a === "--no-peers") {
-      args.peers = false;
-    } else if (a.startsWith("--")) {
-      usage();
-    } else {
-      rest.push(a);
-    }
-  }
-  if (!args.warm) {
-    args.handle = rest[0];
-    args.niche = rest[1];
-    if (!args.handle || !args.niche) usage();
-  }
-  return args;
 }
 
 /** Strip a query string and any fragment: CDN links carry signatures there. */
@@ -129,82 +92,6 @@ async function hikerBalance(): Promise<number | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Which billable vendor endpoint a URL is.
- *
- * Balance checks are free and are not part of the call budget, so they are
- * excluded. Everything else on the two vendor hosts is counted, including a
- * retry: a 5xx may not be billable, but counting it is the conservative answer.
- */
-function vendorEndpoint(url: string): { vendor: string; endpoint: string } | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.origin === HIKERAPI) {
-    if (parsed.pathname.startsWith("/sys/")) return null;
-    return { vendor: "hikerapi", endpoint: parsed.pathname };
-  }
-  if (parsed.origin === APIFY) {
-    return { vendor: "apify", endpoint: parsed.pathname };
-  }
-  return null;
-}
-
-interface Tally {
-  calls: number;
-  byEndpoint: Map<string, number>;
-  byVendor: Map<string, number>;
-}
-
-/**
- * Install the cap guard for the rest of the process.
- *
- * The guard aborts by exiting, not by throwing: plenty of the data layer's
- * catch blocks deliberately swallow a vendor failure and carry on with fewer
- * rows. Letting the cap exception be swallowed would make the script look like
- * it finished while it had actually stopped spending. Exiting before the
- * request guarantees the cap is never crossed and the message is unambiguous.
- */
-function installGuard(cap: number): Tally {
-  const tally: Tally = { calls: 0, byEndpoint: new Map(), byVendor: new Map() };
-  globalThis.fetch = (async (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
-    const hit = vendorEndpoint(url);
-    if (hit) {
-      if (tally.calls >= cap) {
-        console.error(
-          `\nSTOP: live call cap reached before ${hit.vendor} ${hit.endpoint}.`,
-        );
-        console.error(
-          `calls used: ${tally.calls} (cap ${cap}). No further vendor request was sent.`,
-        );
-        console.error(`by vendor: ${JSON.stringify(Object.fromEntries(tally.byVendor))}`);
-        console.error(`by endpoint: ${JSON.stringify(Object.fromEntries(tally.byEndpoint))}`);
-        process.exit(3);
-      }
-      tally.calls += 1;
-      tally.byEndpoint.set(
-        hit.endpoint,
-        (tally.byEndpoint.get(hit.endpoint) ?? 0) + 1,
-      );
-      tally.byVendor.set(hit.vendor, (tally.byVendor.get(hit.vendor) ?? 0) + 1);
-    }
-    return nativeFetch(input, init);
-  }) as typeof fetch;
-  return tally;
 }
 
 function uniqueRows(...lists: (RawReel[] | undefined)[]): RawReel[] {
@@ -447,8 +334,17 @@ async function main(): Promise<void> {
     console.error("HIKERAPI_KEY is missing — refusing to make live calls.");
     process.exit(1);
   }
-  const args = parseArgs(process.argv.slice(2));
-  const tally = installGuard(args.cap);
+  let args: Args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    if (err instanceof UsageError) {
+      console.error(`${err.message}\n`);
+      usage();
+    }
+    throw err;
+  }
+  const { tally } = installGuard({ cap: args.cap, fetchImpl: nativeFetch });
   if (args.warm) await warm(args, tally);
   else await handleRun(args, tally);
 }

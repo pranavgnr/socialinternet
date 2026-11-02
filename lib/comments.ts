@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
-import path from "node:path";
 
+import { dataPath } from "./dataDir";
 import type { CommentMining, CommentSeed, RawComment } from "./types";
 
 /** The enrichment step's own cache; the comments in it are already paid for. */
-const CACHE_PATH = path.join(process.cwd(), "data", "_post_cache.json");
+export function postCachePath(): string {
+  return dataPath("_post_cache.json");
+}
 
 /**
  * Mining the comments for the next topic.
@@ -193,7 +195,7 @@ function ideasFor(text: string, kind: CommentSeed["kind"]): string[] {
 export function cachedCommentsByUrl(): Map<string, RawComment[]> {
   const out = new Map<string, RawComment[]>();
   try {
-    const raw = readFileSync(CACHE_PATH, "utf8");
+    const raw = readFileSync(postCachePath(), "utf8");
     const cache = JSON.parse(raw) as Record<string, { topComments?: RawComment[] }>;
     for (const [url, row] of Object.entries(cache)) {
       const list = (row?.topComments ?? []).filter((c) => typeof c?.text === "string");

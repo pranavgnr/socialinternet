@@ -682,6 +682,17 @@ test("pkFromShortcode recovers the exact pk from every live clip shortcode", () 
   // is not, because a wrong id would buy a 422 instead of comments.
   assert.equal(pkFromShortcode(" /DQBw9CVk7C4/ "), "3747491665579061432");
   assert.throws(() => pkFromShortcode("DQBw9CVk7C4!"), /invalid character/);
+
+  // Empty input is not "pk 0": it is a caller bug, and returning a plausible
+  // id would buy a 422 instead of comments.
+  assert.throws(() => pkFromShortcode(""), /empty/);
+  assert.throws(() => pkFromShortcode("///"), /empty/);
+
+  // Length is not a limit: 20 base-64 digits are fine, and all-zero digits
+  // are exactly zero. `=` is padding, not part of Instagram's alphabet.
+  assert.equal(pkFromShortcode("AAAAAAAAAAAAAAAAAAAA"), "0");
+  assert.match(pkFromShortcode("____________________"), /^\d+$/);
+  assert.throws(() => pkFromShortcode("DQBw9CVk7C4="), /invalid character/);
 });
 
 test("post unwraps the live media_or_ad envelope and buys the three-comment fixture", async () => {

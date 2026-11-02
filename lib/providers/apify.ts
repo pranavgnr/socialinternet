@@ -46,8 +46,8 @@
  *   resultsLimit           -> honoured exactly (asked 8, got 8; asked 3, got 3).
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
+import { dataPath } from "../dataDir";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -141,7 +141,9 @@ const pick = (...vals: unknown[]): number => {
  * believing the $5 was unspent, cheerfully overspending the account. The month
  * key means the ledger self-clears on the 1st without a cron job.
  */
-const LEDGER_PATH = path.join(process.cwd(), "data", "_apify_usage.json");
+export function apifyUsagePath(): string {
+  return dataPath("_apify_usage.json");
+}
 
 interface Ledger {
   month: string;
@@ -156,7 +158,7 @@ function monthKey(): string {
 
 function readLedger(): Ledger {
   try {
-    const raw = JSON.parse(readFileSync(LEDGER_PATH, "utf8")) as Ledger;
+    const raw = JSON.parse(readFileSync(apifyUsagePath(), "utf8")) as Ledger;
     if (raw?.month === monthKey()) return raw;
   } catch {
     /* first run of the month, or a corrupt file: start clean */
@@ -168,7 +170,7 @@ function addSpend(usd: number, results: number): Ledger {
   const led = readLedger();
   const next = { month: led.month, usd: led.usd + usd, results: led.results + results };
   try {
-    writeFileSync(LEDGER_PATH, JSON.stringify(next), "utf8");
+    writeFileSync(apifyUsagePath(), JSON.stringify(next), "utf8");
   } catch {
     /* a failed write over-reports free credit next call, not a broken plan */
   }

@@ -10,6 +10,7 @@ import {
 import { buildAudit, hookVerdict } from "./audit";
 import { times } from "./fmt";
 import { cachedCommentsByUrl, mineComments, normaliseUrl } from "./comments";
+import { dataPath } from "./dataDir";
 import { enrich, pickForEnrichment, type EnrichReport } from "./enrich";
 import { buildNextMove } from "./nextMove";
 import { hoursFromEnv } from "./env";
@@ -58,16 +59,15 @@ import type {
 /**
  * Where handle reads live.
  *
- * Resolved per call, like the niche cache and the owner cache, so
- * `CREATORS_DATA_DIR` points the whole data layer at one root. Before this the
- * handle directory ignored it and a live run from a worktree wrote its handle
- * reads under the worktree while the shared preview read the other directory —
- * the plan rebuilt on every open and the warmed cache was never the one served.
+ * Resolved per call through the shared data root, so `CREATORS_DATA_DIR` points
+ * the whole data layer at one directory. Before this the handle directory
+ * ignored it and a live run from a worktree wrote its handle reads under the
+ * worktree while the shared preview read the other directory — the plan rebuilt
+ * on every open and the warmed cache was never the one served.
  */
-const handleDir = (): string =>
-  process.env.CREATORS_DATA_DIR
-    ? path.join(path.resolve(process.env.CREATORS_DATA_DIR), "handles")
-    : path.join(process.cwd(), "data", "handles");
+export function handleDir(): string {
+  return dataPath("handles");
+}
 /**
  * How long a handle read stays fresh. Read per call rather than captured at
  * import, so a test (or a restart-free `.env.local` change) can move it. Empty,

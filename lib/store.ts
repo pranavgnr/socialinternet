@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 // Type-only, so this never becomes a runtime cycle between the store and the
 // module that builds the plan being stored.
+import { dataRoot } from "./dataDir";
 import type { RoomPlan } from "./newcomer";
 import type { WeeklyDigest } from "./weekly";
 import type {
@@ -14,9 +15,7 @@ import type {
   ScoredSignal,
 } from "./types";
 
-const ROOT = process.env.CREATORS_DATA_DIR
-  ? path.resolve(process.env.CREATORS_DATA_DIR)
-  : path.join(process.cwd(), "data");
+const ROOT = dataRoot();
 
 export interface Store {
   getProfile: () => Promise<Profile | null>;

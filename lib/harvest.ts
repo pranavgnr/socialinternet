@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import {
   accountProfile,
   inLanguage,
@@ -28,6 +27,7 @@ import {
   type LogicalCall,
   type ProviderId,
 } from "./providers";
+import { dataPath } from "./dataDir";
 import { hoursFromEnv } from "./env";
 
 const SOCIALCRAWL = "https://www.socialcrawl.dev/v1";
@@ -995,7 +995,9 @@ export interface HarvestResult {
  * pipeline many times. With a warm cache a re-run costs 0 credits and the data
  * is identical, so only the code changes.
  */
-const CACHE_PATH = path.join(process.cwd(), "data", "_raw_cache.json");
+export function rawCachePath(): string {
+  return dataPath("_raw_cache.json");
+}
 /**
  * How long a raw pull stays warm. Read per call, and through the shared reader so
  * an empty/invalid/zero/negative value falls back to twelve hours instead of
@@ -1021,7 +1023,7 @@ function profileKey(profile: Profile, live: string): string {
 
 function readCache(key: string): CacheFile | null {
   try {
-    const raw = JSON.parse(readFileSync(CACHE_PATH, "utf8")) as CacheFile;
+    const raw = JSON.parse(readFileSync(rawCachePath(), "utf8")) as CacheFile;
     if (raw.key !== key) return null;
     const ageH = (Date.now() - +new Date(raw.fetchedAt)) / 3_600_000;
     if (!(ageH >= 0 && ageH <= cacheTtlHours())) return null;
@@ -1033,7 +1035,7 @@ function readCache(key: string): CacheFile | null {
 
 function writeCache(file: CacheFile): void {
   try {
-    writeFileSync(CACHE_PATH, JSON.stringify(file), "utf8");
+    writeFileSync(rawCachePath(), JSON.stringify(file), "utf8");
   } catch {
     /* a cache miss is not a run failure */
   }
@@ -1133,7 +1135,7 @@ export interface CacheStatus {
 export function cacheStatus(profile: Profile): CacheStatus {
   const key = profileKey(profile, process.env.SOCIALCRAWL_API_KEY ? "live" : "demo");
   try {
-    const raw = JSON.parse(readFileSync(CACHE_PATH, "utf8")) as CacheFile;
+    const raw = JSON.parse(readFileSync(rawCachePath(), "utf8")) as CacheFile;
     const ageH = (Date.now() - +new Date(raw.fetchedAt)) / 3_600_000;
     const keyMatches = raw.key === key;
     return {

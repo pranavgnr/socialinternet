@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { dataPath } from "./dataDir";
 import { fetchTranscript } from "./harvest";
 import { normaliseLang } from "./lang";
 import type { HookMode, HookReading, RawReel } from "./types";
@@ -40,8 +41,13 @@ function canPayForTranscript(): boolean {
  * whisper model and the reader still answers, for ten credits, once.
  */
 
-const MEDIA_DIR = path.join(process.cwd(), "data", "_media");
-const CACHE_PATH = path.join(process.cwd(), "data", "_hook_cache.json");
+export function mediaDir(): string {
+  return dataPath("_media");
+}
+
+export function hookCachePath(): string {
+  return dataPath("_hook_cache.json");
+}
 
 const WHISPER_MODELS = [
   process.env.WHISPER_MODEL,
@@ -146,7 +152,7 @@ type HookCache = Record<string, HookReading>;
 
 function readCache(): HookCache {
   try {
-    return JSON.parse(readFileSync(CACHE_PATH, "utf8")) as HookCache;
+    return JSON.parse(readFileSync(hookCachePath(), "utf8")) as HookCache;
   } catch {
     return {};
   }
@@ -154,7 +160,7 @@ function readCache(): HookCache {
 
 function writeCache(cache: HookCache): void {
   try {
-    writeFileSync(CACHE_PATH, JSON.stringify(cache), "utf8");
+    writeFileSync(hookCachePath(), JSON.stringify(cache), "utf8");
   } catch {
     /* cache misses only cost a re-read */
   }
@@ -423,8 +429,9 @@ export async function readHook(
   }
   if (!mediaUrl) return captionHook(reel, "no video URL was returned for this post");
 
-  mkdirSync(MEDIA_DIR, { recursive: true });
-  const stem = path.join(MEDIA_DIR, reel.id.replace(/[^a-z0-9_]/gi, "_").slice(0, 60));
+  const dir = mediaDir();
+  mkdirSync(dir, { recursive: true });
+  const stem = path.join(dir, reel.id.replace(/[^a-z0-9_]/gi, "_").slice(0, 60));
   const mp4 = `${stem}.mp4`;
   const frames: string[] = [];
 
@@ -449,10 +456,10 @@ export async function readHook(
     if (tools.ocr) {
       await run(ffmpeg, [
         "-v", "error", "-y", "-i", mp4, "-t", "3", "-vf", "fps=3,scale=720:-2",
-        path.join(MEDIA_DIR, `${path.basename(stem)}_f%02d.jpg`),
+        path.join(dir, `${path.basename(stem)}_f%02d.jpg`),
       ]).catch(() => ({}));
       for (let i = 1; i <= 10; i += 1) {
-        const f = path.join(MEDIA_DIR, `${path.basename(stem)}_f${String(i).padStart(2, "0")}.jpg`);
+        const f = path.join(dir, `${path.basename(stem)}_f${String(i).padStart(2, "0")}.jpg`);
         if (!existsSync(f)) break;
         frames.push(f);
       }

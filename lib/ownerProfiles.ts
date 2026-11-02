@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
+import { dataRoot } from "./dataDir";
 import { hoursFromEnv, intFromEnv } from "./env";
 import { fetchInstagramProfile, NO_INSTAGRAM_DATA_SOURCE } from "./harvest";
 import { ProviderUnavailable } from "./providers/types";
@@ -74,20 +75,6 @@ export function normaliseOwnerHandle(raw: string): string {
     .replace(/^@/, "")
     .trim()
     .toLowerCase();
-}
-
-/**
- * The shared data root, resolved per call.
- *
- * `CREATORS_DATA_DIR` is how the whole app (store, weekly, niche cache) points
- * at one directory, so the owner cache follows it rather than inventing a
- * second location. Read per call so a test or a preview run can change it
- * without a reload.
- */
-function dataRoot(): string {
-  return process.env.CREATORS_DATA_DIR
-    ? path.resolve(process.env.CREATORS_DATA_DIR)
-    : path.join(process.cwd(), "data");
 }
 
 export function ownerCachePath(): string {

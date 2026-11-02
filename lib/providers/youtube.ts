@@ -24,8 +24,8 @@
  * the whole router — so searches are the thing to ration, not channel pulls.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
+import { dataPath } from "../dataDir";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -70,7 +70,9 @@ const num = (v: unknown): number => {
  * Daily quota ledger
  * ------------------------------------------------------------------ */
 
-const LEDGER_PATH = path.join(process.cwd(), "data", "_youtube_usage.json");
+export function youtubeUsagePath(): string {
+  return dataPath("_youtube_usage.json");
+}
 
 interface Ledger {
   /** Pacific calendar day — Google resets quota at midnight PT */
@@ -86,7 +88,7 @@ function quotaDay(): string {
 
 function readLedger(): Ledger {
   try {
-    const raw = JSON.parse(readFileSync(LEDGER_PATH, "utf8")) as Ledger;
+    const raw = JSON.parse(readFileSync(youtubeUsagePath(), "utf8")) as Ledger;
     if (raw?.day === quotaDay()) return raw;
   } catch {
     /* first run of the day, or a corrupt file: start clean */
@@ -102,7 +104,7 @@ function addSpend(units: number, search: boolean): Ledger {
     searches: led.searches + (search ? 1 : 0),
   };
   try {
-    writeFileSync(LEDGER_PATH, JSON.stringify(next), "utf8");
+    writeFileSync(youtubeUsagePath(), JSON.stringify(next), "utf8");
   } catch {
     /* a failed write over-reports free quota next call, not a broken plan */
   }

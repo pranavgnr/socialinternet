@@ -103,19 +103,23 @@ plan completed before the cap stopped the first peer read, and the clips count
 (8) is the plan's 7 plus exactly one peer page. The four post reads bought no
 comments because of the wrapper bug described below.
 
+The live measurement was 29 calls because comments were skipped; the comments
+fix adds four calls (one per post read), so the economics below use the final
+33-call plan.
+
 | Vendor | Plan calls | USD at the $0.02 Start rate | USD at the $0.001 rate |
 |---|---:|---:|---:|
-| HikerAPI, measured (comments skipped) | 29 | **$0.58** | **$0.029** |
-| HikerAPI, comments working (follow-up fix) | **33** | **$0.66** | **$0.033** |
+| HikerAPI, comments working | **33** | **$0.66** | **$0.033** |
 | Apify | 4 results | $0.0108 real, **$0.00 charged** inside the $5 monthly free tier | same |
-| **Cash cost, comments working** | | **$0.66** | **$0.033** |
+| **Cash cost** | | **$0.66** | **$0.033** |
 
-A full plan is priced at **6 credits**, which is roughly $0.06 of notional
-value at the old “1 credit ≈ $0.01” calibration. At the current Start rate the
-vendor bill is about **11x the credit value**; at the $0.001 tier it is about
-half. This is the single most important number on this page: the HikerAPI Start
-rate is fine for verification, but a busy app needs the $0.001 tier (a $100
-balance) or a higher credit price before the economics work.
+A full plan is priced at **6 credits**, which is roughly **$0.06 of notional
+value** at the product's “1 credit ≈ $0.01” calibration. The computation is
+`$0.66 ÷ $0.06 = 11x` at the Start rate; at the $0.001 tier,
+`$0.033 ÷ $0.06 ≈ 0.55x` (about half). This is the single most important number
+on this page: the HikerAPI Start rate is fine for verification, but a busy app
+needs the $0.001 tier (a $100 balance) or a higher credit price before the
+economics work.
 
 The live run hit the 40-call cap while the script was exercising the separate
 peer module, *after* the plan had completed. The cap stopped the next request
@@ -160,11 +164,20 @@ data directory with `NICHE_CACHE_HOURS=168`. The enrichment caps were lowered
 for the warm-only runs (`ENRICH_ACCOUNTS=3`, `OWNER_PROFILE_MAX=4`,
 `LANG_COMMENT_MAX=0`) to stay inside the 25-call warming budget:
 
-| Niche | Rows | Accounts | Platform | With views | HikerAPI calls |
-|---|---:|---:|---|---:|---:|
-| `kannada songs` (from the plan) | 83 | 12 | 83/83 Instagram | 83/83 | 29 (plan) |
-| `telugu songs cover` | 47 | 15 | 47/47 Instagram | 47/47 | 11 |
-| `daily vlogs india` | 43 | 12 | 43/43 Instagram | 43/43 | 11 |
+| Niche | File reels | File accounts | File platform | File with views | Recorded warm/plan output | HikerAPI calls |
+|---|---:|---:|---|---:|---|---:|
+| `kannada songs` (from the plan) | 83 | 12 | 83/83 Instagram | 83/83 | 28 plan rows (cohort-pruned) | 29 (plan) |
+| `telugu songs cover` | 47 | 15 | 47/47 Instagram | 47/47 | 21 rows / 11 accounts | 11 |
+| `daily vlogs india` | 43 | 12 | 43/43 Instagram | 43/43 | 38 rows / 12 accounts | 11 |
+
+The two sets of counts describe two different views, not two runs. The files
+were written by the recorded runs and were **not** rewritten later: their
+mtimes (`04:38:21` and `04:38:47` IST) match their `fetchedAt` values
+(`23:08:21Z` and `23:08:47Z`). `researchNiche` writes the raw payload to disk,
+then `shape()` applies the language gate and de-duplication to the view it
+returns; the warm output prints that shaped view. The file holds the raw rows
+(47/15 and 43/12); the output holds the shaped view (21/11 and 38/12). Both are
+100% Instagram.
 
 Files written to `/Users/pranav/reel-engine/data` (ages at the time of writing):
 
@@ -194,7 +207,17 @@ live run stayed inside its printed cap. No key or signed URL was printed.
 ### Full output
 
 These outputs were recorded before the comments fix, so they show the 29-call
-plan and no comments call. The follow-up section below records what changed.
+plan and no comments call. The current script also prints two lines after the
+evidence URLs and before the peer section; in the final comments-working form
+they are:
+
+```text
+plan completed: hikerapi 33 calls · apify 4 runs · hikerapi cost $0.6600 at $0.020/call
+credits a user would be charged: 6
+```
+
+The first-run block below predates those lines, so it goes straight from the
+evidence URLs to the cap stop. The follow-up section records what changed.
 
 First run (fresh plan, cap 40). It stopped at the cap while starting a peer
 read, after the plan had been printed:
@@ -305,8 +328,10 @@ by vendor: {"hikerapi":11}
 by endpoint: {"/v2/search/reels":1,"/v2/user/by/username":7,"/v2/user/clips":3}
 ```
 
-(The on-disk niche files contain 47 and 43 rows respectively after the language
-gate and de-duplication; the “rows” in the warm output are the raw pull.)
+(The on-disk files hold the raw pull — 47 and 43 rows; the warm output prints
+the shaped view after the language gate — 21 and 38 rows. Both are 100%
+Instagram. The files were not rewritten by a later run; their mtimes match the
+recorded `fetchedAt` values.)
 
 ---
 
@@ -463,17 +488,26 @@ at $0.001.
    niche accounts (`research.accounts`), not the `PeerAccount` list with
    `reasons`. The verification script calls the module directly to prove it
    works; wiring its reasons into every plan is follow-up work.
-8. **The 6-credit price is below cost at the HikerAPI Start rate** (about $0.58
-   of vendor calls for a cold plan). Move to the $0.001 tier or reprice before
-   scaling.
-9. **Handle directory fix.** Live verification found that `lib/plan.ts` filed
-   handles under `<cwd>/data/handles` and ignored `CREATORS_DATA_DIR`, so a run
-   from a worktree wrote to the wrong directory while the shared preview read
-   another. It now resolves `<CREATORS_DATA_DIR>/handles` like the niche cache.
-   The offline cache test was updated to match.
-10. **Apify usage ledger still uses `<cwd>/data/_apify_usage.json`.** It is only
-    accounting (not the data cache) and was left alone in this task; it means
-    the Apify free-tier counter is per working directory, not shared.
+8. **The 6-credit price is below cost at the HikerAPI Start rate**: the final
+   33-call plan costs **$0.66** against **$0.06** of notional value
+   (`$0.66 ÷ $0.06 = 11x`). Move to the $0.001 tier or reprice before scaling.
+9. **All caches share one root now.** Live verification found that handles
+   ignored `CREATORS_DATA_DIR`, so a run from a worktree wrote to the wrong
+   directory while the shared preview read another. Every cache now resolves
+   through `lib/dataDir.ts`: niches, handles, raw pulls, the post/enrichment
+   cache, media downloads, the hook and intent caches, the owner cache, the
+   Apify/YouTube usage ledgers and the YouTube subscriber cache. The test
+   `test-data-dir` covers both the `CREATORS_DATA_DIR` and `./data` cases.
+   **Handle files written under `./data` before this fix are ignored once
+   `CREATORS_DATA_DIR` is set.** Copy them once if they are worth keeping:
+   `cp data/handles/*.json /Users/pranav/reel-engine/data/handles/`
+   (or `${CREATORS_DATA_DIR}/handles/`). The same applies to any other warm
+   cache written under the old `./data`; otherwise let it rebuild. Restart the
+   preview server so it loads the new paths.
+10. **Comments and the post cache.** `comments_live.json` is a sanitized
+    three-comment fixture; the live response returned 14. The full plan was not
+    re-run after the comments fix (live budget), so the 33-call figure is the
+    measured 29 plus four measured comment calls.
 
 ---
 

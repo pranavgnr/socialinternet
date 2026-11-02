@@ -1,0 +1,25 @@
+{
+  "response": {
+    "comments": [
+      {
+        "text": "Chords : Em C G D",
+        "comment_like_count": 875,
+        "created_at": 1761149436,
+        "user": { "username": "commenter_1", "pk": 1001, "id": "1001" }
+      },
+      {
+        "text": "🥹🥹🥹🤌🏻✨✅",
+        "comment_like_count": 1,
+        "created_at": 1793530061,
+        "user": { "username": "commenter_2", "pk": 1002, "id": "1002" }
+      },
+      {
+        "text": "Can you please provide the stumming pattern 🥹🥹",
+        "comment_like_count": 1,
+        "created_at": 1793259499,
+        "user": { "username": "commenter_3", "pk": 1003, "id": "1003" }
+      }
+    ]
+  },
+  "next_page_id": null
+}

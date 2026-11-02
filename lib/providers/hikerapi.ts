@@ -33,19 +33,28 @@
  *     HTTP 500 `InstagramServerError` on all three live probes (2026-11-03).
  *     The adapter refuses it with `unsupported: true`; Apify's profile payload
  *     is the working source.
+ *   - `/v2/media/info/by/code` answers `{status, media_or_ad: {media}}`.
+ *     The media carries a valid `id` (`<pk>_<owner>`) and `user.pk`. The old
+ *     adapter looked for `data.media` only, so it read the wrapper as the post,
+ *     lost `id`, and skipped every comments call. `mediaOf` unwraps the live
+ *     shape and the older wrappers.
  *   - `/v2/media/comments?id=<media id>` is the working comments call.
  *     The old `/v1/media/comments/chunk?media_id=` was a 422: it requires
  *     `id`, and the value must be the media's `id` (`<pk>_<owner>`), not the
- *     shortcode. Comments are read on every `post()` by default (one extra
- *     call, +$0.02 at the Start rate); `HIKERAPI_COMMENTS=0` disables them.
+ *     shortcode. When `id` is missing, the shortcode is decoded to the exact pk
+ *     with `pkFromShortcode` and `user.pk` supplies the owner; the rounded
+ *     `pk` number is never used. Comments are read on every `post()` by
+ *     default (one extra call, +$0.02 at the Start rate); `HIKERAPI_COMMENTS=0`
+ *     disables them.
  *   - A 500 "Instagram did not respond" (`exc_type: InstagramServerError`) is
  *     transient; `getWithRetry` tries once more after 800 ms. 4xx is never
  *     retried.
  *
  * Still worth re-running `scripts/probe-vendor.ts --live` against a paid key
- * before trusting a large pull: `/sys/balance` and `/v2/media/info/by/code`
- * are the two paths without a recorded fixture here.
+ * before trusting a large pull: `/sys/balance` is the only path without a
+ * recorded fixture here (`media_info.json` records the live post wrapper).
  */
+import { pkFromShortcode } from "../instagramId";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -99,6 +108,99 @@ const str = (v: unknown): string | undefined =>
  */
 const idStr = (v: unknown): string | undefined =>
   str(v) ?? (typeof v === "number" && Number.isFinite(v) ? String(v) : undefined);
+
+/**
+ * Unwrap the media object from `/v2/media/info/by/code`.
+ *
+ * Live shape (2026-11-03): `{status, media_or_ad: {...}}`. The old code only
+ * knew `{media}` and treated the wrapper as the media, so `media.id` was
+ * missing and every post read silently skipped the comments call. Keep the
+ * other known wrappers too, so a vendor field rename does not reintroduce the
+ * same bug.
+ */
+function mediaOf(data: Record<string, unknown>): Record<string, unknown> {
+  const response = obj(data.response);
+  const candidates = [
+    data.media_or_ad,
+    data.media,
+    response.media_or_ad,
+    response.media,
+    obj(arr(data.items)[0]).media,
+    obj(arr(response.items)[0]).media,
+    arr(data.items)[0],
+    arr(response.items)[0],
+  ];
+  for (const candidate of candidates) {
+    const media = obj(candidate);
+    if (hasKeys(media)) return media;
+  }
+  return obj(data);
+}
+
+/** A decimal id from either the string or the safe-number form. */
+function decimalId(v: unknown): string | undefined {
+  if (typeof v === "string") {
+    const m = /^(\d+)(?:_\d+)?$/.exec(v.trim());
+    return m?.[1];
+  }
+  /**
+   * Only a safe number is trustworthy. Above 2^53 JSON.parse has already
+   * rounded it, and stringifying the rounded value produces a wrong id.
+   */
+  if (typeof v === "number" && Number.isSafeInteger(v) && v > 0) {
+    return String(v);
+  }
+  return undefined;
+}
+
+/** The owner pk in `<mediaPk>_<ownerPk>`, from the media's user envelope. */
+function ownerPkOf(media: Record<string, unknown>): string | undefined {
+  const user = obj(media.user ?? media.owner);
+  return (
+    decimalId(user.pk) ??
+    decimalId(user.id) ??
+    decimalId(media.user_id) ??
+    decimalId(obj(media.owner).pk) ??
+    decimalId(obj(media.owner).id)
+  );
+}
+
+/**
+ * The id `/v2/media/comments` wants: `<media pk>_<owner pk>`.
+ *
+ * A valid `media.id` is preferred (it is exact). When the payload has lost it,
+ * decode the shortcode — never trust the rounded `pk` number. Returns undefined
+ * when neither path is available, so the caller can skip the call instead of
+ * buying a 422.
+ */
+function commentsIdFor(
+  media: Record<string, unknown>,
+  code: string,
+): string | undefined {
+  const direct = idStr(media.id);
+  if (direct && /^\d+_\d+$/.test(direct)) return direct;
+  const owner = ownerPkOf(media);
+  if (!owner) return undefined;
+  try {
+    return `${pkFromShortcode(code)}_${owner}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One warning per process, not per post.
+ *
+ * The pre-fix behaviour swallowed a missing comments id, which is why a live
+ * run bought four post reads and not one comment. The warning names the
+ * degraded read without a URL, a handle or any signed data.
+ */
+let warnedComments = false;
+function warnCommentsOnce(message: string): void {
+  if (warnedComments) return;
+  warnedComments = true;
+  console.warn(`[hikerapi] ${message}`);
+}
 
 const key = () => process.env.HIKERAPI_KEY;
 
@@ -605,7 +707,7 @@ export const hikerapi: DataProvider = {
       throw new ProviderUnavailable("hikerapi", `no media code in ${url}`, false);
     }
     const { data, usd } = await getWithRetry("/v2/media/info/by/code", { code });
-    const media = obj(data.media ?? data);
+    const media = mediaOf(data);
     const row = toUnified(media);
     if (!row) {
       throw new ProviderUnavailable("hikerapi", "post payload unreadable", false);
@@ -620,11 +722,20 @@ export const hikerapi: DataProvider = {
      * Live verification (2026-11-03): `/v2/media/comments?id=<media id>` works
      * and returns `response.comments`. The parameter is `id`; `media_id` is a
      * 422, and the value is the media's `id` (`<pk>_<owner>`), not the code.
-     * There is deliberately no fallback to `pk` or the shortcode: neither is
-     * accepted by the endpoint, and a wrong id would buy a 422 instead of
-     * comments. No id means no comments, quietly.
+     *
+     * The live media-info payload wraps the media in `media_or_ad`, and that is
+     * where this used to lose `id`: the adapter treated the wrapper as the post
+     * and skipped comments on every read. `mediaOf` unwraps it now. If a future
+     * payload still has no usable id, the shortcode decodes to the exact pk and
+     * `user.pk` supplies the owner — never the parsed `pk` number, which is
+     * already rounded above 2^53.
      */
-    const commentsMediaId = idStr(media.id);
+    const commentsMediaId = commentsIdFor(media, code);
+    if (process.env.HIKERAPI_COMMENTS !== "0" && !commentsMediaId) {
+      warnCommentsOnce(
+        "comments enabled but no usable media id; comments skipped for this run",
+      );
+    }
     if (process.env.HIKERAPI_COMMENTS !== "0" && commentsMediaId) {
       try {
         const c = await get("/v2/media/comments", { id: commentsMediaId });
@@ -651,7 +762,11 @@ export const hikerapi: DataProvider = {
         };
         return { data: row, usd: usd + c.usd, units: 2, remaining: null };
       } catch {
-        /* comments are optional: the post itself already succeeded */
+        /* Comments are optional: the post itself already succeeded. Say so
+           once per run rather than swallowing the degradation silently. */
+        warnCommentsOnce(
+          "comments call failed; the post was still read and comments were skipped for this run",
+        );
       }
     }
 

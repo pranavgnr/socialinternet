@@ -1,0 +1,20 @@
+{
+  "status": "ok",
+  "media_or_ad": {
+    "id": "3747491665579061432_32334432364",
+    "code": "DQBw9CVk7C4",
+    "pk": 3747491665579061000,
+    "product_type": "clips",
+    "play_count": 1957776,
+    "like_count": 145366,
+    "comment_count": 305,
+    "reshare_count": 27636,
+    "taken_at": 1760955895,
+    "video_duration": 38.833,
+    "user": {
+      "pk": 32334432364,
+      "id": "32334432364",
+      "username": "_shravyapawar_"
+    }
+  }
+}

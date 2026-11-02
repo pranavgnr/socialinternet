@@ -44,8 +44,12 @@ A cold plan for a creator with no cache is roughly:
 | Niche keyword search `/v2/search/reels` | 1 | 1 |
 | Enrich up to 6 accounts with `/v2/user/by/username` + `/v2/user/clips` | 6 | 12 |
 | Owner follower counts for search rows not already sized (cap `OWNER_PROFILE_MAX`, default 12; cached for 7 days) | up to 12 | up to 12 |
-| Post reads for the language check (`/v2/media/info/by/code`, plus comments when a media id is present) | up to 4 | 4–8 |
-| **Measured on 2026-11-03** | | **29** |
+| Post reads for the language check (`/v2/media/info/by/code` + `/v2/media/comments`) | up to 4 | 8 |
+| **Measured on 2026-11-03** | | **29 before the comments fix; 33 with it** |
+
+The 29-call measurement was taken before the follow-up comments fix: four post
+reads bought four media-info pages and zero comments. Once comments work, each
+post read is two calls again, so the same plan is **33 calls** (29 + 4).
 
 Enrichment, owner sizes and post reads are the steps that make the plan useful:
 a keyword search names the owner of every row but never gives its follower
@@ -96,17 +100,19 @@ actor runs / 4 results**. The 29 calls split as 17 profile lookups, 7 clips
 pages, 1 keyword search and 4 post reads. This split is reconstructed from the
 endpoint tally at the cap stop minus the peer module's own measured run: the
 plan completed before the cap stopped the first peer read, and the clips count
-(8) is the plan's 7 plus exactly one peer page.
+(8) is the plan's 7 plus exactly one peer page. The four post reads bought no
+comments because of the wrapper bug described below.
 
 | Vendor | Plan calls | USD at the $0.02 Start rate | USD at the $0.001 rate |
 |---|---:|---:|---:|
-| HikerAPI | 29 | **$0.58** | **$0.029** |
+| HikerAPI, measured (comments skipped) | 29 | **$0.58** | **$0.029** |
+| HikerAPI, comments working (follow-up fix) | **33** | **$0.66** | **$0.033** |
 | Apify | 4 results | $0.0108 real, **$0.00 charged** inside the $5 monthly free tier | same |
-| **Cash cost** | | **$0.58** | **$0.029** |
+| **Cash cost, comments working** | | **$0.66** | **$0.033** |
 
 A full plan is priced at **6 credits**, which is roughly $0.06 of notional
 value at the old “1 credit ≈ $0.01” calibration. At the current Start rate the
-vendor bill is about **10x the credit value**; at the $0.001 tier it is about
+vendor bill is about **11x the credit value**; at the $0.001 tier it is about
 half. This is the single most important number on this page: the HikerAPI Start
 rate is fine for verification, but a busy app needs the $0.001 tier (a $100
 balance) or a higher credit price before the economics work.
@@ -186,6 +192,9 @@ small lag, so its delta can differ from the guard count by one or two); every
 live run stayed inside its printed cap. No key or signed URL was printed.
 
 ### Full output
+
+These outputs were recorded before the comments fix, so they show the 29-call
+plan and no comments call. The follow-up section below records what changed.
 
 First run (fresh plan, cap 40). It stopped at the cap while starting a peer
 read, after the plan had been printed:
@@ -377,6 +386,46 @@ needs no restart.
 
 ---
 
+## Comments fix (follow-up, 2026-11-03)
+
+The live verification found the bug: `/v2/media/info/by/code` answers
+`{status, media_or_ad: {...}}`, but `post()` looked only for `data.media`. It
+treated the wrapper as the post, so `media.id` was always missing and every
+post read skipped comments silently. Four post reads in the measured plan
+bought four media-info pages and zero comments.
+
+The fix:
+
+- `mediaOf()` unwraps `media_or_ad`, `media`, `response.*` and `items[].media`
+  before mapping the post.
+- If a payload still has no valid `media.id`, `lib/instagramId.ts` decodes the
+  shortcode (`pkFromShortcode`) to the exact pk with BigInt and combines it
+  with `user.pk` (or `user.id`) to form `<pk>_<ownerPk>`. The parsed `pk`
+  number is never used — above 2^53 it is already rounded.
+- A post read that still cannot form an id now logs **one** redacted warning
+  per run and skips comments; it no longer fails silently.
+
+Live evidence (3 HikerAPI calls):
+
+- `GET /v2/media/info/by/code?code=DQBw9CVk7C4` → HTTP 200, top-level keys
+  `media_or_ad`, `status`; the media has a valid string `id` and a safe
+  `user.pk` (32334432364).
+- Computed id: `3747491665579061432_32334432364` (shortcode decoded, not the
+  rounded `pk`).
+- `GET /v2/media/comments?id=3747491665579061432_32334432364` → HTTP 200,
+  **14 comments**, field names `response.comments[]` with `text`,
+  `comment_like_count`, `created_at`, `user.username`.
+
+Tests: `pkFromShortcode` is checked against every clip in the live
+`user_clips.json` (`pkFromShortcode(code) === id.split("_")[0]`), the live
+`media_or_ad` wrapper, the shortcode fallback, the one-warning degraded path,
+and a sanitized three-comment fixture (`comments_live.json`). A sanitized
+`media_info.json` records the live wrapper. `test-hikerapi` is 22/22.
+
+Effect on the plan bill: a post read is two calls again. The measured 29-call
+plan becomes **33 calls**: +4 comment calls, **$0.66** at $0.02 or **$0.033**
+at $0.001.
+
 ## Known gaps
 
 1. **No reach, saves, retention or audience demographics.** HikerAPI exposes
@@ -390,12 +439,14 @@ needs no restart.
    this verification. On Linux it needs `ffmpeg`/`ffprobe` and the multimodal
    (speech/vision) step planned separately; without them the deep pass is
    skipped and the plan says so.
-4. **Comments were not bought in this run.** The plan made 4 post reads
-   (`/v2/media/info/by/code`) and **zero** `/v2/media/comments` calls. The
-   adapter deliberately skips comments when the media-info payload has no
-   usable `id`, and this live payload apparently did not. The comments endpoint
-   itself was verified working in Task 1, but that id path needs a live check
-   before “what people asked for” can be promised from HikerAPI.
+4. **Comments now work live (follow-up fix).** The measured 29-call plan
+   predates the fix: it made 4 post reads and **zero** comments calls because
+   `post()` did not unwrap the live `{status, media_or_ad}` envelope. The live
+   follow-up returned 14 comments for
+   `id=3747491665579061432_32334432364`; a post read is two calls again and the
+   projected plan is 33 calls. The full plan was not re-run end-to-end (live
+   budget), so the +4 calls are a measured unit cost, not a second whole-plan
+   measurement.
 5. **Similar accounts are effectively unavailable.** HikerAPI's
    `/gql/user/related/profiles` answers 500; the addendum probe of
    `/v2/user/suggested/profiles` answers 403 “Not eligible for chaining”

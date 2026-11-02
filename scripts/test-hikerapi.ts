@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { pkFromShortcode } from "../lib/instagramId";
 import { ProviderUnavailable } from "../lib/providers/types";
 
 const FIXTURES = path.join(
@@ -661,6 +662,71 @@ test("post reads comments from /v2/media/comments?id= into post.ext.top_comments
   );
 });
 
+test("pkFromShortcode recovers the exact pk from every live clip shortcode", () => {
+  const clips = fixture("user_clips");
+  const items = (clips.response as Json).items as Json[];
+
+  assert.equal(items.length, 12, "the fixture must carry all twelve live clips");
+  for (const item of items) {
+    const media = item.media as Json;
+    const code = String(media.code);
+    const id = String(media.id);
+    assert.equal(
+      pkFromShortcode(code),
+      id.split("_")[0],
+      `shortcode ${code} must decode to the pk in ${id}`,
+    );
+  }
+
+  // A pasted slash and surrounding space are tolerated; an invalid character
+  // is not, because a wrong id would buy a 422 instead of comments.
+  assert.equal(pkFromShortcode(" /DQBw9CVk7C4/ "), "3747491665579061432");
+  assert.throws(() => pkFromShortcode("DQBw9CVk7C4!"), /invalid character/);
+});
+
+test("post unwraps the live media_or_ad envelope and buys the three-comment fixture", async () => {
+  const payload = clone(fixture("media_info"));
+  const media = payload.media_or_ad as Json;
+  const comments = fixture("comments_live");
+
+  await withEnv(
+    { HIKERAPI_KEY: "test-key" },
+    async () => {
+      const { hikerapi } = await import("../lib/providers/hikerapi");
+      const { result, seen } = await withFetch(
+        (url) => {
+          const u = new URL(url);
+          if (u.pathname === "/v2/media/info/by/code") {
+            assert.equal(u.searchParams.get("code"), "DQBw9CVk7C4");
+            // The live shape is {status, media_or_ad}, not {media}.
+            return respond(payload);
+          }
+          if (u.pathname === "/v2/media/comments") {
+            assert.equal(u.searchParams.get("id"), media.id);
+            return respond(comments);
+          }
+          throw new Error(`unexpected request: ${url}`);
+        },
+        () => hikerapi.post("https://www.instagram.com/reel/DQBw9CVk7C4/"),
+      );
+
+      assert.deepEqual(seen.map(pathOf), [
+        "/v2/media/info/by/code",
+        "/v2/media/comments",
+      ]);
+      const post = postOf(result.data as Json);
+      const ext = (post.ext ?? {}) as { top_comments?: Json[] };
+      assert.equal(ext.top_comments?.length, 3);
+      assert.equal(ext.top_comments?.[0]?.text, "Chords : Em C G D");
+      assert.equal(ext.top_comments?.[0]?.likes, 875);
+      assert.equal(ext.top_comments?.[0]?.author, "commenter_1");
+      assert.equal(ext.top_comments?.[0]?.published_at, 1761149436);
+      assert.equal(result.units, 2);
+      assert.equal(result.usd, 0.04);
+    },
+  );
+});
+
 test("HIKERAPI_COMMENTS=0 turns the comments call off", async () => {
   const media = clone(firstClipMedia());
 
@@ -688,13 +754,20 @@ test("HIKERAPI_COMMENTS=0 turns the comments call off", async () => {
   );
 });
 
-test("post skips comments quietly when the media has no id (no pk/shortcode fallback)", async () => {
+test("post rebuilds the comments id from the shortcode when media.id is missing", async () => {
   const media = clone(firstClipMedia());
-  // The comments endpoint only accepts the `<pk>_<owner>` id. pk and code are
-  // present, and neither is a valid substitute, so no second call is made.
   delete media.id;
-  assert.ok(media.pk, "the fixture must still carry a pk to prove it is not used");
-  assert.ok(media.code, "the fixture must still carry a code to prove it is not used");
+  const user = media.user as Json;
+  const expected = `${pkFromShortcode(String(media.code))}_${String(user.pk)}`;
+
+  // The fixture's pk number is already rounded above 2^53. If that value were
+  // used the id would be wrong, so prove the decoded shortcode is different.
+  assert.ok(media.pk, "the fixture must still carry the rounded pk");
+  assert.notEqual(
+    expected.split("_")[0],
+    String(media.pk),
+    "the parsed pk number must never be used to build the comments id",
+  );
 
   await withEnv(
     { HIKERAPI_KEY: "test-key" },
@@ -706,15 +779,63 @@ test("post skips comments quietly when the media has no id (no pk/shortcode fall
           if (u.pathname === "/v2/media/info/by/code") {
             return respond({ status: "ok", media });
           }
+          if (u.pathname === "/v2/media/comments") {
+            assert.equal(u.searchParams.get("id"), expected);
+            return respond(fixture("comments"));
+          }
           throw new Error(`unexpected request: ${url}`);
         },
         () => hikerapi.post("https://www.instagram.com/reel/DQBw9CVk7C4/"),
       );
 
-      assert.deepEqual(seen.map(pathOf), ["/v2/media/info/by/code"]);
+      assert.deepEqual(seen.map(pathOf), [
+        "/v2/media/info/by/code",
+        "/v2/media/comments",
+      ]);
       const post = postOf(result.data as Json);
-      assert.equal((post.ext as Json | undefined)?.top_comments, undefined);
-      assert.equal(result.units, 1);
+      const ext = (post.ext ?? {}) as { top_comments?: Json[] };
+      assert.equal(ext.top_comments?.length, 12);
+      assert.equal(result.units, 2);
+      assert.equal(result.usd, 0.04);
     },
   );
+});
+
+test("post warns once and skips comments when no id can be formed", async () => {
+  const media = clone(firstClipMedia());
+  delete media.id;
+  delete media.user;
+  delete media.owner;
+
+  const warnings: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (message: unknown) => warnings.push(String(message));
+  try {
+    await withEnv(
+      { HIKERAPI_KEY: "test-key" },
+      async () => {
+        const { hikerapi } = await import("../lib/providers/hikerapi");
+        const { result, seen } = await withFetch(
+          (url) => {
+            const u = new URL(url);
+            if (u.pathname === "/v2/media/info/by/code") {
+              return respond({ status: "ok", media });
+            }
+            throw new Error(`unexpected request: ${url}`);
+          },
+          () => hikerapi.post("https://www.instagram.com/reel/DQBw9CVk7C4/"),
+        );
+
+        assert.deepEqual(seen.map(pathOf), ["/v2/media/info/by/code"]);
+        const post = postOf(result.data as Json);
+        assert.equal((post.ext as Json | undefined)?.top_comments, undefined);
+        assert.equal(result.units, 1);
+      },
+    );
+  } finally {
+    console.warn = realWarn;
+  }
+
+  assert.equal(warnings.length, 1, "the degraded read warns once per run");
+  assert.match(warnings[0], /no usable media id/);
 });

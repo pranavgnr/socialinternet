@@ -119,6 +119,103 @@ test("a fresh handle costs the handle price", async () => {
   });
 });
 
+test("a handle plan is never cache-free, whoever is asking", async () => {
+  await withFreshDb(async (q, userId) => {
+    // The disk says cached; a handle plan is not free on that alone.
+    const cached = { isCached: async () => true, key: "natgeotravel", now: T0 };
+
+    // A stranger gets the sign-in refusal even before cache feels relevant.
+    const anon = await gate("handle", { ...cached, getUser: async () => null });
+    assert.deepEqual(anon, { ok: false, status: 401, message: "Sign in to read a new one" });
+    assert.deepEqual(await ledgerRows(q, userId), []);
+
+    // Signed in, the same cached handle still charges: the run buys vendor
+    // work beyond the feed, so the cache never makes it free up front.
+    const signed = await gate("handle", { ...cached, getUser: async () => sessionUser(userId) });
+    assert.ok(signed.ok);
+    if (signed.ok) assert.equal(signed.charged, COSTS.handle);
+    assert.equal(await balance(userId, T0), COSTS.dailyFree - COSTS.handle);
+  });
+});
+
+test("(review) a run the ledger measured as free refunds the plan charge", async () => {
+  await withFreshDb(async (_q, userId) => {
+    const verdict = await gate("handle", {
+      key: "natgeotravel",
+      getUser: async () => sessionUser(userId),
+      now: T0,
+    });
+    if (!verdict.ok) throw new Error("gate should charge");
+
+    // The measured vendor dollars across the run: zero — everything back.
+    await settleAfter(verdict.entryId, async () => "plan built", () => 0);
+    assert.equal(await balance(userId, T0), COSTS.dailyFree);
+  });
+});
+
+test("(review) a run the result calls free but the ledger measured costly keeps its charge", async () => {
+  await withFreshDb(async (_q, userId) => {
+    const verdict = await gate("handle", {
+      key: "natgeotravel",
+      getUser: async () => sessionUser(userId),
+      now: T0,
+    });
+    if (!verdict.ok) throw new Error("gate should charge");
+
+    // The regression the review caught: the cohort result's own unit counter
+    // reads 0 after a cache hit and misses half the pulls, so the refund may
+    // only consult the measured vendor money — 2.49 cents means kept.
+    await settleAfter(
+      verdict.entryId,
+      async () => ({ credits: { spent: 0 } }),
+      () => 0.0249
+    );
+    assert.equal(await balance(userId, T0), COSTS.dailyFree - COSTS.handle);
+  });
+});
+
+test("(review) a thrown run refunds exactly once", async () => {
+  await withFreshDb(async (q, userId) => {
+    const verdict = await gate("handle", {
+      key: "natgeotravel",
+      getUser: async () => sessionUser(userId),
+      now: T0,
+    });
+    if (!verdict.ok) throw new Error("gate should charge");
+
+    await assert.rejects(
+      () => settleAfter(verdict.entryId, async () => {
+        throw new Error("vendor died");
+      }, () => 9),
+      /vendor died/
+    );
+    assert.equal(await balance(userId, T0), COSTS.dailyFree);
+
+    const { rows } = await q.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM credit_ledger WHERE reason = 'refund' AND ref = $1",
+      [`refund:${verdict.entryId}`]
+    );
+    assert.equal(rows[0]!.n, 1); // once, not twice
+  });
+});
+
+test("(review) a refund that cannot be written breaks nothing that finished", async () => {
+  await withFreshDb(async (_q, userId) => {
+    // An entry id that never existed makes settle throw inside settleQuietly;
+    // the finished result must still ride out, not be turned into a failure.
+    const res = await settleAfter(999_999, async () => ({ ok: true }), () => 0);
+    assert.deepEqual(res, { ok: true });
+    // Same on the thrown path: the original error, not the settle failure.
+    await assert.rejects(
+      () => settleAfter(999_999, async () => {
+        throw new Error("vendor died");
+      }, () => 0),
+      /vendor died/
+    );
+    assert.equal(await balance(userId, T0), COSTS.dailyFree); // never touched
+  });
+});
+
 test("insufficient balance refuses at 402 with the reset time and the balance", async () => {
   await withFreshDb(async (q, userId) => {
     const first = await spend(userId, 6, "niche", "a", T0);

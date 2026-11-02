@@ -1,10 +1,16 @@
 /**
  * The credit gate for the two routes that can spend a vendor pull.
  *
- * One rule decides everything: what is already on disk is free to read; a
- * fresh pull is paid. Free here means two different things — a read served
- * from cache costs nobody anything (anonymous visitors get it), while a fresh
- * pull is only for signed-in accounts, who pay out of their daily free pool.
+ * Two kinds, two rules:
+ *
+ * - **niche** — what is already on disk is free to read, for anyone; a fresh
+ *   search is paid, and only by a signed-in account.
+ * - **handle** — the plan is paid and signed-in always, cache or no cache:
+ *   even when the handle's own feed is already on disk, the run still buys
+ *   vendor work the visitor could steer anywhere (a fresh search on the phrase
+ *   they typed, a profile read, the deep enrich pass). The charge is decided
+ *   up front here, then kept or refunded after the run according to what the
+ *   vendor ledger says the run really cost — see `settleAfter`.
  *
  * `gate` answers "may this read happen, and what was charged" without spawning
  * anything: the route pulls only after an `ok` verdict, and settles afterwards
@@ -12,7 +18,6 @@
  */
 import { COSTS } from "./costs";
 import { istDay, refund, spend } from "./credits";
-import type { Platform } from "./types";
 import type { SessionUser } from "./auth";
 
 export type GateKind = "niche" | "handle";
@@ -23,9 +28,8 @@ export type GateResult =
 
 /** Whether `key` is already on disk and would be served without a vendor pull. */
 export type IsCached = (
-  kind: GateKind,
   key: string,
-  ctx: { nicheHandle?: string; platform?: Platform }
+  ctx: { nicheHandle?: string }
 ) => Promise<boolean>;
 
 /** The signed-in user, or null for a visitor who has not signed in. */
@@ -36,11 +40,12 @@ export interface GateOptions {
   key?: string;
   /** For a niche read: the optional handle the search would be pinned to. */
   nicheHandle?: string;
-  /** For a handle read: the network it would be read from. */
-  platform?: Platform;
-  /** A deliberate refresh is never a cache hit, whoever is asking. */
+  /** For a niche read: a deliberate refresh is never a cache hit. */
   force?: boolean;
-  /** Injected in tests; default reads the disk caches (niche + handle). */
+  /**
+   * Injected in tests; default reads the niche disk cache. Only consulted for
+   * niche reads — a handle plan is never cache-free (see the header).
+   */
   isCached?: IsCached;
   /** Injected in tests; default reads the db session cookie via next/headers. */
   getUser?: GetUser;
@@ -49,26 +54,20 @@ export interface GateOptions {
 }
 
 /**
- * The disk-backed answer for "is this already on disk".
+ * The disk-backed answer for "is this already on disk", for niche reads.
  *
- * Niche reads are cached when the stored search matched the phrase (and the
+ * A search is cached when the stored result matched the phrase (and the
  * optional handle it is pinned to) inside its TTL — `nicheCacheStatus().cached`
- * is exactly that verdict. Handle reads go through `handleIsCached`, whose test
- * mirrors what `pullOwn` serves from disk. Kept behind dynamic imports so a
- * plain-node test binary never has to drag the whole pipeline — or Next's
- * request machinery, in auth's case — into its require graph.
+ * is exactly that verdict. Behind a dynamic import so a plain-node test binary
+ * never has to drag the whole pipeline — or Next's request machinery, in auth's
+ * case — into its require graph.
  */
 async function cachedOnDisk(
-  kind: GateKind,
   key: string,
-  ctx: { nicheHandle?: string; platform?: Platform }
+  ctx: { nicheHandle?: string }
 ): Promise<boolean> {
-  if (kind === "niche") {
-    const { nicheCacheStatus } = await import("./niche");
-    return (await nicheCacheStatus(key, ctx.nicheHandle)).cached;
-  }
-  const { handleIsCached } = await import("./plan");
-  return handleIsCached(key, ctx.platform ?? "instagram");
+  const { nicheCacheStatus } = await import("./niche");
+  return (await nicheCacheStatus(key, ctx.nicheHandle)).cached;
 }
 
 /** What each kind is called in the messages a visitor actually reads. */
@@ -107,18 +106,19 @@ function outOfCredits(kind: GateKind, cost: number, balance: number, now: Date):
 /**
  * Decide whether a read may happen, and charge for it when it must be paid.
  *
- * Cached → free, for anyone, charging nothing. Not cached and nobody is
+ * niche: cached → free, for anyone, charging nothing; not cached and nobody is
  * signed in → 401 (a fresh read has no owner to charge, so it cannot run).
- * Signed in but the day's pool will not cover it → 402 with the reset time.
+ * handle: never cache-free — the 401/charge path runs whatever the disk holds,
+ * because the plan still buys vendor work beyond the handle's own feed.
+ * A drained pool → 402 with the reset time, either kind.
  * Never called after a pull — it is the decision that makes the pull possible.
  */
 export async function gate(kind: GateKind, opts: GateOptions = {}): Promise<GateResult> {
   const now = opts.now ?? new Date();
 
-  if (!opts.force) {
-    const cached = await (opts.isCached ?? cachedOnDisk)(kind, opts.key ?? "", {
+  if (kind === "niche" && !opts.force) {
+    const cached = await (opts.isCached ?? cachedOnDisk)(opts.key ?? "", {
       nicheHandle: opts.nicheHandle,
-      platform: opts.platform,
     });
     if (cached) return { ok: true, charged: 0 };
   }
@@ -144,46 +144,73 @@ export async function gate(kind: GateKind, opts: GateOptions = {}): Promise<Gate
 }
 
 /**
- * Cancel one specific charge when the work behind it came at no cost.
+ * Cancel one specific charge when the work behind it cost the vendor nothing.
  *
  * `entryId` is the ledger row `gate` wrote, undefined when nothing was charged
- * (a cached read) — a no-op either way. A non-zero vendor spend means the
- * charge was right, so the credit stays; zero (the pull was free on the vendor
- * side, or the request died) refunds the whole entry. Never called with an
+ * (a cached niche read) — a no-op either way. `vendorCost` is the cost the run
+ * actually measured, in whichever unit the caller measured it (units for a
+ * niche search, real dollars for a handle plan): non-zero and the charge was
+ * right, so the credit stays; zero — the run was free on the vendor side, or
+ * the request died — and the whole entry is refunded. Never called with an
  * entryId of 0: `spend(…, 0)` wrote no row, and refunding one would throw.
  */
 export async function settle(
   entryId: number | undefined,
-  actuallySpentVendorCredits: number
+  vendorCost: number
 ): Promise<void> {
   if (entryId === undefined || entryId === 0) return;
-  if (actuallySpentVendorCredits !== 0) return;
+  if (vendorCost !== 0) return;
   await refund(entryId);
 }
 
 /**
- * Run the charged work, then settle the charge exactly once.
+ * Settle, but never let a failed refund overwrite the outcome it is settling.
+ *
+ * The refund is important — a user must not pay for a run that died — but the
+ * request's own verdict is more important: a lost refund is money, an error
+ * that replaces the response's real message (or breaks a finished success) is
+ * a broken request. So the failure is logged for the operator and swallowed.
+ */
+async function settleQuietly(entryId: number | undefined, vendorCost: number): Promise<void> {
+  try {
+    await settle(entryId, vendorCost);
+  } catch (err) {
+    console.error("[gate] settling the credit refund failed:", (err as Error).message);
+  }
+}
+
+/**
+ * Run the charged work, then settle the charge exactly once per outcome.
  *
  * Everything between the charge and the response lives inside `run`. When it
- * resolves, the charge is settled against the vendor credits the work really
- * spent — kept when they are non-zero, refunded when the pull was free. When
- * it throws — a vendor failure, anything after the charge — the charge is
+ * resolves, the charge is settled against the vendor cost the work measured —
+ * kept when it is non-zero, refunded when the run cost the vendor nothing.
+ * When it throws — a vendor failure, anything after the charge — the charge is
  * refunded in full: no credit is ever kept for a request that produced
- * nothing. The `settled` flag keeps the two paths from double-refunding, which
- * `refund` would survive but which must not be relied on here.
+ * nothing. The `settled` flag is raised *before* the settle is awaited, so
+ * each outcome reaches settle exactly once even if settle itself misbehaves;
+ * and since refund is idempotent by its own guard, even a slipped-through
+ * second call could only ever write one compensating row.
  */
 export async function settleAfter<T>(
   entryId: number | undefined,
   run: () => Promise<T>,
-  vendorSpent: (result: T) => number
+  vendorCost: (result: T) => number
 ): Promise<T> {
   let settled = false;
   try {
     const value = await run();
-    await settle(entryId, vendorSpent(value));
+    // Raised before the await: the catch-less finally below must never
+    // re-settle an outcome that is being settled right now.
     settled = true;
+    await settleQuietly(entryId, vendorCost(value));
     return value;
   } finally {
-    if (!settled) await settle(entryId, 0);
+    if (!settled) {
+      // The run threw after the charge — full refund, and a refund that
+      // itself fails is logged, never raised over the original error.
+      settled = true;
+      await settleQuietly(entryId, 0);
+    }
   }
 }

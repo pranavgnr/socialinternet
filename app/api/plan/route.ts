@@ -4,10 +4,10 @@ import { gate, settleAfter } from "@/lib/gate";
 import { take, tooMany, refund } from "@/lib/limits";
 import { profileFromNiche } from "@/lib/niche";
 import { runPipeline } from "@/lib/pipeline";
+import { creditLedger } from "@/lib/providers";
 import { analyseHandle, cleanHandle, ownWinnerCaptions } from "@/lib/plan";
 import { attachCookie, currentAccount, ensureAccount } from "@/lib/session";
 import { friendly } from "@/lib/userError";
-import type { NicheResearch } from "@/lib/niche";
 
 export const maxDuration = 300;
 
@@ -60,12 +60,16 @@ export async function POST(req: Request) {
     }
 
     /**
-     * The credit gate, decided before anything is pulled. A handle whose feed
-     * is still inside its TTL opens for free to anyone; a fresh pull belongs to
-     * a signed-in account with the day's credits. A refusal means nothing was
-     * read, so the rate-limit slot is handed straight back too.
+     * The credit gate, decided before anything is pulled. A plan is always a
+     * signed-in, paid action — cache or no cache — because even when the
+     * handle's own feed is already on disk, the run still buys vendor work the
+     * visitor steers (a fresh search on the phrase they typed, a profile read,
+     * the deep enrich pass). So strangers are refused here, and the day's
+     * credits are charged up front; whether the charge survives is decided
+     * after the run by what the vendor ledger says it cost. A refusal means
+     * nothing was read, so the rate-limit slot is handed straight back too.
      */
-    const verdict = await gate("handle", { key: handle, force });
+    const verdict = await gate("handle", { key: handle });
     if (!verdict.ok) {
       refund(limitKey);
       return NextResponse.json(
@@ -74,11 +78,15 @@ export async function POST(req: Request) {
       );
     }
 
+    /**
+     * What the run is about to spend sits on a process-wide vendor ledger, so
+     * the settle below compares a snapshot taken now against one taken after.
+     */
+    const vendorUsdAtStart = creditLedger().usd;
+
     /** `settleAfter` runs the whole build, then settles the charge: a throw
-     * after the charge refunds it in full, and a pull that cost the vendor
-     * nothing is refunded too. The count comes from the same field the
-     * rate-limit free-shell check reads. */
-    let research: NicheResearch | undefined;
+     * after the charge refunds it in full, and a run the ledger measured as
+     * free is refunded too. */
     return await settleAfter(
       verdict.entryId,
       async () => {
@@ -93,7 +101,6 @@ export async function POST(req: Request) {
           niche: body.niche?.trim() || undefined,
           deep: !body.shallow,
         });
-        research = pulled;
 
         /** Nothing was bought, so nothing is charged: a handle already on disk is
          * free to open, and the allowance is there to cap spending, not visits. */
@@ -164,7 +171,21 @@ export async function POST(req: Request) {
 
         return await attachCookie(NextResponse.json({ ok: true }), account);
       },
-      () => research?.credits.spent ?? 0,
+      () => {
+        /**
+         * Measured in real vendor money (`CreditLedger.usd`), not in the result's
+         * unit counter: that counter misses the handle's own pull, the profile
+         * read and the deep enrich pass, and a cached room resets it to zero —
+         * refunding on it gave a fresh paid pull away as a free plan.
+         *
+         * The ledger is process-wide, not per request, and it only ever
+         * grows during a window: a concurrent request's spend landing inside
+         * this snapshot can only push the measured cost up and make the user
+         * keep their charge (conservative, never a free plan); our own spend
+         * is always inside our own before/after pair.
+         */
+        return creditLedger().usd - vendorUsdAtStart;
+      },
     );
   } catch (err) {
     return NextResponse.json(

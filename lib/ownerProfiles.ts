@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { hoursFromEnv, intFromEnv } from "./env";
 import { fetchInstagramProfile, NO_INSTAGRAM_DATA_SOURCE } from "./harvest";
+import { ProviderUnavailable } from "./providers/types";
 
 /**
  * Owner follower counts for search results.
@@ -17,7 +18,9 @@ import { fetchInstagramProfile, NO_INSTAGRAM_DATA_SOURCE } from "./harvest";
  *   - a fresh read costs one call and the per-call cap is a hard ceiling;
  *   - a handle that cannot be read is remembered for a day, so a private or
  *     deleted account does not cost a call on every search;
- *   - a write is atomic, and a missing or corrupt cache file is simply empty.
+ *   - a write is atomic, and a missing or corrupt cache file is simply empty;
+ *   - concurrent writers are last-write-wins: each writes a complete snapshot,
+ *     so the file stays valid and self-heals on the next write.
  *
  * The resolver takes an injected reader, so tests can prove all of that without
  * touching the network or spending anything.
@@ -105,6 +108,17 @@ function isFresh(entry: OwnerProfileEntry, nowMs: number): boolean {
 }
 
 /**
+ * A cache object with no prototype, safe for any handle as a key.
+ *
+ * A plain `{}` treats `__proto__` as a setter and inherits `constructor` and
+ * `toString`, so a real account with one of those names would corrupt the map
+ * or silently vanish from it. The cache is data, not an object with behaviour.
+ */
+function emptyCache(): OwnerCache {
+  return Object.create(null) as OwnerCache;
+}
+
+/**
  * Read the cache, trusting nothing it cannot prove.
  *
  * A missing file and a corrupt one are the same answer: no sizes yet. A bad
@@ -115,8 +129,14 @@ function isFresh(entry: OwnerProfileEntry, nowMs: number): boolean {
 async function loadCache(): Promise<OwnerCache> {
   try {
     const parsed = JSON.parse(await fs.readFile(ownerCachePath(), "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: OwnerCache = {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return emptyCache();
+    /**
+     * A null-prototype map, not a plain object: a handle may legitimately be
+     * `__proto__` (or `constructor`, `toString`), and assigning it on `{}`
+     * would rewrite the prototype or collide with an inherited key instead of
+     * storing an entry.
+     */
+    const out = emptyCache();
     for (const [rawHandle, rawEntry] of Object.entries(parsed as Record<string, unknown>)) {
       const handle = normaliseOwnerHandle(rawHandle);
       if (!handle) continue;
@@ -138,7 +158,7 @@ async function loadCache(): Promise<OwnerCache> {
     }
     return out;
   } catch {
-    return {};
+    return emptyCache();
   }
 }
 
@@ -156,7 +176,8 @@ async function loadCache(): Promise<OwnerCache> {
  */
 async function saveCache(cache: OwnerCache, nowMs: number): Promise<void> {
   const target = ownerCachePath();
-  const kept: OwnerCache = {};
+  /** Null prototype for the same reason as `loadCache`: these are data keys. */
+  const kept = emptyCache();
   for (const [handle, entry] of Object.entries(cache)) {
     if (isFresh(entry, nowMs)) kept[handle] = entry;
   }
@@ -190,6 +211,42 @@ function vendorWideFailure(err: unknown): boolean {
     e?.name === "NoDataVendor" ||
     e?.message === NO_INSTAGRAM_DATA_SOURCE
   );
+}
+
+/**
+ * Was this a network problem rather than an answer about the account?
+ *
+ * A timeout, an abort, a refused connection or a DNS failure says nothing about
+ * whether the handle has a follower count, so it must not become a 24-hour
+ * negative entry: the next search should try again. These arrive as DOM
+ * exceptions or `TypeError: fetch failed` with a cause code, not as a
+ * `ProviderUnavailable`, which every adapter uses for an HTTP answer.
+ */
+const NETWORK_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ETIMEDOUT",
+  "EPIPE",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CLOSED",
+]);
+
+function transientFailure(err: unknown): boolean {
+  if (typeof DOMException !== "undefined" && err instanceof DOMException) return true;
+  if (err instanceof ProviderUnavailable) return false;
+  const e = err as
+    | { name?: unknown; code?: unknown; cause?: unknown }
+    | null;
+  if (e?.name === "AbortError" || e?.name === "TimeoutError") return true;
+  if (err instanceof TypeError) return true;
+  const cause = (e?.cause ?? null) as { code?: unknown } | null;
+  const code = typeof e?.code === "string" ? e.code : cause?.code;
+  return typeof code === "string" && NETWORK_CODES.has(code);
 }
 
 async function readProfile(handle: string): Promise<{ followers?: number } | null> {
@@ -261,6 +318,7 @@ export async function resolveOwnerFollowers(
       changed = true;
     } catch (err) {
       if (vendorWideFailure(err)) break;
+      if (transientFailure(err)) continue;
       cache[handle] = { followers: null, fetchedAt };
       changed = true;
     }

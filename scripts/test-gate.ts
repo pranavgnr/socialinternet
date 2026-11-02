@@ -299,6 +299,88 @@ test("settleAfter refunds a promise that throws, and settles a kept spend alone"
   });
 });
 
+test("a plan whose only vendor activity was a billed 404 is not refunded", async () => {
+  await withFreshDb(async (q, userId) => {
+    const keys = [
+      "HIKERAPI_KEY",
+      "APIFY_TOKEN",
+      "SOCIALCRAWL_API_KEY",
+      "SCRAPECREATORS_API_KEY",
+      "YOUTUBE_WEB",
+      "DATA_PROVIDER",
+    ] as const;
+    const snap = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    process.env.HIKERAPI_KEY = "test-hiker";
+    delete process.env.APIFY_TOKEN;
+    delete process.env.SOCIALCRAWL_API_KEY;
+    delete process.env.SCRAPECREATORS_API_KEY;
+    delete process.env.YOUTUBE_WEB;
+    delete process.env.DATA_PROVIDER;
+
+    const { creditLedger, request, resetCreditLedger } = await import(
+      "../lib/providers"
+    );
+    resetCreditLedger();
+    const realFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response(
+        JSON.stringify({ detail: "Not found", exc_type: "NotFoundException" }),
+        { status: 404, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const charged = await gate("handle", {
+        key: "ghost_handle",
+        getUser: async () => sessionUser(userId),
+        now: T0,
+      });
+      if (!charged.ok) throw new Error("handle gate should have charged");
+
+      const before = creditLedger().lifetimeUsd;
+      const outcome = await settleAfter(
+        charged.entryId,
+        async () => {
+          /**
+           * The plan survives a vendor miss (it may still return what the cache
+           * holds); what matters here is that the attempt itself was billed and
+           * therefore measured.
+           */
+          await request({
+            path: "/instagram/profile",
+            handle: "ghost_handle",
+            platform: "instagram",
+          }).catch(() => undefined);
+          return "done";
+        },
+        () => creditLedger().lifetimeUsd - before,
+      );
+
+      assert.equal(outcome, "done");
+      assert.equal(fetchCalls, 1, "one vendor read was attempted");
+      assert.ok(
+        Math.abs(creditLedger().lifetimeUsd - before - 0.02) < 1e-9,
+        "the billed 404 is in the measured delta, not invisible",
+      );
+
+      const { rows } = await q.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM credit_ledger WHERE reason = 'refund' AND ref = $1",
+        [`refund:${charged.entryId}`],
+      );
+      assert.equal(rows[0]!.n, 0, "a run that spent money keeps its charge");
+      assert.equal(await balance(userId, T0), COSTS.dailyFree - COSTS.handle);
+    } finally {
+      globalThis.fetch = realFetch;
+      for (const k of keys) {
+        if (snap[k] === undefined) delete process.env[k];
+        else process.env[k] = snap[k];
+      }
+    }
+  });
+});
+
 // Needs no database: confirms closeDb also resolves after the pool-free run.
 test("closeDb is a no-op in this suite", async () => {
   await closeDb();

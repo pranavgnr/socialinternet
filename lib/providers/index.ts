@@ -474,7 +474,27 @@ export async function request(
       lastError = e;
       attempts.push(e);
 
+      /**
+       * A billed failure is still money.
+       *
+       * HikerAPI charges for 400/403/404 answers, and a 404 is exactly what a
+       * mistyped handle costs. Before this, the ledger recorded only successful
+       * dispatches, so the live cost report (and `/api/plan`'s measured settle,
+       * which reads the `lifetimeUsd` delta) could report a paid run as free.
+       * One unit per billed call, the adapter's own USD figure, then fail over
+       * exactly as before — the error thrown to the caller is unchanged.
+       */
       if (err instanceof ProviderUnavailable) {
+        const billed = err.billedUsd ?? 0;
+        if (billed > 0) {
+          ledger.spent += 1;
+          ledger.lifetimeSpent += 1;
+          ledger.calls += 1;
+          ledger.usd += billed;
+          ledger.lifetimeUsd += billed;
+          ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + 1;
+        }
+
         /**
          * Bench the vendor for the rest of the run only when it is *spent* or
          * rejected — not for a per-call miss.

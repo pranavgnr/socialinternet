@@ -121,10 +121,25 @@ class HikerHttpError extends ProviderUnavailable {
     exhausted: boolean,
     readonly status: number,
     readonly excType?: string,
+    billedUsd?: number,
   ) {
-    super("hikerapi", message, exhausted);
+    super("hikerapi", message, exhausted, false, billedUsd);
     this.name = "ProviderUnavailable";
   }
+}
+
+/**
+ * Does HikerAPI charge for this response?
+ *
+ * Per its docs, responses with HTTP 200, 400, 403 and 404 are billable; 5xx are
+ * not, and 422 is a validation error answered before Instagram is called. A
+ * 200 can still be a soft failure (`status: false`), which is why this is keyed
+ * on the status the vendor answered rather than on our own success test.
+ */
+function billedFor(status: number): number | undefined {
+  return status === 200 || status === 400 || status === 403 || status === 404
+    ? usdPerCall()
+    : undefined;
 }
 
 /** One HTTP request. No retry — `getWithRetry` owns that decision. */
@@ -155,7 +170,13 @@ async function get(
       res.status === 402 ||
       res.status === 403 ||
       /credit|balance|quota|limit/i.test(message);
-    throw new HikerHttpError(message, exhausted, res.status, str(json.exc_type));
+    throw new HikerHttpError(
+      message,
+      exhausted,
+      res.status,
+      str(json.exc_type),
+      billedFor(res.status),
+    );
   }
 
   return { data: unwrap(json), usd: usdPerCall() };
@@ -209,7 +230,13 @@ async function getWithRetry(
  */
 function withHandle(err: unknown, handle: string): Error {
   if (err instanceof HikerHttpError && err.status === 404) {
-    return new ProviderUnavailable("hikerapi", `@${handle} not found on Instagram`, false);
+    return new ProviderUnavailable(
+      "hikerapi",
+      `@${handle} not found on Instagram`,
+      false,
+      false,
+      err.billedUsd,
+    );
   }
   return err as Error;
 }

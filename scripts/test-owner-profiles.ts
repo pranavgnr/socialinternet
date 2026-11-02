@@ -406,6 +406,111 @@ test("intFromEnv rejects nonsense and floors fractions", async () => {
   delete process.env[name];
 });
 
+test("handles named __proto__, constructor and toString round-trip", async () => {
+  clearCache();
+  const { resolveOwnerFollowers } = await import("../lib/ownerProfiles");
+  /**
+   * Instagram handles are lowercase, so `toString` arrives as `tostring`; the
+   * dangerous exact keys are `__proto__` and `constructor`, and all three must
+   * survive normalisation and a disk round-trip.
+   */
+  const counts = new Map<string, number>([
+    ["__proto__", 111],
+    ["constructor", 222],
+    ["tostring", 333],
+  ]);
+  const handles = ["__proto__", "constructor", "ToString"];
+
+  let reads = 0;
+  const first = await resolveOwnerFollowers(handles, {
+    now: () => NOW,
+    read: async (h) => {
+      reads += 1;
+      return { followers: counts.get(h) };
+    },
+  });
+
+  assert.deepEqual(
+    [...first.entries()].sort(),
+    [
+      ["__proto__", 111],
+      ["constructor", 222],
+      ["tostring", 333],
+    ],
+    "every data key resolves",
+  );
+
+  const file = readCache();
+  for (const [handle, count] of counts) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(file, handle),
+      `the cache file must own the "${handle}" key`,
+    );
+    assert.equal(file[handle].followers, count);
+  }
+
+  reads = 0;
+  const second = await resolveOwnerFollowers(handles, {
+    now: () => NOW + HOUR,
+    read: async () => {
+      reads += 1;
+      return { followers: 0 };
+    },
+  });
+  assert.equal(reads, 0, "the dangerous-looking handles are cached like any other");
+  assert.equal(second.get("__proto__"), 111);
+});
+
+test("a timeout or fetch failure is omitted but never cached as dead", async () => {
+  clearCache();
+  const { resolveOwnerFollowers } = await import("../lib/ownerProfiles");
+
+  const reads: string[] = [];
+  const reader = async (h: string) => {
+    reads.push(h);
+    if (h === "slow_one") throw new DOMException("timed out", "TimeoutError");
+    if (h === "net_one") throw new TypeError("fetch failed");
+    return { followers: 42 };
+  };
+
+  const first = await resolveOwnerFollowers(["slow_one", "net_one", "ok_one"], {
+    now: () => NOW,
+    read: reader,
+  });
+  assert.equal(first.has("slow_one"), false, "a timeout yields no number");
+  assert.equal(first.has("net_one"), false, "a failed fetch yields no number");
+  assert.equal(first.get("ok_one"), 42, "the other handles still resolve");
+  const file = readCacheSafe();
+  assert.equal(file.slow_one, undefined, "a timeout must not hide the handle for a day");
+  assert.equal(file.net_one, undefined);
+
+  reads.length = 0;
+  await resolveOwnerFollowers(["slow_one", "net_one"], {
+    now: () => NOW + HOUR,
+    read: reader,
+  });
+  assert.deepEqual(reads, ["slow_one", "net_one"], "transient failures are retried next time");
+});
+
+test("the production no-Instagram-source error is not cached and stops the burst", async () => {
+  clearCache();
+  const { NO_INSTAGRAM_DATA_SOURCE } = await import("../lib/harvest");
+  const { resolveOwnerFollowers } = await import("../lib/ownerProfiles");
+
+  const reads: string[] = [];
+  const map = await resolveOwnerFollowers(["a", "b", "c"], {
+    now: () => NOW,
+    read: async (h) => {
+      reads.push(h);
+      throw new Error(NO_INSTAGRAM_DATA_SOURCE);
+    },
+  });
+
+  assert.equal(map.size, 0);
+  assert.equal(reads.length, 1, "no source means stop, not one failure per handle");
+  assert.deepEqual(readCacheSafe(), {}, "the handles stay readable on the next search");
+});
+
 test("a fresh niche search with 3 owner reads reports spend and attaches sizes", async () => {
   clearCache();
   rmSync(path.join(TMP, "niches"), { recursive: true, force: true });

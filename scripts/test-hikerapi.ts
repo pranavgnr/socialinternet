@@ -72,7 +72,18 @@ async function withEnv<T>(
   env: Record<string, string | undefined>,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const keys = ["HIKERAPI_KEY", "HIKERAPI_COMMENTS", "HIKERAPI_USD_PER_CALL"] as const;
+  const keys = [
+    "HIKERAPI_KEY",
+    "HIKERAPI_COMMENTS",
+    "HIKERAPI_USD_PER_CALL",
+    "SCRAPECREATORS_API_KEY",
+    "SCRAPECREATORS_USD_PER_CALL",
+    "APIFY_TOKEN",
+    "SOCIALCRAWL_API_KEY",
+    "DATA_PROVIDER",
+    "CREDIT_BUDGET_USD",
+    "YOUTUBE_WEB",
+  ] as const;
   const snap = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete process.env[k];
@@ -378,6 +389,7 @@ test("a second 500 throws ProviderUnavailable with exhausted: false", async () =
             (err: unknown) => {
               assert.ok(err instanceof ProviderUnavailable);
               assert.equal(err.exhausted, false);
+              assert.equal(err.billedUsd, undefined, "a 5xx is not billable");
               return true;
             },
           );
@@ -406,6 +418,7 @@ test("a 422 is never retried", async () => {
           (err: unknown) => {
             assert.ok(err instanceof ProviderUnavailable);
             assert.equal(err.exhausted, false);
+            assert.equal(err.billedUsd, undefined, "a 422 validation error is not billable");
             return true;
           },
         );
@@ -431,6 +444,7 @@ test("a 404 names the handle, is not retried and is not 'exhausted'", async () =
             assert.ok(err instanceof ProviderUnavailable);
             assert.equal(err.exhausted, false);
             assert.match(err.message, /kusha\.kapila/);
+            assert.equal(err.billedUsd, 0.02, "HikerAPI bills a 404");
             return true;
           },
         );
@@ -456,6 +470,11 @@ test("402 and 403 mark the vendor exhausted", async () => {
             (err: unknown) => {
               assert.ok(err instanceof ProviderUnavailable);
               assert.equal(err.exhausted, true, `HTTP ${status} means the balance is gone`);
+              assert.equal(
+                err.billedUsd,
+                status === 403 ? 0.02 : undefined,
+                status === 403 ? "HikerAPI bills a 403" : "a 402 payment wall is not a billed response",
+              );
               return true;
             },
           );
@@ -464,6 +483,136 @@ test("402 and 403 mark the vendor exhausted", async () => {
       assert.equal(calls, 1, "402/403 must never be retried");
     });
   }
+});
+
+test("a 400 sets billedUsd (HikerAPI bills it)", async () => {
+  await withEnv({ HIKERAPI_KEY: "test-key", HIKERAPI_USD_PER_CALL: undefined }, async () => {
+    const { hikerapi } = await import("../lib/providers/hikerapi");
+    await withFetch(
+      () => respond({ detail: "bad request" }, 400),
+      async () => {
+        await assert.rejects(
+          () => hikerapi.profile("someone"),
+          (err: unknown) => {
+            assert.ok(err instanceof ProviderUnavailable);
+            assert.equal(err.billedUsd, 0.02, "HikerAPI bills a 400");
+            return true;
+          },
+        );
+      },
+    );
+  });
+});
+
+test("a billed 404 fails over and both calls reach the ledger", async () => {
+  await withEnv(
+    {
+      HIKERAPI_KEY: "test-key",
+      HIKERAPI_USD_PER_CALL: "0.02",
+      SCRAPECREATORS_API_KEY: "test-scrapecreators",
+      SCRAPECREATORS_USD_PER_CALL: "0.00188",
+      APIFY_TOKEN: undefined,
+      SOCIALCRAWL_API_KEY: undefined,
+      DATA_PROVIDER: undefined,
+      CREDIT_BUDGET_USD: "100",
+    },
+    async () => {
+      const { resetCreditLedger, creditLedger, request } = await import(
+        "../lib/providers"
+      );
+      resetCreditLedger();
+
+      const { result } = await withFetch(
+        (url) => {
+          if (pathOf(url) === "/v2/user/by/username") {
+            return respond({ detail: "Not found", exc_type: "NotFoundException" }, 404);
+          }
+          if (
+            url.includes("api.scrapecreators.com") &&
+            pathOf(url) === "/v1/instagram/profile"
+          ) {
+            return respond({
+              success: true,
+              credits_charged: 1,
+              credits_remaining: 100,
+              data: {
+                user: { username: "someone", edge_followed_by: { count: 1234 } },
+              },
+            });
+          }
+          throw new Error(`unexpected request: ${url}`);
+        },
+        () =>
+          request({
+            path: "/instagram/profile",
+            handle: "someone",
+            platform: "instagram",
+          }),
+      );
+
+      assert.equal(result.provider, "scrapecreators", "the second vendor answered");
+      const user = ((result.data as Json).user ?? {}) as Json;
+      assert.equal(user.followers, 1234);
+
+      const ledger = creditLedger();
+      assert.equal(ledger.calls, 2, "the billed failure and the success both count");
+      assert.equal(ledger.spent, 2, "one unit per billed call");
+      assert.equal(ledger.lifetimeSpent >= 2, true);
+      assert.equal(ledger.byVendor.hikerapi, 1, "the failed vendor is not invisible");
+      assert.equal(ledger.byVendor.scrapecreators, 1);
+      assert.ok(
+        Math.abs(ledger.usd - (0.02 + 0.00188)) < 1e-9,
+        `expected the summed usd, got ${ledger.usd}`,
+      );
+    },
+  );
+});
+
+test("a 5xx adds nothing to the ledger", async () => {
+  await withEnv(
+    {
+      HIKERAPI_KEY: "test-key",
+      SCRAPECREATORS_API_KEY: undefined,
+      APIFY_TOKEN: undefined,
+      SOCIALCRAWL_API_KEY: undefined,
+      DATA_PROVIDER: undefined,
+      CREDIT_BUDGET_USD: "100",
+    },
+    async () => {
+      const { resetCreditLedger, creditLedger, request } = await import(
+        "../lib/providers"
+      );
+      const { setRetrySleepForTests } = await import("../lib/providers/hikerapi");
+      resetCreditLedger();
+      setRetrySleepForTests(async () => {});
+      try {
+        await assert.rejects(
+          () =>
+            withFetch(
+              () =>
+                respond(
+                  { detail: "Instagram did not respond", exc_type: "InstagramServerError" },
+                  500,
+                ),
+              () =>
+                request({
+                  path: "/instagram/profile",
+                  handle: "someone",
+                  platform: "instagram",
+                }),
+            ),
+          (err: unknown) => err instanceof Error,
+        );
+      } finally {
+        setRetrySleepForTests();
+      }
+
+      const ledger = creditLedger();
+      assert.equal(ledger.calls, 0, "an unbilled failure is not a call");
+      assert.equal(ledger.spent, 0);
+      assert.equal(ledger.usd, 0);
+    },
+  );
 });
 
 test("post reads comments from /v2/media/comments?id= into post.ext.top_comments by default", async () => {

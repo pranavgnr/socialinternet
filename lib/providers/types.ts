@@ -176,6 +176,16 @@ export class ProviderUnavailable extends Error {
      * own message instead of being masked by that sentence.
      */
     readonly unsupported = false,
+    /**
+     * Real money the vendor charged for this failed call, in USD.
+     *
+     * Survives the error precisely because the failed call is not free. The
+     * router cannot see the response once an adapter has thrown, so without this
+     * field a billed 404 would vanish from the ledger, and a measured settle
+     * (`lifetimeUsd` delta) would refund a plan that really cost money. Undefined
+     * means the failure was not billed (a 5xx, a timeout, a local guard).
+     */
+    readonly billedUsd?: number,
   ) {
     super(message);
     this.name = "ProviderUnavailable";

@@ -125,10 +125,18 @@ export async function deleteSession(sessionId: string): Promise<void> {
 /**
  * Upserts the Google user and mints a fresh session for them.
  *
- * `legacyVisitorId` is whatever the visitor's `c101` cookie said on FIRST
- * sign-in, so their existing JSON plan carries over. It is adopted only if it
- * is UUID-shaped, and only once — a later sign-in with a different visitor
- * cookie must never retarget an account that already has its directory.
+ * One atomic statement: a first-time insert, and — because `google_sub` is
+ * UNIQUE — two concurrent first-time callbacks for the same person land on the
+ * ON CONFLICT branch at most once instead of 500ing on the second. The loser
+ * keeps the winner's user id (never generates a second row) and picks up the
+ * winner's email/name freshness. `legacy_account_id` is deliberately not
+ * touched here: it is adopted below, guarded so it is set only when still
+ * NULL, and only if the visitor's `c101` cookie was UUID-shaped.
+ *
+ * `legacyVisitorId` is whatever the visitor's `c101` cookie said at their
+ * first-ever sign-in, so their existing JSON plan carries over. A later
+ * sign-in with a different visitor cookie must never retarget a directory the
+ * account already has.
  */
 export async function signInWithGoogleProfile(
   p: GoogleProfile,
@@ -138,43 +146,36 @@ export async function signInWithGoogleProfile(
     const legacy =
       legacyVisitorId && SHAPE.test(legacyVisitorId) ? legacyVisitorId : null;
 
-    const found = await q.query<{
+    const { rows } = await q.query<{
       id: string;
       legacy_account_id: string | null;
-    }>("SELECT id, legacy_account_id FROM users WHERE google_sub = $1", [p.sub]);
+    }>(
+      `INSERT INTO users (id, google_sub, email, name, legacy_account_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (google_sub) DO UPDATE
+         SET email = EXCLUDED.email, name = EXCLUDED.name
+       RETURNING id, legacy_account_id`,
+      [randomUUID(), p.sub, p.email, p.name ?? null, legacy],
+    );
+    const row = rows[0]!;
 
-    let userId: string;
-    const existing = found.rows[0];
-    if (existing) {
-      userId = existing.id;
-      if (!existing.legacy_account_id && legacy) {
-        await q.query(
-          "UPDATE users SET legacy_account_id = $1 WHERE id = $2 AND legacy_account_id IS NULL",
-          [legacy, userId],
-        );
-      }
-      // Google is the source of truth for the profile, so refresh it each time.
-      await q.query("UPDATE users SET email = $1, name = $2 WHERE id = $3", [
-        p.email,
-        p.name ?? null,
-        userId,
-      ]);
-    } else {
-      userId = randomUUID();
+    // The directory rides the visitor cookie in exactly once: when a racing
+    // second callback read it back as still NULL, the WHERE recheck keeps it
+    // from overriding whatever the other callback adopted first.
+    if (!row.legacy_account_id && legacy) {
       await q.query(
-        `INSERT INTO users (id, google_sub, email, name, legacy_account_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, now())`,
-        [userId, p.sub, p.email, p.name ?? null, legacy],
+        "UPDATE users SET legacy_account_id = $1 WHERE id = $2 AND legacy_account_id IS NULL",
+        [legacy, row.id],
       );
     }
 
     const sessionId = newSessionId();
     await q.query(
       "INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, now() + interval '30 days')",
-      [hashSessionId(sessionId), userId],
+      [hashSessionId(sessionId), row.id],
     );
     await q.query("DELETE FROM sessions WHERE expires_at < now()");
-    return { userId, sessionId };
+    return { userId: row.id, sessionId };
   });
 }
 

@@ -104,6 +104,49 @@ test("a profile update on re-sign-in rewrites email and name", async () => {
   });
 });
 
+test("two parallel first-time sign-ins for one sub share a user, not a 500", async () => {
+  await withFreshDb(async (q) => {
+    const visitorA = randomUUID();
+    const visitorB = randomUUID();
+
+    // The race the review found: two callbacks for the same never-seen
+    // google_sub land at once — the SELECT-then-INSERT 500ed on one of them.
+    const [a, b] = await Promise.all([
+      signInWithGoogleProfile(
+        { sub: "google-sub-race", email: "race@example.com", name: "Race A" },
+        visitorA
+      ),
+      signInWithGoogleProfile(
+        { sub: "google-sub-race", email: "race@example.com", name: "Race B" },
+        visitorB
+      ),
+    ]);
+
+    // Same user, two private sessions.
+    assert.equal(a.userId, b.userId);
+    assert.notEqual(a.sessionId, b.sessionId);
+
+    const { rows: userRows } = await q.query<{ id: string; sub: string }>(
+      "SELECT id, google_sub AS sub FROM users WHERE google_sub = $1",
+      ["google-sub-race"]
+    );
+    assert.equal(userRows.length, 1); // exactly one users row
+    assert.equal(userRows[0]!.id, a.userId); // and it is the one both got
+
+    // The legacy id settles on exactly the one adopted visitor id — never a
+    // merge, never a retarget, never null.
+    const { rows: legacyRows } = await q.query<{ legacy_account_id: string | null }>(
+      "SELECT legacy_account_id FROM users WHERE id = $1",
+      [a.userId]
+    );
+    const dir = legacyRows[0]!.legacy_account_id;
+    assert.ok(
+      dir === visitorA || dir === visitorB,
+      `legacy id must be one of the two racing visitor cookies, got ${dir}`
+    );
+  });
+});
+
 test("the visitor's legacy account carries over on first sign-in only", async () => {
   await withFreshDb(async (q) => {
     const visitor = randomUUID();

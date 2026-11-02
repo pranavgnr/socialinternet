@@ -24,6 +24,7 @@ import { scrapecreators } from "./scrapecreators";
 import { call as socialcrawlCall, socialcrawl } from "./socialcrawl";
 import { youtube } from "./youtube";
 import { youtubeweb } from "./youtubeweb";
+import { redactSecrets } from "../env";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -510,7 +511,8 @@ export async function request(
   /**
    * The creator sees only the generic sentence, so the operator's only trace of
    * the real cause is this one warning: vendor ids plus vendor messages, never a
-   * key or token.
+   * key or token. Vendor bodies can echo the request URL, so the detail goes
+   * through the same redaction the canary uses.
    */
   if (onlyUnavailable) {
     const detail = attempts
@@ -518,7 +520,7 @@ export async function request(
         e instanceof ProviderUnavailable ? `${e.provider}: ${e.message}` : e.message,
       )
       .join("; ");
-    console.warn(`[providers] no vendor could serve ${path}: ${detail}`);
+    console.warn(`[providers] no vendor could serve ${path}: ${redactSecrets(detail)}`);
   }
   /**
    * When a vendor gave a real answer (a 404, a malformed payload), that message

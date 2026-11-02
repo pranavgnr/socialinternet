@@ -817,9 +817,15 @@ export async function researchNiche(opts: {
    * extras are priced separately: when no paid vendor reports a usable balance
    * (`freeOnly`), `enrichCohort` is called with `freeOnly` and keeps no
    * Instagram candidates, so no cohort top-ups are read, and the bought-comment
-   * budget is zero. There is no free Instagram reader to stand in, so such a run
-   * either succeeds on the search alone or fails with the honest no-source
-   * message.
+   * budget is zero. There is no free Instagram reader to stand in.
+   *
+   * `readiness()` below is a separate answer, and it is about money rather than
+   * capability. If no paid vendor reports a usable balance, `ready.any` is false
+   * and this entry point throws "Not enough credits: no vendor can serve this
+   * search right now."; `friendly()` maps that to the capacity sentence on the
+   * page. That is deliberately different from the no-vendor case above (which
+   * throws the no-Instagram-source sentence): here the source exists, its
+   * account is just empty.
    */
   const cost = handle ? 2 : 1;
   const ready = await readiness("/instagram/search/reels", cost);

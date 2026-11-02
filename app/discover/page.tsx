@@ -26,6 +26,27 @@ function age(hours: number): string {
   return days === 1 ? "yesterday" : `${days}d ago`;
 }
 
+/**
+ * The configured cache window in words.
+ *
+ * `hoursFromEnv` caps the setting at a year, but "8760 hours" is still not a
+ * sentence; weeks (and days, then hours below two days) keep the copy readable
+ * whatever an operator puts in the variable.
+ */
+function cacheWindow(hours: number): string {
+  if (hours < 1) {
+    const minutes = Math.max(1, Math.round(hours * 60));
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  if (hours < 24 * 14) {
+    const days = Math.round(hours / 24);
+    return `${days} day${days === 1 ? "" : "s"}`;
+  }
+  const weeks = Math.round(hours / 168);
+  return `${weeks} week${weeks === 1 ? "" : "s"}`;
+}
+
 export default async function DiscoverPage({
   searchParams,
 }: {
@@ -132,8 +153,7 @@ export default async function DiscoverPage({
           </ul>
           <p className="mt-3 text-[11px] leading-relaxed text-muted/60">
             Reopening one of these costs nothing. A phrase that has not been read
-            in the last {nicheTtlHours} hour{nicheTtlHours === 1 ? "" : "s"} is
-            pulled fresh.
+            in the last {cacheWindow(nicheTtlHours)} is pulled fresh.
           </p>
         </section>
       ) : null}

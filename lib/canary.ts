@@ -12,6 +12,7 @@
  * Rows are therefore `RawReel`s (`views`, `followers`), never raw payloads.
  */
 import { currentDb } from "./db";
+import { redactSecrets } from "./env";
 import { normaliseProviderRows } from "./harvest";
 import { allProviders, creditLedger, recordDirectSpend } from "./providers";
 import type { DataProvider, ProviderId } from "./providers/types";
@@ -133,32 +134,11 @@ export function checkCanary(
 }
 
 /** Env vars whose values must never reach a canary row or a webhook body. */
-const SECRET_ENV = [
-  "APIFY_TOKEN",
-  "SOCIALCRAWL_API_KEY",
-  "SCRAPECREATORS_API_KEY",
-  "HIKERAPI_KEY",
-  "CRON_SECRET",
-];
-
 /**
- * A vendor error can quote the request URL, and those URLs carry tokens. Keep
- * the message, remove the credential: a canary row is stored and may be posted
- * to an operator webhook.
+ * Re-exported from `lib/env.ts`, where the router can also use it without an
+ * import cycle through the canary. Existing callers keep working unchanged.
  */
-export function redactSecrets(message: string): string {
-  let out = message;
-  for (const name of SECRET_ENV) {
-    const value = process.env[name];
-    if (value && value.length >= 4) out = out.split(value).join("[redacted]");
-  }
-  out = out.replace(
-    /([?&](?:token|key|api_key|apikey|access_token)=)[^&\s]+/gi,
-    "$1[redacted]",
-  );
-  out = out.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]");
-  return out.slice(0, 500);
-}
+export { redactSecrets } from "./env";
 
 /** Per-run real-money ceiling, defaulting to 25 cents. */
 function maxUsd(): number {

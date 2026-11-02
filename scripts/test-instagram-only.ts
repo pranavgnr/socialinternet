@@ -513,10 +513,10 @@ test("ScrapeCreators alone cannot keyword-search and says only the honest senten
   assert.deepEqual(seen, [], "the capability refusal costs no request");
 });
 
-test("exhausted vendors are logged once with ids, but users only see the honest sentence", async () => {
+test("exhausted vendors are logged once with redacted detail, users only see the honest sentence", async () => {
   onlyYoutubeReader();
-  process.env.HIKERAPI_KEY = "test-hiker-key-value";
-  process.env.SOCIALCRAWL_API_KEY = "test-socialcrawl-key-value";
+  process.env.HIKERAPI_KEY = "SECRETVALUE123";
+  process.env.SOCIALCRAWL_API_KEY = "KEYVALUE456";
   await resetRouter();
   const { searchReelsWithMeta, NO_INSTAGRAM_DATA_SOURCE } = await import(
     "../lib/harvest"
@@ -537,7 +537,13 @@ test("exhausted vendors are logged once with ids, but users only see the honest 
     await withFetch(
       (url) => {
         if (url.includes("api.hikerapi.com")) {
-          return response({ detail: "payment required" }, 402);
+          return response(
+            {
+              detail:
+                "https://x.test/?token=SECRETVALUE123&key=KEYVALUE456 Bearer ABCDEF123456",
+            },
+            402,
+          );
         }
         if (url.includes("socialcrawl.dev")) {
           return response({ error: { message: "insufficient credits" } }, 402);
@@ -563,7 +569,12 @@ test("exhausted vendors are logged once with ids, but users only see the honest 
   assert.equal(warnings.length, 1, "one warning per failed call, not one per vendor");
   assert.match(warnings[0], /hikerapi/);
   assert.match(warnings[0], /socialcrawl/);
-  assert.doesNotMatch(warnings[0], /test-hiker-key-value|test-socialcrawl-key-value/);
+  for (const secret of ["SECRETVALUE123", "KEYVALUE456", "ABCDEF123456"]) {
+    assert.ok(
+      !warnings[0].includes(secret),
+      `the operator log must redact "${secret}": ${warnings[0]}`,
+    );
+  }
 
   const userText = friendly(thrown, "That search did not work.");
   assert.equal(userText, NO_INSTAGRAM_DATA_SOURCE);
@@ -607,5 +618,7 @@ test("hoursFromEnv falls back on empty, invalid, zero or negative values", async
   assert.equal(hoursFromEnv(name, 12), 168, "configured");
   process.env[name] = "1.5";
   assert.equal(hoursFromEnv(name, 12), 1.5, "fractional");
+  process.env[name] = "1e9";
+  assert.equal(hoursFromEnv(name, 12), 24 * 365, "clamped to one year");
   delete process.env[name];
 });

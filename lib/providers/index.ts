@@ -63,6 +63,19 @@ export interface CreditLedger {
   byEndpoint: Record<string, number>;
   /** real money spent since process start, USD */
   usd: number;
+  /**
+   * Real money spent since process start, USD — **never reset**.
+   *
+   * `usd` is per-run: `researchNiche` zeroes it before a fresh pull so each
+   * run starts from a clean ceiling. A request that snapshot `usd` before its
+   * work and reads it after can therefore see a reset in between and compute a
+   * negative or zero delta even though its own vendor call really cost money.
+   * This counter only ever grows, so a measured before/after pair is immune to
+   * another request's reset.
+   */
+  lifetimeUsd: number;
+  /** Vendor units spent since process start — never reset, for the same reason. */
+  lifetimeSpent: number;
   /** which vendor served each logical call, for the audit line */
   servedBy: Record<string, number>;
   /**
@@ -86,6 +99,8 @@ const ledger: CreditLedger = {
   budget: Number(process.env.CREDIT_BUDGET ?? process.env.SOCIALCRAWL_CREDIT_BUDGET ?? 40),
   byEndpoint: {},
   usd: 0,
+  lifetimeUsd: 0,
+  lifetimeSpent: 0,
   servedBy: {},
   byVendor: {},
 };
@@ -180,8 +195,10 @@ export function recordDirectSpend(
   result: Pick<PullResult, "usd" | "units">,
 ): void {
   ledger.spent += result.units;
+  ledger.lifetimeSpent += result.units;
   ledger.calls += 1;
   ledger.usd += result.usd;
+  ledger.lifetimeUsd += result.usd;
   ledger.byVendor[providerId] = (ledger.byVendor[providerId] ?? 0) + result.units;
   ledger.servedBy[providerId] = (ledger.servedBy[providerId] ?? 0) + 1;
 }
@@ -407,8 +424,10 @@ export async function request(
       result.provider = provider.id;
 
       ledger.spent += result.units;
+      ledger.lifetimeSpent += result.units;
       ledger.calls += 1;
       ledger.usd += result.usd;
+      ledger.lifetimeUsd += result.usd;
       ledger.byEndpoint[path] = (ledger.byEndpoint[path] ?? 0) + result.units;
       ledger.servedBy[provider.id] = (ledger.servedBy[provider.id] ?? 0) + 1;
       ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + result.units;
@@ -521,8 +540,10 @@ export async function fetchComments(
     try {
       const result = await provider.comments(url, limit);
       ledger.spent += result.units;
+      ledger.lifetimeSpent += result.units;
       ledger.calls += 1;
       ledger.usd += result.usd;
+      ledger.lifetimeUsd += result.usd;
       ledger.byEndpoint["/instagram/post/comments"] =
         (ledger.byEndpoint["/instagram/post/comments"] ?? 0) + result.units;
       ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + result.units;

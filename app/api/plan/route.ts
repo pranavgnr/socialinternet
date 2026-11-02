@@ -117,7 +117,7 @@ export async function POST(req: Request) {
      * What the run is about to spend sits on a process-wide vendor ledger, so
      * the settle below compares a snapshot taken now against one taken after.
      */
-    const vendorUsdAtStart = creditLedger().usd;
+    const vendorUsdAtStart = creditLedger().lifetimeUsd;
 
     /** `settleAfter` runs the whole build, then settles the charge: a throw
      * after the charge refunds it in full, and a run the ledger measured as
@@ -193,13 +193,16 @@ export async function POST(req: Request) {
          * read and the deep enrich pass, and a cached room resets it to zero —
          * refunding on it gave a fresh paid pull away as a free plan.
          *
-         * The ledger is process-wide, not per request, and it only ever
-         * grows during a window: a concurrent request's spend landing inside
-         * this snapshot can only push the measured cost up and make the user
-         * keep their charge (conservative, never a free plan); our own spend
-         * is always inside our own before/after pair.
+         * The ledger is process-wide, not per request. `lifetimeUsd` is used
+         * rather than `usd` because a fresh niche pull resets `usd` mid-run:
+         * a reset between this snapshot and the settle would otherwise read as
+         * zero spend and refund a plan that really cost money. `lifetimeUsd`
+         * only ever grows, so our own spend is always inside our own
+         * before/after pair; a concurrent request's spend can only push the
+         * measured cost up, which keeps the charge (conservative, never a free
+         * plan).
          */
-        return creditLedger().usd - vendorUsdAtStart;
+        return creditLedger().lifetimeUsd - vendorUsdAtStart;
       },
     );
   } catch (err) {

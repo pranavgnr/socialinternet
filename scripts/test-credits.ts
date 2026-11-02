@@ -184,6 +184,28 @@ test("spend rejects a negative or fractional amount", async () => {
   });
 });
 
+test("lifetimeUsd survives a reset, so a measured settle cannot lose spend", async () => {
+  // `researchNiche` resets the per-run ledger before every fresh pull. A route
+  // that snapshots the ledger before its work and settles after must still see
+  // the money its own call spent, even when another pull reset `usd` in between.
+  const { creditLedger, recordDirectSpend, resetCreditLedger } = await import(
+    "../lib/providers"
+  );
+  const usdBefore = creditLedger().lifetimeUsd;
+  const unitsBefore = creditLedger().lifetimeSpent;
+
+  recordDirectSpend("apify", { usd: 0.02, units: 3 });
+  resetCreditLedger();
+
+  const usdDelta = creditLedger().lifetimeUsd - usdBefore;
+  const unitsDelta = creditLedger().lifetimeSpent - unitsBefore;
+  assert.ok(Math.abs(usdDelta - 0.02) < 1e-9, `expected $0.02, got ${usdDelta}`);
+  assert.equal(unitsDelta, 3);
+  // The per-run counters still reset, so the budget ceiling is unchanged.
+  assert.equal(creditLedger().usd, 0);
+  assert.equal(creditLedger().spent, 0);
+});
+
 // Needs no database: confirms closeDb also resolves after the pool-free run.
 test("closeDb is a no-op in this suite", async () => {
   await closeDb();

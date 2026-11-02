@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { migrate } from "../lib/migrate";
 import type { Queryable } from "../lib/db";
-
 // PGlite's own query type is close to but not exactly Queryable; adapt it.
 function asQueryable(pg: PGlite): Queryable {
   return {
@@ -44,4 +43,15 @@ test("migrate applies once and is idempotent", async () => {
   for (const table of TABLES) {
     assert.ok(present.has(table), `missing table: ${table}`);
   }
+});
+
+test("migrate rejects a pool-like object", async () => {
+  // Pool-shaped: has connect, no release. migrate's BEGIN/COMMIT needs a
+  // single connection, so this must fail loudly, not silently break atomicity.
+  const poolLike = {
+    connect: async () => {
+      throw new Error("should never be called");
+    },
+  } as unknown as Queryable;
+  await assert.rejects(() => migrate(poolLike), /Pool/);
 });

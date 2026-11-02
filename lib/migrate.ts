@@ -2,11 +2,37 @@
 // each applied name in schema_migrations. Works unchanged against the pg pool
 // and PGlite: files are split into single statements and run inside an
 // explicit transaction, both of which pg and PGlite handle the same way.
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Queryable } from "./db";
 
-const MIGRATIONS_DIR = path.join(process.cwd(), "db", "migrations");
+// Resolves db/migrations next to the module file (works in the tsc commonjs
+// build, where __dirname is .tmp-build/lib) and falls back to the working
+// directory for bundled builds where __dirname does not point at the repo.
+let dirCache: string | undefined;
+function migrationsDir(): string {
+  if (!dirCache) {
+    dirCache = path.resolve(__dirname, "..", "..", "db", "migrations");
+    if (!existsSync(dirCache)) {
+      dirCache = path.join(process.cwd(), "db", "migrations");
+    }
+  }
+  return dirCache;
+}
+
+// A pg Pool exposes .connect() but no .release(), while a client has the
+// opposite. migrate() runs BEGIN/COMMIT, so passing a Pool would let the
+// statements land on different connections — reject rather than silently
+// losing atomicity. Callers should use withClient() from lib/db.
+function checkNotPool(q: Queryable): void {
+  const probe = q as unknown as { connect?: unknown; release?: unknown };
+  if (typeof probe.connect === "function" && typeof probe.release !== "function") {
+    throw new Error(
+      "migrate: pass a single connection, not a pg Pool — its queries can span connections and break the migration's transaction. Use await withClient(migrate) from lib/db instead."
+    );
+  }
+}
 
 // Splits a SQL file on top-level semicolons, ignoring semicolons that appear
 // inside line or block comments, '…' literals, "…" identifiers and $tag$… dollar
@@ -61,6 +87,7 @@ export function splitStatements(sql: string): string[] {
 // names it applied, so a second call returns [] and callers can log what
 // changed.
 export async function migrate(q: Queryable): Promise<string[]> {
+  checkNotPool(q);
   await q.query(
     `CREATE TABLE IF NOT EXISTS schema_migrations (
        name text PRIMARY KEY,
@@ -73,14 +100,14 @@ export async function migrate(q: Queryable): Promise<string[]> {
   );
   const applied = new Set(rows.map((r) => r.name));
 
-  const files = (await readdir(MIGRATIONS_DIR))
+  const files = (await readdir(migrationsDir()))
     .filter((f) => f.endsWith(".sql"))
     .sort();
 
   const appliedNow: string[] = [];
   for (const file of files) {
     if (applied.has(file)) continue;
-    const sql = await readFile(path.join(MIGRATIONS_DIR, file), "utf8");
+    const sql = await readFile(path.join(migrationsDir(), file), "utf8");
     const statements = splitStatements(sql);
     if (statements.length === 0) {
       appliedNow.push(file); // empty file: nothing to run, still record it

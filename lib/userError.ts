@@ -9,6 +9,13 @@ export function friendly(err: unknown, fallback: string): string {
   if (/handle is required|invalid handle|bad handle/i.test(raw)) {
     return "That handle doesn't look right. Type it the way it appears on Instagram, without spaces.";
   }
+  /**
+   * Deliberately pass this one through: it is already the sentence the product
+   * wants a creator to see, and it names no vendor, credit or HTTP status.
+   */
+  if (/No Instagram data source is available right now/i.test(raw)) {
+    return "No Instagram data source is available right now";
+  }
   if (/not enough credits|balance|quota|402/i.test(raw)) {
     return "We are at capacity right now. Try again later today.";
   }

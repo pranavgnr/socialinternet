@@ -213,12 +213,18 @@ export const scrapecreators: DataProvider = {
   /**
    * Refused, not faked. See the header: search rows here carry no view count,
    * so a room priced from them would be arithmetic on zeros.
+   *
+   * `unsupported` is what tells the router this is a capability gap rather than
+   * a failed request: the vendor cannot do this call at all, so being the last
+   * Instagram vendor standing means "no Instagram source", not a diagnostic for
+   * the creator.
    */
   async searchReels(query: string): Promise<PullResult> {
     throw new ProviderUnavailable(
       "scrapecreators",
       `no view counts on keyword search — ${query.trim() ? "use a vendor that reports play counts" : "empty query"}`,
       false,
+      true,
     );
   },
 

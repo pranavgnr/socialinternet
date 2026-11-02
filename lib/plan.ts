@@ -12,6 +12,7 @@ import { times } from "./fmt";
 import { cachedCommentsByUrl, mineComments, normaliseUrl } from "./comments";
 import { enrich, pickForEnrichment, type EnrichReport } from "./enrich";
 import { buildNextMove } from "./nextMove";
+import { hoursFromEnv } from "./env";
 import {
   harvestAccountReels,
   harvestInstagramAccount,
@@ -57,9 +58,10 @@ import type {
 const HANDLE_DIR = path.join(process.cwd(), "data", "handles");
 /**
  * How long a handle read stays fresh. Read per call rather than captured at
- * import, so a test (or a restart-free `.env.local` change) can move it.
+ * import, so a test (or a restart-free `.env.local` change) can move it. Empty,
+ * invalid, zero and negative values fall back to twelve hours.
  */
-const handleTtlHours = (): number => Number(process.env.HANDLE_CACHE_HOURS ?? 12);
+const handleTtlHours = (): number => hoursFromEnv("HANDLE_CACHE_HOURS", 12);
 const MAX_COHORT_ACCOUNTS = 40;
 
 /**
@@ -357,9 +359,10 @@ export async function pullOwn(
  * The credit gate asks this before any pull, so a handle whose feed is already
  * on disk and inside the TTL opens for free even for a stranger who has not
  * signed in. Same test `pullOwn` applies when deciding to serve from disk — a
- * stored feed inside `HANDLE_TTL_HOURS` — so the answer here always agrees with
- * what the pull would do. A deliberate refresh (`force: true`) is decided by
- * the caller, not here: the gate refuses to treat a forced read as cached.
+ * stored feed inside the configured `HANDLE_CACHE_HOURS` window — so the answer
+ * here always agrees with what the pull would do. A deliberate refresh
+ * (`force: true`) is decided by the caller, not here: the gate refuses to treat
+ * a forced read as cached.
  * With no platform named, Instagram is assumed — the same default `pullOwn`
  * starts from.
  */

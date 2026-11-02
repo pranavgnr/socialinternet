@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import NicheSearch from "@/components/NicheSearch";
+import { hoursFromEnv } from "@/lib/env";
 import {
   cachedNiches,
   nicheCacheStatus,
@@ -34,6 +35,12 @@ export default async function DiscoverPage({
 
   const { q } = await searchParams;
   const query = (q ?? "").trim();
+
+  /**
+   * The copy below states the cache rule, so it reads the same setting the
+   * server applies rather than a second hard-coded number that can drift.
+   */
+  const nicheTtlHours = hoursFromEnv("NICHE_CACHE_HOURS", 12);
 
   // Payloads are only read when a phrase was asked for; without one this page
   // only needs the list of rooms already looked at.
@@ -125,7 +132,8 @@ export default async function DiscoverPage({
           </ul>
           <p className="mt-3 text-[11px] leading-relaxed text-muted/60">
             Reopening one of these costs nothing. A phrase that has not been read
-            in the last 12 hours is pulled fresh.
+            in the last {nicheTtlHours} hour{nicheTtlHours === 1 ? "" : "s"} is
+            pulled fresh.
           </p>
         </section>
       ) : null}

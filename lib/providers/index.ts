@@ -508,6 +508,19 @@ export async function request(
       (e) => e instanceof ProviderUnavailable && (e.exhausted || e.unsupported),
     );
   /**
+   * The creator sees only the generic sentence, so the operator's only trace of
+   * the real cause is this one warning: vendor ids plus vendor messages, never a
+   * key or token.
+   */
+  if (onlyUnavailable) {
+    const detail = attempts
+      .map((e) =>
+        e instanceof ProviderUnavailable ? `${e.provider}: ${e.message}` : e.message,
+      )
+      .join("; ");
+    console.warn(`[providers] no vendor could serve ${path}: ${detail}`);
+  }
+  /**
    * When a vendor gave a real answer (a 404, a malformed payload), that message
    * is the useful one — even if a later vendor was merely out of credit. Taking
    * only the last error would let "payment required" bury " @handle not found".

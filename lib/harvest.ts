@@ -28,6 +28,7 @@ import {
   type LogicalCall,
   type ProviderId,
 } from "./providers";
+import { hoursFromEnv } from "./env";
 
 const SOCIALCRAWL = "https://www.socialcrawl.dev/v1";
 
@@ -990,7 +991,12 @@ export interface HarvestResult {
  * is identical, so only the code changes.
  */
 const CACHE_PATH = path.join(process.cwd(), "data", "_raw_cache.json");
-const CACHE_TTL_HOURS = Number(process.env.HARVEST_CACHE_HOURS ?? 12);
+/**
+ * How long a raw pull stays warm. Read per call, and through the shared reader so
+ * an empty/invalid/zero/negative value falls back to twelve hours instead of
+ * disabling the cache or making it permanent.
+ */
+const cacheTtlHours = (): number => hoursFromEnv("HARVEST_CACHE_HOURS", 12);
 
 interface CacheFile {
   fetchedAt: string;
@@ -1013,7 +1019,7 @@ function readCache(key: string): CacheFile | null {
     const raw = JSON.parse(readFileSync(CACHE_PATH, "utf8")) as CacheFile;
     if (raw.key !== key) return null;
     const ageH = (Date.now() - +new Date(raw.fetchedAt)) / 3_600_000;
-    if (!(ageH >= 0 && ageH <= CACHE_TTL_HOURS)) return null;
+    if (!(ageH >= 0 && ageH <= cacheTtlHours())) return null;
     return raw;
   } catch {
     return null;
@@ -1126,10 +1132,10 @@ export function cacheStatus(profile: Profile): CacheStatus {
     const ageH = (Date.now() - +new Date(raw.fetchedAt)) / 3_600_000;
     const keyMatches = raw.key === key;
     return {
-      warm: keyMatches && ageH >= 0 && ageH <= CACHE_TTL_HOURS,
+      warm: keyMatches && ageH >= 0 && ageH <= cacheTtlHours(),
       keyMatches,
       ageHours: Math.round(ageH * 100) / 100,
-      ttlHours: CACHE_TTL_HOURS,
+      ttlHours: cacheTtlHours(),
       fetchedAt: raw.fetchedAt,
       reels: raw.reels.length,
     };
@@ -1138,7 +1144,7 @@ export function cacheStatus(profile: Profile): CacheStatus {
       warm: false,
       keyMatches: false,
       ageHours: null,
-      ttlHours: CACHE_TTL_HOURS,
+      ttlHours: cacheTtlHours(),
       fetchedAt: null,
       reels: null,
     };

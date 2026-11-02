@@ -486,3 +486,126 @@ test("a niche search with no Instagram vendor gives the same honest message", as
   );
   assert.deepEqual(seen, [], "the YouTube reader must not answer a niche");
 });
+
+test("ScrapeCreators alone cannot keyword-search and says only the honest sentence", async () => {
+  onlyYoutubeReader();
+  process.env.SCRAPECREATORS_API_KEY = "test-scrapecreators";
+  await resetRouter();
+  const { searchReelsWithMeta, NO_INSTAGRAM_DATA_SOURCE } = await import(
+    "../lib/harvest"
+  );
+
+  const { seen } = await withFetch(
+    () => {
+      throw new Error("no network call may be made: searchReels refuses first");
+    },
+    async () => {
+      await assert.rejects(
+        () => searchReelsWithMeta("kannada songs"),
+        (err: Error) => {
+          assert.equal(err.message, NO_INSTAGRAM_DATA_SOURCE);
+          assert.doesNotMatch(err.message, /scrapecreators|view counts|every data vendor failed/i);
+          return true;
+        },
+      );
+    },
+  );
+  assert.deepEqual(seen, [], "the capability refusal costs no request");
+});
+
+test("exhausted vendors are logged once with ids, but users only see the honest sentence", async () => {
+  onlyYoutubeReader();
+  process.env.HIKERAPI_KEY = "test-hiker-key-value";
+  process.env.SOCIALCRAWL_API_KEY = "test-socialcrawl-key-value";
+  await resetRouter();
+  const { searchReelsWithMeta, NO_INSTAGRAM_DATA_SOURCE } = await import(
+    "../lib/harvest"
+  );
+  const { friendly } = await import("../lib/userError");
+
+  const warnings: string[] = [];
+  const realWarn = console.warn;
+  const realError = console.error;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(" "));
+  };
+  console.error = () => {
+    /* friendly() logs the raw message; keep the test output clean */
+  };
+  let thrown: Error | undefined;
+  try {
+    await withFetch(
+      (url) => {
+        if (url.includes("api.hikerapi.com")) {
+          return response({ detail: "payment required" }, 402);
+        }
+        if (url.includes("socialcrawl.dev")) {
+          return response({ error: { message: "insufficient credits" } }, 402);
+        }
+        throw new Error(`unexpected network call to ${url}`);
+      },
+      async () => {
+        await assert.rejects(
+          () => searchReelsWithMeta("kannada songs"),
+          (err: Error) => {
+            thrown = err;
+            assert.equal(err.message, NO_INSTAGRAM_DATA_SOURCE, "the generic sentence");
+            return true;
+          },
+        );
+      },
+    );
+  } finally {
+    console.warn = realWarn;
+    console.error = realError;
+  }
+
+  assert.equal(warnings.length, 1, "one warning per failed call, not one per vendor");
+  assert.match(warnings[0], /hikerapi/);
+  assert.match(warnings[0], /socialcrawl/);
+  assert.doesNotMatch(warnings[0], /test-hiker-key-value|test-socialcrawl-key-value/);
+
+  const userText = friendly(thrown, "That search did not work.");
+  assert.equal(userText, NO_INSTAGRAM_DATA_SOURCE);
+  for (const forbidden of [
+    "hikerapi",
+    "apify",
+    "scrapecreators",
+    "socialcrawl",
+    "credits",
+    "balance",
+    "402",
+    "403",
+    "bench",
+  ]) {
+    assert.ok(
+      !userText.toLowerCase().includes(forbidden),
+      `user-facing text must not contain "${forbidden}": ${userText}`,
+    );
+    assert.ok(
+      !(thrown?.message ?? "").toLowerCase().includes(forbidden),
+      `thrown text must not contain "${forbidden}": ${thrown?.message}`,
+    );
+  }
+});
+
+test("hoursFromEnv falls back on empty, invalid, zero or negative values", async () => {
+  const { hoursFromEnv } = await import("../lib/env");
+  const name = "INSTAGRAM_ONLY_TEST_HOURS";
+
+  delete process.env[name];
+  assert.equal(hoursFromEnv(name, 12), 12, "unset");
+  process.env[name] = "";
+  assert.equal(hoursFromEnv(name, 12), 12, "empty");
+  process.env[name] = "abc";
+  assert.equal(hoursFromEnv(name, 12), 12, "non-numeric");
+  process.env[name] = "-5";
+  assert.equal(hoursFromEnv(name, 12), 12, "negative");
+  process.env[name] = "0";
+  assert.equal(hoursFromEnv(name, 12), 12, "zero");
+  process.env[name] = "168";
+  assert.equal(hoursFromEnv(name, 12), 168, "configured");
+  process.env[name] = "1.5";
+  assert.equal(hoursFromEnv(name, 12), 1.5, "fractional");
+  delete process.env[name];
+});

@@ -21,6 +21,7 @@ import {
 } from "./lang";
 import { platformOn } from "./platform";
 import { providersFor, readiness } from "./providers";
+import { hoursFromEnv } from "./env";
 import { keepOnSubject } from "./subject";
 import { isStopword } from "./text";
 import { watchToVerify, type WatchStats } from "./verifyLang";
@@ -88,9 +89,10 @@ const MAX_CREDITS_PER_SEARCH = 1 + ENRICH_MAX + COMMENT_CREDITS;
 /**
  * How long a niche pull is served from disk. Read per call rather than captured
  * at import, so the deployment (or a test) can widen it with
- * `NICHE_CACHE_HOURS=168` without a code change.
+ * `NICHE_CACHE_HOURS=168` without a code change. Empty, invalid, zero and
+ * negative values fall back to twelve hours.
  */
-const cacheTtlHours = (): number => Number(process.env.NICHE_CACHE_HOURS ?? 12);
+const cacheTtlHours = (): number => hoursFromEnv("NICHE_CACHE_HOURS", 12);
 /**
  * Where cached pulls live. CREATORS_DATA_DIR is the same override the rest of
  * the data layer uses (store, weekly), so a test or a second checkout can point
@@ -803,15 +805,21 @@ export async function researchNiche(opts: {
   }
 
   /**
-   * Pre-flight: can anyone serve this search, and can anyone *pay* for the
-   * extras?
+   * Pre-flight: can an Instagram vendor serve this search, and can anyone *pay*
+   * for the extras?
    *
    * The old gate read `checkBalance()`, which reports the active vendor's
    * credit count. That made "the paid key is empty" look like "the search is
    * impossible", and the page answered "we are at capacity" for a call the free
-   * vendor would have served for nothing. Price the extras instead of the
-   * search: paid-only runs skip cohort top-ups and comment reads, which are the
-   * only things that actually cost money.
+   * vendor would have served for nothing.
+   *
+   * The search itself is attempted whenever an Instagram vendor exists. The
+   * extras are priced separately: when no paid vendor reports a usable balance
+   * (`freeOnly`), `enrichCohort` is called with `freeOnly` and keeps no
+   * Instagram candidates, so no cohort top-ups are read, and the bought-comment
+   * budget is zero. There is no free Instagram reader to stand in, so such a run
+   * either succeeds on the search alone or fails with the honest no-source
+   * message.
    */
   const cost = handle ? 2 : 1;
   const ready = await readiness("/instagram/search/reels", cost);

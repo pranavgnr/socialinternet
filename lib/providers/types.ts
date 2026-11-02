@@ -128,6 +128,21 @@ export interface DataProvider {
    * filters them out rather than retrying them.
    */
   searchAccounts?(query: string): Promise<PullResult>;
+  /**
+   * Instagram's own "similar accounts" for one handle.
+   *
+   * Optional for the same reason as `searchAccounts`: it is a distinct
+   * capability, not a flavour of the profile read. Apify returns the list free
+   * inside its details payload; HikerAPI's `/gql/user/related/profiles` is
+   * currently answering HTTP 500 ("Instagram did not respond") on every probe,
+   * so its adapter refuses with `unsupported: true` instead of spending a call
+   * on a broken endpoint. The router filters on this method, so a vendor that
+   * cannot answer is skipped rather than tried.
+   *
+   * The result is vendor-neutral: `data.related` is a list of public handles,
+   * or `data.users` when the vendor also returns account objects.
+   */
+  relatedProfiles?(handle: string): Promise<PullResult>;
   /** one post in full (caption, metrics, comments, MP4 link) */
   post(url: string): Promise<PullResult>;
   /**

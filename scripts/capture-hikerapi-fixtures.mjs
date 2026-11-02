@@ -13,8 +13,8 @@
  *   node --env-file=.env.local scripts/capture-hikerapi-fixtures.mjs
  *   node --env-file=.env.local scripts/capture-hikerapi-fixtures.mjs --comments
  *
- * Costs four calls (five with `--comments`). The output is sanitised three
- * times: every list is truncated to 12 items (a fixture is a sample, not a
+ * Costs four calls (five with `--comments`; five normally now that the account
+ * search is captured too). The output is sanitised three times: every list is truncated to 12 items (a fixture is a sample, not a
  * dump), every URL loses its query string, and `sanitize-hikerapi-fixtures.mjs`
  * removes tracking keys, cursors and unused bulk (DASH manifests and friends)
  * that no test or adapter field reads.
@@ -49,6 +49,17 @@ const CALLS = [
     name: "followers_chunk",
     path: "/v1/user/followers/chunk",
     params: { user_id: "32334432364" },
+  },
+  {
+    /**
+     * Peer discovery: accounts that match the niche phrase. The payload names
+     * the accounts and carries `latest_reel_media` (last activity, epoch
+     * seconds) but **no follower count** — the size has to be read from each
+     * profile, which is what `lib/ownerProfiles.ts` already caches.
+     */
+    name: "search_accounts",
+    path: "/v2/search/accounts",
+    params: { query: "kannada songs" },
   },
 ];
 

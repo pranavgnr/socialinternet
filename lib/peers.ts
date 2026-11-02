@@ -1,5 +1,5 @@
 /**
- * Instagram-native peer discovery.
+ * Instagram-native peer discovery, v2.
  *
  * The bug this exists to fix, stated plainly: every number in a plan is a
  * comparison against a cohort, and for an Instagram creator that cohort was
@@ -9,134 +9,145 @@
  * YouTube"), which is honest and still useless: a labelled wrong answer is a
  * wrong answer.
  *
- * The reason was structural rather than a slip. Keyword search is served by the
- * free YouTube reader, and Apify — the vendor that actually reads Instagram —
- * has no "reels matching this phrase" endpoint at all. But it does have two
- * things that answer the *right* question, "who else is in this space on
- * Instagram":
+ * The fix is not "find more accounts"; it is "find the right ones and say why".
+ * Four sources feed one pure selector:
  *
- *   1. `searchType: "user"` — accounts matching a phrase, each with its real
- *      follower count, verified live on 2026-10-28;
- *   2. `relatedProfiles` — Instagram's own "similar accounts", free inside the
- *      profile call already being made.
+ *   1. Instagram's own similar accounts (`/instagram/related/profiles`);
+ *   2. accounts matching the niche phrase (`/instagram/search/accounts`);
+ *   3. the owners of the niche's top reels — already paid for by the search, so
+ *      they cost nothing to reuse;
+ *   4. hashtag owners, when a vendor reports them (the source weight exists so
+ *      a future gatherer can join without changing the rule).
  *
- * Hashtag search looks like the third answer and is junk: one row, no owner, no
- * play count, because the hashtag page is ranked by recency for anonymous
- * visitors. It is not used here.
+ * `rankPeers` is the product decision and is deliberately pure: privacy,
+ * staleness, the 0.3x–3x size band (widened only when it has to be, and labelled
+ * when it is), the language conflict, duplicate merging, the source score, the
+ * cap and the stable tie-break are all unit-tested without a vendor in sight.
  *
  * What this does NOT do is pretend. If Instagram has no account in the
  * creator's size band, the honest output is a cohort of the right network at the
  * wrong size, labelled as such — never a size-matched cohort from another
- * network.
+ * network. If one source is down, the others still build the cohort; the failure
+ * is reported, not hidden.
  */
-import {
-  fetchInstagramProfile,
-  harvestInstagramAccount,
-  searchInstagramAccounts,
-} from "./harvest";
-import { creditLedger } from "./providers";
+import { harvestInstagramAccount, searchInstagramAccounts } from "./harvest";
+import { explicitLanguage, languageInQuery } from "./lang";
+import { normaliseOwnerHandle, resolveOwnerFollowers } from "./ownerProfiles";
+import { creditLedger, request } from "./providers";
 import type { RawReel } from "./types";
 
-/**
- * How many peers to read in full.
- *
- * Three, because each one is a ~24-result profile pull ($0.055) and three is
- * enough for a convergence pass to tell "one account got lucky" from "the topic
- * travels" — `converge` needs support 2 to say anything at all, and 3 to call a
- * theme validated. The numbers were the other way round (read a dozen), which
- * put a peer cohort at ~$0.60 a plan: a fifth of the free monthly allowance for
- * a comparison that three accounts already answer.
- */
+/** How many peers to read in full. Six is the default, not a ceiling. */
 const PEER_MAX = Number(process.env.PEER_MAX ?? 6);
 
 /**
  * How many accounts a size-matched cohort needs before it is allowed to exist.
  *
- * Two was not a cohort, it was two posts. @natgeotravel was size-matched on
- * `natgeohistory` and `nasa`, so every number on the page rested on those two
- * accounts, the move engine found almost no peer rows, dropped every move
- * without receipts, and shipped one self-referential suggestion ("repeat your
- * own best post") under a heading promising what accounts your size do.
- *
- * Five, because a median over four accounts is one account away from being a
- * different number. Below this the plan falls back to the whole room — weaker
- * as a yardstick, far stronger as a source of moves, and the sentence says so.
+ * Three, because a median over two accounts is a different number every time
+ * one of them posts, and the page's "accounts your size" claim should not rest
+ * on a pair.
  */
-const MIN_COHORT = Number(process.env.PEER_MIN_COHORT ?? 3);
+const PEER_MIN_COHORT = Number(process.env.PEER_MIN_COHORT ?? 3);
 
 /**
  * How many candidate profiles may be read just to learn a follower count.
  *
- * Related accounts arrive without one, so the band cannot be applied until they
- * are read — one result each ($0.0027). Six is the point where the cost of
- * sorting stops being free: beyond it we are paying more to choose peers than to
- * read them.
+ * Search results and similar accounts arrive without a size, so the band cannot
+ * be applied until they are read — one cached or paid read each. Six is the
+ * point where sorting costs more than reading the peers themselves.
  */
 const LOOKUP_MAX = Number(process.env.PEER_LOOKUP_MAX ?? 6);
 
-/**
- * The size band, wider than the plan's own (0.35–2.5).
- *
- * This pass is *choosing whom to measure* rather than filtering evidence, and a
- * peer just outside the band is still a far better comparison than a channel on
- * another network. The plan re-applies its stricter band to whatever arrives, so
- * being generous here cannot make a false "accounts your size" claim — it can
- * only add candidates for it to reject.
- */
+/** The plan's band, applied to candidate accounts. */
 const BAND_LOW = 0.3;
-const BAND_HIGH = 3.5;
+const BAND_HIGH = 3;
+
+/** An account that has not posted in this long is not a competitor. */
+const INACTIVE_DAYS = 30;
 
 /**
- * Below this many accounts, the phrase search is judged to have failed rather
- * than answered, and its individual words are tried too.
- *
- * Five, because a cohort needs three peers and each candidate has to survive
- * being read (private, deleted, or posts of its own that never came back), so
- * fewer than five candidates is a coin toss rather than a pool.
+ * Below this many accounts, the phrase search is judged thin and the basis says
+ * so. It does not trigger extra searches any more: the per-plan discovery cap
+ * is one similar-accounts call plus one phrase search, and word-by-word retries
+ * were quietly spending three.
  */
 const THIN_SEARCH = 5;
 
-export interface PeerAccount {
+/** How many top-reel owners are worth carrying into selection (free rows). */
+const OWNER_CANDIDATES = 12;
+
+export type PeerSource = "similar" | "search" | "hashtag" | "owner-of-top-reel";
+
+export interface PeerCandidate {
   handle: string;
   followers?: number;
-  reels: number;
-  medianViews: number;
-  /** how the account was found */
-  via: "related" | "search";
-  /** inside the size band, when a band could be computed at all */
-  inBand: boolean;
+  private?: boolean;
+  /**
+   * Epoch ms of the newest post the source knows about.
+   *
+   * Only set when the source really reports the *latest* activity. A top reel's
+   * `postedAt` is the date of that reel, not the account's last post, so it is
+   * deliberately not used for staleness — treating an old winner as an inactive
+   * account would drop a live competitor.
+   */
+  lastActiveAt?: number;
+  /**
+   * Explicit language codes read from the account's own reels, when we have
+   * them. Empty means "no evidence", which never drops an account.
+   */
+  languages?: string[];
+  sources: PeerSource[];
+  /** the phrase a search found this account with, for its reason */
+  query?: string;
+  /** the hashtag it was found under, when the source is `hashtag` */
+  hashtag?: string;
 }
 
-export interface PeerPull {
-  /** their reels, platform-stamped instagram and carrying their follower count */
-  reels: RawReel[];
-  accounts: PeerAccount[];
-  /**
-   * The sentence the page may print about this cohort. Written here, next to the
-   * evidence, so the claim and the numbers cannot drift apart.
-   */
-  basis: string;
-  /** true only when at least two peers landed inside the creator's size band */
-  sizeMatched: boolean;
-  band?: { low: number; high: number };
-  cost: { results: number; usd: number };
-  errors: string[];
+export interface PeerCreator {
+  handle?: string;
+  followers?: number;
+  /** the room's language, when the phrase names one */
+  language?: string | null;
+  /** the phrase used in a search reason */
+  query?: string;
 }
+
+export interface RankedPeer extends PeerCandidate {
+  reasons: string[];
+  source: PeerSource;
+  inBand: boolean;
+  score: number;
+}
+
+export interface PeerRanking {
+  peers: RankedPeer[];
+  dropped: { handle: string; why: string }[];
+  band?: { low: number; high: number };
+  /** true when the band was opened because too few accounts sat inside it */
+  widened: boolean;
+  sizeMatched: boolean;
+  basis: string;
+}
+
+const SOURCE_WEIGHT: Record<PeerSource, number> = {
+  similar: 3,
+  search: 2,
+  hashtag: 2,
+  "owner-of-top-reel": 1,
+};
+
+const SOURCE_ORDER: PeerSource[] = ["similar", "search", "hashtag", "owner-of-top-reel"];
 
 const clean = (h: string) => h.replace(/^@/, "").trim().toLowerCase();
 
-/**
- * Are these the same account?
- *
- * Compared on letters, digits and underscore only, because the vendor is not
- * consistent about the `@` and casing between the search, the profile call and
- * the rows themselves — and a formatting difference must not silently look like
- * "this peer posted nothing".
- */
+/** Letters, digits and underscore only: the same rule the old peer code used. */
+const handleKey = (h: string) => clean(h).replace(/[^a-z0-9_]/g, "");
+
 function sameHandle(a: string | undefined, b: string): boolean {
-  const norm = (h: string) => h.replace(/^@/, "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
-  return Boolean(a) && norm(a!) === norm(b);
+  return Boolean(a) && handleKey(a!) === handleKey(b);
 }
+
+const isKnownSize = (c: { followers?: number }): boolean =>
+  typeof c.followers === "number" && Number.isFinite(c.followers) && c.followers > 0;
 
 function median(xs: number[]): number {
   const list = xs.filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
@@ -153,47 +164,373 @@ function compact(n: number | undefined): string {
   return String(n);
 }
 
-interface Candidate {
-  handle: string;
-  followers?: number;
-  via: "related" | "search";
+/**
+ * One row per account, however many sources named it.
+ *
+ * Duplicates are normal: a real competitor appears in Instagram's similar list
+ * *and* matches the phrase. Merging is what lets the score add a point for the
+ * second source and lets the reasons say both things.
+ */
+function mergeCandidates(candidates: PeerCandidate[]): PeerCandidate[] {
+  const out = new Map<string, PeerCandidate>();
+  for (const raw of candidates) {
+    const key = handleKey(raw.handle);
+    if (!key) continue;
+    const prev = out.get(key);
+    const sources = [...new Set(raw.sources)];
+    if (!prev) {
+      out.set(key, {
+        ...raw,
+        handle: clean(raw.handle),
+        sources,
+        languages: raw.languages ? [...new Set(raw.languages)] : undefined,
+      });
+      continue;
+    }
+    if (!isKnownSize(prev) && isKnownSize(raw)) prev.followers = raw.followers;
+    prev.private = Boolean(prev.private || raw.private);
+    if (typeof raw.lastActiveAt === "number") {
+      prev.lastActiveAt = Math.max(prev.lastActiveAt ?? 0, raw.lastActiveAt);
+    }
+    prev.sources = [...new Set([...prev.sources, ...sources])];
+    if (raw.languages?.length) {
+      prev.languages = [...new Set([...(prev.languages ?? []), ...raw.languages])];
+    }
+    if (!prev.query && raw.query) prev.query = raw.query;
+    if (!prev.hashtag && raw.hashtag) prev.hashtag = raw.hashtag;
+  }
+  return [...out.values()];
+}
+
+function primarySource(sources: PeerSource[]): PeerSource {
+  return (
+    [...sources].sort(
+      (a, b) =>
+        SOURCE_WEIGHT[b] - SOURCE_WEIGHT[a] || SOURCE_ORDER.indexOf(a) - SOURCE_ORDER.indexOf(b),
+    )[0] ?? "search"
+  );
 }
 
 /**
- * Collect candidate accounts from both sources, own account excluded.
+ * Why this account is here, in words a creator can check.
  *
- * Order matters: phrase-search results arrive *with* follower counts, so they
- * can be banded for free, while related accounts cost one lookup each. Search
- * candidates are therefore kept ahead of related ones when choosing who to read.
+ * Every reason is generated from the data that selected the account: the source
+ * that named it, a language both sides explicitly declare, or the band its own
+ * follower count falls into. No model writes these, and no reason claims a fact
+ * the gatherer did not have.
  */
-function gatherCandidates(opts: {
-  own: string;
-  query: string;
-  related: string[];
-  searched: { handle: string; followers?: number; private?: boolean }[];
-}): Candidate[] {
-  const out = new Map<string, Candidate>();
+function reasonsFor(
+  candidate: PeerCandidate,
+  creator: PeerCreator,
+  band: { low: number; high: number } | undefined,
+  sameLanguage: boolean,
+  inBand: boolean,
+): string[] {
+  const reasons: string[] = [];
+  for (const source of SOURCE_ORDER) {
+    if (!candidate.sources.includes(source)) continue;
+    if (source === "similar") reasons.push("appears in Instagram's similar accounts");
+    if (source === "search") {
+      const phrase = candidate.query ?? creator.query;
+      reasons.push(
+        phrase ? `posts reels about '${phrase}'` : "posts reels in this space",
+      );
+    }
+    if (source === "hashtag") {
+      reasons.push(
+        candidate.hashtag
+          ? `posts reels with #${candidate.hashtag.replace(/^#/, "")}`
+          : "posts reels under this niche's hashtag",
+      );
+    }
+    if (source === "owner-of-top-reel") {
+      reasons.push("owns one of the top reels in this niche");
+    }
+  }
+  if (sameLanguage) reasons.push("same language");
+  if (inBand && band) {
+    reasons.push(`about your size (${compact(band.low)}-${compact(band.high)} followers)`);
+  }
+  if (!reasons.length) reasons.push("found on Instagram");
+  return [...new Set(reasons)];
+}
 
-  for (const r of opts.searched) {
-    const handle = clean(r.handle);
-    if (!handle || handle === opts.own || r.private) continue;
-    out.set(handle, { handle, followers: r.followers, via: "search" });
+function basisFor(opts: {
+  followers?: number;
+  band?: { low: number; high: number };
+  widened: boolean;
+  inBand: number;
+  minCohort: number;
+  accounts: number;
+}): string {
+  if (opts.accounts === 0) return "no Instagram accounts came back for this space";
+  if (!opts.band) {
+    return "Instagram accounts in your space — your size is unknown, so this is not size-matched";
   }
-  for (const raw of opts.related) {
-    const handle = clean(raw);
-    if (!handle || handle === opts.own || out.has(handle)) continue;
-    out.set(handle, { handle, via: "related" });
+  if (opts.widened) {
+    return `Instagram accounts in your space — fewer than ${opts.minCohort} came back near your size (${compact(
+      opts.followers,
+    )} followers), so we widened the 0.3x–3x band: this is not a size-matched cohort`;
   }
-  return [...out.values()];
+  if (opts.inBand >= opts.minCohort) {
+    return `Instagram accounts about your size (${compact(opts.followers)} followers) — ${opts.inBand} of them`;
+  }
+  return `Instagram accounts in your space, but only ${opts.inBand} near your size (${compact(
+    opts.followers,
+  )} followers) — too few to call a cohort`;
+}
+
+/**
+ * The selection rule, pure and testable.
+ *
+ * Order of operations matters: drop what cannot be a peer at all (private,
+ * stale, another language), *then* decide whether the size band has enough
+ * members, *then* score what is left. Scoring a private account and dropping it
+ * afterwards would let it take a slot from a real one.
+ */
+export function rankPeers(
+  candidates: PeerCandidate[],
+  creator: PeerCreator,
+  opts: { max?: number; now?: number; minCohort?: number } = {},
+): PeerRanking {
+  const now = opts.now ?? Date.now();
+  const max = Math.max(1, Math.floor(opts.max ?? PEER_MAX));
+  const minCohort = Math.max(1, Math.floor(opts.minCohort ?? PEER_MIN_COHORT));
+  const own = creator.handle ? handleKey(creator.handle) : "";
+
+  const merged = mergeCandidates(candidates).filter(
+    (c) => !own || handleKey(c.handle) !== own,
+  );
+
+  const dropped: { handle: string; why: string }[] = [];
+  const eligible: PeerCandidate[] = [];
+  for (const c of merged) {
+    if (c.private) {
+      dropped.push({ handle: c.handle, why: "private account" });
+      continue;
+    }
+    if (
+      typeof c.lastActiveAt === "number" &&
+      now - c.lastActiveAt > INACTIVE_DAYS * 86_400_000
+    ) {
+      dropped.push({ handle: c.handle, why: `inactive for more than ${INACTIVE_DAYS} days` });
+      continue;
+    }
+    if (
+      creator.language &&
+      c.languages?.length &&
+      !c.languages.includes(creator.language)
+    ) {
+      dropped.push({
+        handle: c.handle,
+        why: `posts in ${c.languages.join("/")}, creator is ${creator.language}`,
+      });
+      continue;
+    }
+    eligible.push(c);
+  }
+
+  const band =
+    creator.followers && creator.followers > 0
+      ? {
+          low: Math.round(creator.followers * BAND_LOW),
+          high: Math.round(creator.followers * BAND_HIGH),
+        }
+      : undefined;
+
+  const inBand = (c: PeerCandidate): boolean =>
+    Boolean(
+      band &&
+        isKnownSize(c) &&
+        c.followers! >= band.low &&
+        c.followers! <= band.high,
+    );
+
+  const inside = band ? eligible.filter(inBand) : [];
+  const widened = Boolean(band && inside.length < minCohort);
+
+  const pool: PeerCandidate[] = [];
+  for (const c of eligible) {
+    if (band && !widened && isKnownSize(c) && !inBand(c)) {
+      dropped.push({ handle: c.handle, why: "outside the size band" });
+      continue;
+    }
+    pool.push(c);
+  }
+
+  const scored: RankedPeer[] = pool.map((c) => {
+    const sources = [...new Set(c.sources)];
+    const sameLanguage = Boolean(
+      creator.language && c.languages?.includes(creator.language),
+    );
+    const insideBand = inBand(c);
+    let score = sources.length
+      ? Math.max(...sources.map((s) => SOURCE_WEIGHT[s] ?? 0))
+      : 0;
+    score += Math.max(0, sources.length - 1);
+    if (sameLanguage) score += 1;
+    if (band && isKnownSize(c) && !insideBand) score -= 1;
+    return {
+      ...c,
+      reasons: reasonsFor(c, creator, band, sameLanguage, insideBand),
+      source: primarySource(sources),
+      inBand: insideBand,
+      score,
+    };
+  });
+
+  scored.sort(
+    (a, b) =>
+      b.score - a.score || handleKey(a.handle).localeCompare(handleKey(b.handle)),
+  );
+  const peers = scored.slice(0, max);
+  const keptInBand = peers.filter((p) => p.inBand).length;
+
+  return {
+    peers,
+    dropped,
+    band,
+    widened,
+    sizeMatched: Boolean(band && keptInBand >= minCohort),
+    basis: basisFor({
+      followers: creator.followers,
+      band,
+      widened,
+      inBand: keptInBand,
+      minCohort,
+      accounts: peers.length,
+    }),
+  };
+}
+
+export interface PeerAccount {
+  handle: string;
+  followers?: number;
+  reels: number;
+  medianViews: number;
+  /**
+   * @deprecated kept for callers written before `source`. `similar` maps to
+   * `related`; every other source maps to `search`.
+   */
+  via: "related" | "search";
+  /** the strongest source that named this account */
+  source: PeerSource;
+  /** plain, factual sentences explaining the choice */
+  reasons: string[];
+  /** inside the size band, when a band could be computed at all */
+  inBand: boolean;
+}
+
+export interface PeerPull {
+  /** their reels, platform-stamped instagram and carrying their follower count */
+  reels: RawReel[];
+  accounts: PeerAccount[];
+  /**
+   * The sentence the page may print about this cohort. Written here, next to the
+   * evidence, so the claim and the numbers cannot drift apart.
+   */
+  basis: string;
+  /** true only when at least PEER_MIN_COHORT peers landed inside the size band */
+  sizeMatched: boolean;
+  band?: { low: number; high: number };
+  cost: { results: number; usd: number };
+  errors: string[];
+}
+
+/** Seams for tests: no network, no cache, no clock. Production uses the defaults. */
+export interface PeerDeps {
+  related?(handle: string): Promise<PeerCandidate[]> | PeerCandidate[];
+  search?(query: string): Promise<PeerCandidate[]> | PeerCandidate[];
+  readAccount?(handle: string): Promise<RawReel[]>;
+  followers?(handles: string[]): Promise<Map<string, number>>;
+  now?(): number;
+}
+
+const asObject = (v: unknown): Record<string, unknown> =>
+  v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+
+/** Instagram's similar accounts, through whichever vendor can answer. */
+async function relatedCandidates(handle: string): Promise<PeerCandidate[]> {
+  const { data } = await request({
+    path: "/instagram/related/profiles",
+    handle: clean(handle),
+    platform: "instagram",
+  });
+
+  const out: PeerCandidate[] = [];
+  const users = Array.isArray(data.users) ? (data.users as unknown[]) : [];
+  for (const raw of users) {
+    const u = asObject(raw);
+    const username = typeof u.username === "string" ? u.username : "";
+    if (!username) continue;
+    out.push({
+      handle: username,
+      followers: typeof u.followers === "number" ? u.followers : undefined,
+      private: Boolean(u.private),
+      sources: ["similar"],
+    });
+  }
+
+  const related = Array.isArray(data.related) ? (data.related as unknown[]) : [];
+  for (const raw of related) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    out.push({ handle: raw, sources: ["similar"] });
+  }
+  return out;
+}
+
+/**
+ * Owners of the niche's already-pulled top reels.
+ *
+ * Free candidates: the rows were bought for the niche itself. The follower
+ * count is reused from the row when Task 3's owner enrichment attached it, and
+ * otherwise resolved later from the owner cache. This is the source that keeps
+ * peer discovery useful when both Instagram listing endpoints are down.
+ */
+function ownersFromReels(reels: RawReel[], own: string): PeerCandidate[] {
+  const best = new Map<string, { candidate: PeerCandidate; views: number }>();
+  for (const row of reels) {
+    const handle = clean(row.account ?? "");
+    if (!handle || handle === own) continue;
+    const key = handleKey(handle);
+    if (!key) continue;
+    const language = explicitLanguage(row);
+    const prev = best.get(key);
+    if (!prev) {
+      best.set(key, {
+        views: row.views,
+        candidate: {
+          handle,
+          followers: isKnownSize(row) ? row.followers : undefined,
+          languages: language && language !== "other" ? [language] : undefined,
+          sources: ["owner-of-top-reel"],
+        },
+      });
+      continue;
+    }
+    if (row.views > prev.views) prev.views = row.views;
+    if (!isKnownSize(prev.candidate) && isKnownSize(row)) {
+      prev.candidate.followers = row.followers;
+    }
+    if (language && language !== "other") {
+      prev.candidate.languages = [
+        ...new Set([...(prev.candidate.languages ?? []), language]),
+      ];
+    }
+  }
+  return [...best.values()]
+    .sort((a, b) => b.views - a.views)
+    .slice(0, OWNER_CANDIDATES)
+    .map((x) => x.candidate);
 }
 
 /**
  * Build an Instagram comparison cohort for one creator.
  *
- * Cost, measured rather than estimated: one account search (~14 results,
- * $0.032), up to six profile lookups ($0.014), and three profile pulls of ~24
- * results ($0.166) — about **$0.21 and 90 results**, i.e. roughly a twentieth of
- * the free monthly allowance per plan.
+ * Discovery cost is capped at two logical calls per plan: one similar-accounts
+ * pull and one phrase search. Follower lookups (up to `PEER_LOOKUP_MAX`, mostly
+ * cache hits) and the peer reads themselves are the existing spend, not new
+ * discovery. A failure in any one source is reported and survived.
  */
 export async function instagramPeers(opts: {
   handle: string;
@@ -203,169 +540,121 @@ export async function instagramPeers(opts: {
   /** the phrase to search accounts by */
   query: string;
   max?: number;
+  /** the niche rows already pulled; their owners are free candidates */
+  reels?: RawReel[];
+  deps?: PeerDeps;
 }): Promise<PeerPull> {
   const own = clean(opts.handle);
-  const max = Math.max(1, Math.min(opts.max ?? PEER_MAX, 6));
+  const max = Math.max(1, Math.floor(opts.max ?? PEER_MAX));
+  const deps = opts.deps ?? {};
+  const now = deps.now ? deps.now() : Date.now();
   const errors: string[] = [];
   const ledgerBefore = creditLedger();
+  const language = languageInQuery(opts.query)?.code ?? null;
+
+  const gathered: PeerCandidate[] = [];
 
   /**
-   * The phrase is tried first, then its individual words if that came back thin.
-   *
-   * Measured live on 2026-10-28: `"travel destinations"` returned **three**
-   * accounts totalling 8k and 4k followers — hashtag-shaped names, nothing a
-   * 44M account could be compared to — while `"travel"` returned fourteen real
-   * ones (`condenasttraveller` 2,436,482 · `travelandleisure` 6,496,386). The
-   * account search matches username and bio, so a two-word phrase is an AND
-   * filter that very few handles satisfy; the words separately are the honest
-   * query. Cost of the retry is one more search (~$0.032) and only on thin
-   * results, which is cheaper than a cohort built from three accounts nobody
-   * has heard of.
+   * Similar accounts. The caller may already hold them from the profile read
+   * (Apify returns them free), in which case no discovery call is made. A
+   * failure here is one source failing, not the cohort failing.
    */
-  const searched: { handle: string; followers?: number; private?: boolean }[] = [];
-  const seenHandles = new Set<string>();
-  const merge = (rows: { handle: string; followers?: number; private?: boolean }[]) => {
-    for (const r of rows) {
-      const h = clean(r.handle);
-      if (!h || seenHandles.has(h)) continue;
-      seenHandles.add(h);
-      searched.push(r);
+  if (opts.related?.length) {
+    for (const handle of opts.related) {
+      gathered.push({ handle, sources: ["similar"] });
     }
-  };
+  } else {
+    try {
+      const related = deps.related
+        ? await deps.related(own)
+        : await relatedCandidates(own);
+      gathered.push(...related);
+    } catch (err) {
+      errors.push(`Instagram similar accounts: ${(err as Error).message}`);
+    }
+  }
 
+  /** One phrase search. No word-by-word retries: that was three calls, not one. */
   try {
-    merge(await searchInstagramAccounts(opts.query));
+    const searched = deps.search
+      ? await deps.search(opts.query)
+      : (await searchInstagramAccounts(opts.query)).map((row) => ({
+          handle: row.handle,
+          followers: row.followers,
+          private: row.private,
+          lastActiveAt: row.lastActiveAt,
+          sources: ["search"] as PeerSource[],
+          query: opts.query,
+        }));
+    gathered.push(...searched);
   } catch (err) {
-    /**
-     * A failed account search is not a failed plan. Related accounts may still
-     * carry the cohort, and the caller can always fall back to the room it
-     * already has — so this is reported and survived, never thrown.
-     */
     errors.push(`Instagram account search "${opts.query}": ${(err as Error).message}`);
   }
 
-  if (searched.length < THIN_SEARCH) {
-    const words = opts.query
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((w) => w.length > 2 && w !== opts.query.toLowerCase())
-      .slice(0, 2);
-    for (const w of words) {
-      try {
-        merge(await searchInstagramAccounts(w));
-      } catch (err) {
-        errors.push(`Instagram account search "${w}": ${(err as Error).message}`);
-      }
-    }
-  }
+  /** Top-reel owners: free, because the niche search already bought the rows. */
+  gathered.push(...ownersFromReels(opts.reels ?? [], own));
 
-  const candidates = gatherCandidates({
-    own,
-    query: opts.query,
-    related: opts.related ?? [],
-    searched,
+  const merged = mergeCandidates(gathered).filter(
+    (c) => handleKey(c.handle) !== handleKey(own),
+  );
+
+  /**
+   * Buy sizes only for accounts that could still be selected.
+   *
+   * Private, stale and other-language accounts are filtered first so a paid
+   * lookup is never spent on an account the selector will drop. Handles the
+   * owner cache already knows cost nothing.
+   */
+  const candidateForLookup = merged.filter((c) => {
+    if (c.private) return false;
+    if (typeof c.lastActiveAt === "number" && now - c.lastActiveAt > INACTIVE_DAYS * 86_400_000) {
+      return false;
+    }
+    if (language && c.languages?.length && !c.languages.includes(language)) return false;
+    return !isKnownSize(c);
   });
 
-  if (!candidates.length) {
-    return {
-      reels: [],
-      accounts: [],
-      basis: "no Instagram accounts came back for this space",
-      sizeMatched: false,
-      cost: {
-        results: creditLedger().spent - ledgerBefore.spent,
-        usd: Number((creditLedger().usd - ledgerBefore.usd).toFixed(4)),
-      },
-      errors,
-    };
-  }
-
-  const band = opts.followers
-    ? { low: Math.round(opts.followers * BAND_LOW), high: Math.round(opts.followers * BAND_HIGH) }
-    : undefined;
-
-  /** Candidates that already carry a size, banded for free. */
-  const sized = candidates.filter((c) => c.followers);
-  const inBand = band
-    ? sized
-        .filter((c) => c.followers! >= band.low && c.followers! <= band.high)
-        .sort(
-          (a, b) =>
-            Math.abs(a.followers! - opts.followers!) - Math.abs(b.followers! - opts.followers!),
-        )
-    : sized.sort((a, b) => b.followers! - a.followers!);
-
-  /**
-   * Related accounts have no size yet, so the cheapest ones are looked up —
-   * capped, because each lookup is a paid result and the band is the only thing
-   * it buys.
-   */
-  const unsized = candidates.filter((c) => !c.followers).slice(0, LOOKUP_MAX);
-  const lookedUp: Candidate[] = [];
-  for (const c of unsized) {
+  if (candidateForLookup.length) {
+    const handles = candidateForLookup.slice(0, LOOKUP_MAX).map((c) => c.handle);
     try {
-      const profile = await fetchInstagramProfile(c.handle);
-      if (!profile?.followers) continue;
-      lookedUp.push({ ...c, followers: profile.followers });
-    } catch {
-      // a private or vanished account is simply not a peer
+      const counts = deps.followers
+        ? await deps.followers(handles)
+        : await resolveOwnerFollowers(handles, { max: LOOKUP_MAX });
+      for (const c of candidateForLookup) {
+        const followers = counts.get(normaliseOwnerHandle(c.handle));
+        if (typeof followers === "number" && followers > 0) c.followers = followers;
+      }
+    } catch (err) {
+      errors.push(`peer follower counts: ${(err as Error).message}`);
     }
   }
 
-  const lookedInBand = band
-    ? lookedUp
-        .filter((c) => c.followers! >= band.low && c.followers! <= band.high)
-        .sort(
-          (a, b) =>
-            Math.abs(a.followers! - opts.followers!) - Math.abs(b.followers! - opts.followers!),
-        )
-    : lookedUp.sort((a, b) => b.followers! - a.followers!);
-
-  /**
-   * Selection, in order of preference: right network and right size first; then
-   * the same space at another size, which is still a fair comparison of *topic*
-   * and is labelled as such; then anything at all, so the cohort is never empty
-   * when accounts exist.
-   */
-  const chosen: Candidate[] = [];
-  const take = (list: Candidate[]) => {
-    for (const c of list) {
-      if (chosen.length >= max) return;
-      if (chosen.some((x) => x.handle === c.handle)) continue;
-      chosen.push(c);
-    }
-  };
-  take([...inBand, ...lookedInBand]);
-  if (chosen.length < Math.min(2, max)) take(sized);
-  if (chosen.length < Math.min(2, max)) take(lookedUp);
-  if (!chosen.length) take(candidates.slice(0, max));
+  const ranking = rankPeers(
+    merged,
+    {
+      handle: own,
+      followers: opts.followers,
+      language,
+      query: opts.query,
+    },
+    { max, now },
+  );
 
   const reels: RawReel[] = [];
   const accounts: PeerAccount[] = [];
 
-  for (const c of chosen) {
+  for (const c of ranking.peers) {
     try {
-      const rows = await harvestInstagramAccount(c.handle);
+      const rows = deps.readAccount
+        ? await deps.readAccount(c.handle)
+        : await harvestInstagramAccount(c.handle);
+
       /**
-       * Only Instagram rows count here.
-       *
-       * The router is allowed to fail over to a free vendor, and a YouTube row
-       * carrying this handle's name is a different creator — the exact bug that
-       * produced "435 followers" for a 268M account. Anything not stamped
-       * Instagram is dropped rather than relabelled.
-       */
-      /**
-       * Only the peer's *own* rows, and only those get their follower count.
-       *
-       * The reels call is not scoped to one account: asked for @nasa it came
-       * back with posts by `nasaadmin`, `nasdaq`, `nasajpl` and `nasajohnson`
-       * too, and asked for @natgeohistory it returned `natgeotv` and
-       * `natgeotravel`. Stamping every row with the peer's count therefore
-       * printed @nasa's 104,370,500 followers onto @nasajohnson (really
-       * 1,578,321) — and the creator's own handle, which is the exact class of
-       * wrong yardstick this whole file exists to kill, only wearing the right
-       * network's clothes. Rows belonging to other accounts are dropped: they
-       * are not this peer's baseline, and their number is not ours to assert.
+       * Only the peer's *own* Instagram rows. The reels call is not scoped to
+       * one account (asked for @nasa it came back with `nasaadmin` and
+       * `nasajpl` too), and stamping the peer's count onto a stranger's reel is
+       * the exact wrong-yardstick bug this file exists to kill, only wearing
+       * the right network's clothes.
        */
       const mine = rows.filter(
         (r) => r.platform === "instagram" && sameHandle(r.account, c.handle),
@@ -374,21 +663,19 @@ export async function instagramPeers(opts: {
         errors.push(`@${c.handle}: no Instagram posts of its own returned`);
         continue;
       }
-      /**
-       * The follower count is stamped onto every row, because the plan's size
-       * matching reads it off reels: Apify's profile pull returns an empty
-       * `owner` object, so without this the peers arrive sizeless and the band
-       * silently never engages — the bug that made size-matching a no-op.
-       */
-      const stamped = mine.map((r) => (c.followers ? { ...r, followers: c.followers } : r));
+      const stamped = mine.map((r) =>
+        c.followers ? { ...r, followers: c.followers } : r,
+      );
       reels.push(...stamped);
       accounts.push({
         handle: c.handle,
         followers: c.followers,
         reels: stamped.length,
         medianViews: Math.round(median(stamped.map((r) => r.views))),
-        via: c.via,
-        inBand: Boolean(band && c.followers && c.followers >= band.low && c.followers <= band.high),
+        via: c.source === "similar" ? "related" : "search",
+        source: c.source,
+        reasons: c.reasons,
+        inBand: c.inBand,
       });
     } catch (err) {
       errors.push(`@${c.handle}: ${(err as Error).message}`);
@@ -396,21 +683,31 @@ export async function instagramPeers(opts: {
   }
 
   const banded = accounts.filter((a) => a.inBand);
-  const sizeMatched = banded.length >= MIN_COHORT;
+  const sizeMatched = Boolean(ranking.band && banded.length >= PEER_MIN_COHORT);
+  let basis = basisFor({
+    followers: opts.followers,
+    band: ranking.band,
+    widened: ranking.widened,
+    inBand: banded.length,
+    minCohort: PEER_MIN_COHORT,
+    accounts: accounts.length,
+  });
+  /**
+   * A thin pull is a fact about the evidence, not an error. Say it, so a cohort
+   * of three is not read as "everyone in this space".
+   */
+  if (accounts.length && merged.length < THIN_SEARCH) {
+    basis +=
+      " — the phrase search came back thin, so this cohort leans on similar accounts and top-reel owners";
+  }
 
   const after = creditLedger();
   return {
     reels,
     accounts,
-    basis: sizeMatched
-      ? `Instagram accounts about your size (${compact(opts.followers)} followers) — ${banded.length} of them`
-      : band
-        ? `Instagram accounts in your space, but only ${banded.length} near your size (${compact(
-            opts.followers,
-          )} followers) — too few to call a cohort, so this is what travels in your niche rather than what is normal for an account like yours`
-        : "Instagram accounts in your space — your size is unknown, so this is not size-matched",
+    basis,
     sizeMatched,
-    band,
+    band: ranking.band,
     cost: {
       results: after.spent - ledgerBefore.spent,
       usd: Number((after.usd - ledgerBefore.usd).toFixed(4)),

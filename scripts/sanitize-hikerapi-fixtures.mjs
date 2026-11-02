@@ -298,6 +298,34 @@ export function pruneFixture(name, value) {
         }),
       );
     }
+    case "search_accounts": {
+      /**
+       * `/v2/search/accounts` carries profile pictures, friend state, tokens
+       * and a `social_context` string ("43.5K followers"), none of which the
+       * adapter reads. The username and the two activity flags are the whole
+       * contract: `is_private` is a real filter and `latest_reel_media` is the
+       * only last-active evidence this endpoint gives.
+       */
+      const users = Array.isArray(value?.users)
+        ? value.users.map((u) => {
+            const pick = [
+              "username",
+              "pk",
+              "id",
+              "is_private",
+              "is_verified",
+              "latest_reel_media",
+            ];
+            return Object.fromEntries(pick.filter((k) => k in u).map((k) => [k, u[k]]));
+          })
+        : [];
+      return {
+        status: value?.status,
+        num_results: value?.num_results,
+        has_more: value?.has_more,
+        users,
+      };
+    }
     case "comments": {
       const comments = Array.isArray(value?.response?.comments)
         ? value.response.comments.map((c) => {

@@ -378,6 +378,7 @@ export type LogicalCall =
   | { path: "/account/reels"; handle: string; platform: "instagram" | "youtube" }
   | { path: "/instagram/search/reels"; query: string }
   | { path: "/instagram/search/accounts"; query: string }
+  | { path: "/instagram/related/profiles"; handle: string }
   | { path: "/instagram/post"; url: string }
   | { path: "/instagram/profile"; handle: string }
   | { path: string; [k: string]: string };
@@ -425,6 +426,21 @@ export async function request(
     providers = providers.filter((p) => typeof p.searchAccounts === "function");
     if (!providers.length) {
       throw new NoDataVendor("no configured vendor can search Instagram accounts");
+    }
+  }
+  /**
+   * Instagram's similar accounts are their own capability, not a profile read.
+   *
+   * HikerAPI's endpoint is currently broken (and refuses with `unsupported`),
+   * Apify carries the list on its details payload, and the free YouTube reader
+   * has no notion of it at all. Filtering first keeps the refusal honest when
+   * no configured vendor can answer, instead of handing the call to a vendor
+   * that would fail with something unrelated.
+   */
+  if (path === "/instagram/related/profiles") {
+    providers = providers.filter((p) => typeof p.relatedProfiles === "function");
+    if (!providers.length) {
+      throw new NoDataVendor("no configured vendor can read Instagram's similar accounts");
     }
   }
   if (platform) {
@@ -592,6 +608,20 @@ async function dispatch(
         );
       }
       return provider.searchAccounts(params.query ?? "");
+    case "/instagram/related/profiles":
+      /**
+       * Guaranteed present by the filter in `request()`; the guard covers a
+       * direct `dispatch()` call and reports a capability gap, not a failure.
+       */
+      if (!provider.relatedProfiles) {
+        throw new ProviderUnavailable(
+          provider.id,
+          `${provider.id} cannot read Instagram's similar accounts`,
+          false,
+          true,
+        );
+      }
+      return provider.relatedProfiles(params.handle ?? "");
     case "/instagram/post":
       return provider.post(params.url ?? "");
     case "/instagram/profile":

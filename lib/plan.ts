@@ -1605,6 +1605,8 @@ export async function analyseHandle(
         followers: account?.followers,
         related: account?.related,
         query,
+        /** already bought for the niche: their owners are free candidates */
+        reels: base.payload ?? [],
       });
       if (!peers.reels.length) {
         dbg("rebuild FAILED (no reels)", query, peers.errors.slice(0, 2));

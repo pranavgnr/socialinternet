@@ -23,6 +23,16 @@
  *   - `/v2/search/reels` answers
  *     `{reels_serp_modules: [{module_type: "clips", clips: [{media}]}], …}`.
  *     The query is sent exactly as typed (native script works).
+ *   - `/v2/search/accounts?query=` answers `{num_results, users[]}`; users
+ *     carry `username`, `is_private`, `is_verified` and `latest_reel_media`
+ *     (epoch seconds) but **no follower count**. The displayed
+ *     `social_context` ("43.5K followers") is rounded marketing text, not a
+ *     measurement, and is deliberately not parsed as one.
+ *   - `/gql/user/related/profiles?id=` is the right endpoint and parameter
+ *     (a `user_id`-only request is a 422 asking for `id`), but it returned
+ *     HTTP 500 `InstagramServerError` on all three live probes (2026-11-03).
+ *     The adapter refuses it with `unsupported: true`; Apify's profile payload
+ *     is the working source.
  *   - `/v2/media/comments?id=<media id>` is the working comments call.
  *     The old `/v1/media/comments/chunk?media_id=` was a 422: it requires
  *     `id`, and the value must be the media's `id` (`<pk>_<owner>`), not the
@@ -524,6 +534,69 @@ export const hikerapi: DataProvider = {
     }
 
     return { data: { items: rows }, usd, units, remaining: null };
+  },
+
+  /**
+   * Accounts matching a phrase — the cohort's other half.
+   *
+   * `/v2/search/accounts?query=` returns `{num_results, users[]}` with the
+   * handle, `is_private`, `is_verified` and `latest_reel_media` (epoch
+   * seconds). It does **not** carry a follower count: `social_context` is a
+   * rounded display string ("43.5K followers"), and treating that as the
+   * account's size would print a number nobody read. The size is bought later
+   * by `resolveOwnerFollowers`, which caches it for a week.
+   */
+  async searchAccounts(query: string): Promise<PullResult> {
+    const { data, usd } = await getWithRetry("/v2/search/accounts", { query });
+    const users = arr(data.users)
+      .map((u) => {
+        const username = str(u.username);
+        if (!username) return null;
+        const latest = num(u.latest_reel_media);
+        return {
+          username,
+          private: Boolean(u.is_private),
+          verified: Boolean(u.is_verified),
+          /** ms since epoch, or undefined when Instagram reports no activity */
+          lastActiveAt: latest > 0 ? latest * 1000 : undefined,
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => Boolean(u));
+
+    if (!users.length) {
+      throw new ProviderUnavailable(
+        "hikerapi",
+        `Instagram account search returned nothing for "${query}"`,
+        false,
+      );
+    }
+
+    return { data: { users }, usd, units: 1, remaining: null };
+  },
+
+  /**
+   * Refused honestly, and for free.
+   *
+   * `/gql/user/related/profiles` is the endpoint, and `id` is its parameter
+   * (a `user_id`-only request is a 422 asking for `id`). Probed live three
+   * times on 2026-11-03 with the account's real id and every answer was HTTP
+   * 500 `InstagramServerError` ("Instagram did not respond"). Charging a call
+   * for a known-broken path on every plan would be worse than not offering it,
+   * so this reports a capability gap (`unsupported: true`) and the router moves
+   * to Apify, whose details payload carries the same list.
+   *
+   * The method exists rather than being omitted because omission would hide the
+   * gap: the router would silently treat HikerAPI as incapable and the reason
+   * would never reach the report. Re-implement the call here once the endpoint
+   * stops returning 500.
+   */
+  async relatedProfiles(handle: string): Promise<PullResult> {
+    throw new ProviderUnavailable(
+      "hikerapi",
+      `similar accounts for @${handle.replace(/^@/, "")} are unavailable on HikerAPI (HTTP 500 on /gql/user/related/profiles)`,
+      false,
+      true,
+    );
   },
 
   async post(url: string): Promise<PullResult> {

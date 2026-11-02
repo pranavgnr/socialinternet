@@ -415,6 +415,82 @@ const postsInput = (url: string, limit: number): Record<string, unknown> => ({
   resultsLimit: limit,
 });
 
+/**
+ * Who the account is — and the one place this actor needs a different call.
+ *
+ * A `resultsType: "posts"` pull returns posts whose `owner` object is
+ * **empty** (verified live: `owner` was `{}` on all three items), so there is
+ * no follower count anywhere in that payload. `resultsType: "details"` is the
+ * call that answers this. Live, for `@natgeo`, it returned
+ * `followersCount: 268267261` against the 435 that a YouTube fallback once
+ * printed. It costs one result ($0.0027) and also carries Instagram's
+ * `relatedProfiles`, which `relatedProfiles()` uses.
+ */
+async function readProfile(handle: string): Promise<PullResult> {
+  const clean = handle.replace(/^@/, "");
+  const { items } = await runActor({
+    directUrls: [`https://www.instagram.com/${clean}/`],
+    resultsType: "details",
+    resultsLimit: 1,
+  });
+  const real = price("user", items.length);
+  const charged = effectiveUsd("user", items.length);
+  addSpend(real, items.length);
+
+  const p = items[0] ?? {};
+  const followers = pick(
+    p.followersCount,
+    p.followerCount,
+    obj(p.edge_followed_by).count,
+    p.followers,
+  );
+
+  /**
+   * No followers AND no bio means the actor could not read the account at all
+   * — private, deleted, or a name that is not a handle. Returning a hollow
+   * object here is how "435 followers" got printed for a 268M account, so this
+   * reports the failure instead and lets the caller say it could not read it.
+   */
+  if (!followers && !str(p.biography)) {
+    throw new ProviderUnavailable(
+      "apify",
+      `@${clean} could not be read (private, missing, or not a handle)`,
+    );
+  }
+
+  return {
+    data: {
+      user: {
+        username: str(p.username) ?? clean,
+        followers,
+        posts: pick(p.postsCount, p.mediaCount, p.postCount),
+        biography: str(p.biography),
+        category: str(p.businessCategoryName) ?? str(p.category),
+        verified: Boolean(p.verified ?? p.isVerified),
+        url: str(p.url) ?? `https://www.instagram.com/${clean}/`,
+        /**
+         * Instagram's own "similar accounts", free inside this same call.
+         *
+         * VERIFIED LIVE 2026-10-28: `relatedProfiles` arrives on the details
+         * payload as a list of accounts (nasa, oceana, underwater,
+         * unitednations, nasawebb, nasasolarsystem for @natgeotravel) with
+         * `username`, `full_name` and `is_verified` — but **no follower
+         * count**, which is why the peer builder still has to read each
+         * candidate's profile before it can band them by size.
+         */
+        related: Array.isArray(p.relatedProfiles)
+          ? (p.relatedProfiles as unknown[])
+              .map((r) => str(obj(r).username))
+              .filter((u): u is string => Boolean(u))
+          : undefined,
+      },
+    },
+    usd: charged,
+    units: items.length,
+    remaining: null,
+  };
+}
+
 export const apify: DataProvider = {
   id: "apify",
   name: "Apify (Instagram Scraper)",
@@ -611,74 +687,30 @@ export const apify: DataProvider = {
    * it returned `followersCount: 268267261` — the real figure, against the 435
    * that a YouTube fallback once printed. Costs one result, i.e. $0.0027.
    */
-  profile: async (handle) => {
-    const clean = handle.replace(/^@/, "");
-    const { items } = await runActor({
-      directUrls: [`https://www.instagram.com/${clean}/`],
-      resultsType: "details",
-      resultsLimit: 1,
-    });
-    const real = price("user", items.length);
-    const charged = effectiveUsd("user", items.length);
-    addSpend(real, items.length);
+  profile: readProfile,
 
-    const p = items[0] ?? {};
-    const followers = pick(
-      p.followersCount,
-      p.followerCount,
-      obj(p.edge_followed_by).count,
-      p.followers,
-    );
-
-    /**
-     * No followers AND no bio means the actor could not read the account at all
-     * — private, deleted, or a name that is not a handle. Returning a hollow
-     * object here is how "435 followers" got printed for a 268M account, so this
-     * reports the failure instead and lets the caller say it could not read it.
-     */
-    if (!followers && !str(p.biography)) {
+  /**
+   * Instagram's own "similar accounts", through the same details call.
+   *
+   * This is the working source while HikerAPI's `/gql/user/related/profiles`
+   * returns HTTP 500. The list arrives free on the profile payload — no second
+   * request and no follower counts — so the caller still has to buy sizes for
+   * the candidates it wants to band (cached by `lib/ownerProfiles.ts`).
+   */
+  relatedProfiles: async (handle) => {
+    const res = await apify.profile(handle);
+    const user = obj(res.data.user);
+    const related = Array.isArray(user.related)
+      ? (user.related as unknown[]).filter((h): h is string => typeof h === "string")
+      : [];
+    if (!related.length) {
       throw new ProviderUnavailable(
         "apify",
-        `@${clean} could not be read (private, missing, or not a handle)`,
+        `@${handle.replace(/^@/, "")} has no similar accounts in its profile payload`,
+        false,
       );
     }
-
-    return {
-      data: {
-        user: {
-          username: str(p.username) ?? clean,
-          followers,
-          posts: pick(p.postsCount, p.mediaCount, p.postCount),
-          biography: str(p.biography),
-          category: str(p.businessCategoryName) ?? str(p.category),
-          verified: Boolean(p.verified ?? p.isVerified),
-          url: str(p.url) ?? `https://www.instagram.com/${clean}/`,
-          /**
-           * Instagram's own "similar accounts", free inside this same call.
-           *
-           * VERIFIED LIVE 2026-10-28: `relatedProfiles` arrives on the details
-           * payload as a list of accounts (nasa, oceana, underwater,
-           * unitednations, nasawebb, nasasolarsystem for @natgeotravel) with
-           * `username`, `full_name` and `is_verified` — but **no follower
-           * count**, which is why the peer builder still has to read each
-           * candidate's profile before it can band them by size.
-           *
-           * It is the better half of peer discovery on quality: these are real
-           * accounts in the same space as judged by Instagram, not whatever a
-           * phrase search happened to return. It is the worse half on quantity
-           * (six or so), so the phrase search runs alongside it.
-           */
-          related: Array.isArray(p.relatedProfiles)
-            ? (p.relatedProfiles as unknown[])
-                .map((r) => str(obj(r).username))
-                .filter((u): u is string => Boolean(u))
-            : undefined,
-        },
-      },
-      usd: charged,
-      units: items.length,
-      remaining: null,
-    };
+    return { ...res, data: { related } };
   },
 
   /**

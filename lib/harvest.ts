@@ -762,7 +762,9 @@ export async function fetchInstagramProfile(handle: string): Promise<AccountProf
  */
 export async function searchInstagramAccounts(
   query: string,
-): Promise<{ handle: string; followers?: number; verified?: boolean; private?: boolean }[]> {
+): Promise<
+  { handle: string; followers?: number; verified?: boolean; private?: boolean; lastActiveAt?: number }[]
+> {
   const { data } = await onInstagram(() =>
     request({
       path: "/instagram/search/accounts",
@@ -776,11 +778,14 @@ export async function searchInstagramAccounts(
       const u = obj(r);
       const handle = str(u.username);
       if (!handle) return null;
+      const lastActive = num(u.lastActiveAt);
       return {
         handle,
         followers: num(u.followers) || undefined,
         verified: Boolean(u.verified),
         private: Boolean(u.private),
+        /** ms since epoch, when the vendor reports the newest reel */
+        lastActiveAt: lastActive > 0 ? lastActive : undefined,
       };
     })
     .filter((u): u is NonNullable<typeof u> => Boolean(u));

@@ -166,6 +166,17 @@ async function withFreshDb<T>(fn: (q: Queryable) => Promise<T>): Promise<T> {
   }
 }
 
+// The disk ranker the cache tests inject: it never touches the fixture files.
+const FAKE_RANKED: import("../lib/trending").TrendingNiche[] = [
+  { slug: "fake", label: "Fake", query: "fake", score: 50, rank: 1 },
+];
+
+// Each test starts with an empty in-process ranking cache.
+test.beforeEach(async () => {
+  const { resetTrendingCache } = await lib();
+  resetTrendingCache();
+});
+
 // --- rankTrending ---------------------------------------------------------
 
 test("rankTrending caps at 30, sorts by score, ranks 1..n and dedupes slugs", async () => {
@@ -217,6 +228,26 @@ test("rankTrending skips rooms too thin to score", async () => {
   assert.deepEqual(rankTrending([oneAccount, twoAccounts, fewReels]), []);
 });
 
+test("rankTrending skips a poisoned room instead of aborting the ranking", async () => {
+  const { rankTrending } = await lib();
+  const good = cachedFixture("good", "home workout", { base: 2_500 });
+  const poisoned = {
+    ...cachedFixture("poisoned", "personal finance", { base: 6_000 }),
+    // A corrupt cache row: long enough to reach the scorer, then unreadable.
+    payload: [null, ...room("personal finance", { base: 6_000 })] as unknown as RawReel[],
+  };
+
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const out = rankTrending([good, poisoned]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0]!.slug, "good");
+  } finally {
+    console.warn = warn;
+  }
+});
+
 test("stale niches are still eligible for bubbles", async () => {
   const { rankTrending } = await lib();
   const out = rankTrending([
@@ -251,6 +282,126 @@ test("listTrending falls back to disk when the database is unavailable", async (
 
   const out = await listTrending();
   assert.equal(out.length, 3);
+});
+
+test("listTrending caches the disk ranking for ten minutes", async () => {
+  const { listTrending, DISK_RANK_TTL_MS } = await lib();
+  await withFreshDb(async () => {
+    let reads = 0;
+    let now = 1_000_000;
+    const rank = async () => {
+      reads += 1;
+      return FAKE_RANKED;
+    };
+
+    const first = await listTrending({ rankFromDisk: rank, now: () => now });
+    now += DISK_RANK_TTL_MS - 1;
+    const second = await listTrending({ rankFromDisk: rank, now: () => now });
+
+    assert.equal(reads, 1);
+    assert.deepEqual(first, second);
+  });
+});
+
+test("listTrending re-reads the disk once the TTL has passed", async () => {
+  const { listTrending, DISK_RANK_TTL_MS } = await lib();
+  await withFreshDb(async () => {
+    let reads = 0;
+    let now = 1_000_000;
+    const rank = async () => {
+      reads += 1;
+      return FAKE_RANKED;
+    };
+
+    await listTrending({ rankFromDisk: rank, now: () => now });
+    now += DISK_RANK_TTL_MS;
+    await listTrending({ rankFromDisk: rank, now: () => now });
+
+    assert.equal(reads, 2);
+  });
+});
+
+test("concurrent listTrending calls share one disk read", async () => {
+  const { listTrending } = await lib();
+  await withFreshDb(async () => {
+    let reads = 0;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const rank = async () => {
+      reads += 1;
+      await held;
+      return FAKE_RANKED;
+    };
+
+    const calls = Array.from({ length: 10 }, () =>
+      listTrending({ rankFromDisk: rank, now: () => 1_000_000 }),
+    );
+    // Let all ten reach the fallback while the first read is still in flight.
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(reads, 1);
+
+    release();
+    const results = await Promise.all(calls);
+    assert.equal(reads, 1);
+    assert.ok(results.every((rows) => rows[0]?.slug === "fake"));
+  });
+});
+
+test("a failed disk ranking is not cached", async () => {
+  const { listTrending } = await lib();
+  await withFreshDb(async () => {
+    let reads = 0;
+    const now = () => 1_000_000;
+
+    await assert.rejects(() =>
+      listTrending({
+        rankFromDisk: async () => {
+          reads += 1;
+          throw new Error("disk ranking failed");
+        },
+        now,
+      }),
+    );
+
+    const out = await listTrending({
+      rankFromDisk: async () => {
+        reads += 1;
+        return FAKE_RANKED;
+      },
+      now,
+    });
+
+    assert.equal(reads, 2);
+    assert.equal(out[0]!.slug, "fake");
+  });
+});
+
+test("refreshTrending bypasses the cache and clears it after writing", async () => {
+  const { listTrending, refreshTrending } = await lib();
+  await withFreshDb(async (q) => {
+    let reads = 0;
+    const now = () => 1_000_000;
+    const fake = async () => {
+      reads += 1;
+      return FAKE_RANKED;
+    };
+
+    // Prime the cache with the injected ranker.
+    await listTrending({ rankFromDisk: fake, now });
+    assert.equal(reads, 1);
+
+    // The refresh must read the real disk (three fixture rooms), not the cache.
+    const { written } = await refreshTrending();
+    assert.equal(written, 3);
+
+    // Emptying the table must not hand back the cached fake ranking.
+    await q.query("DELETE FROM trending_niches");
+    const out = await listTrending({ rankFromDisk: fake, now });
+    assert.equal(reads, 2);
+    assert.equal(out[0]!.slug, "fake");
+  });
 });
 
 test("refreshTrending replaces rows from disk with no vendor spend", async () => {

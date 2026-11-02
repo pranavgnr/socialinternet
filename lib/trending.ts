@@ -83,20 +83,30 @@ export function rankTrending(
     if (payload.length < MIN_TRENDING_REELS) continue;
     if (row.accounts < MIN_TRENDING_ACCOUNTS) continue;
 
-    const research = researchFromCache(row.query, payload, {
-      fetchedAt: row.fetchedAt,
-    });
-    const opportunity = scoreNiche(signalsFrom(research));
-    scored.push({
-      niche: {
-        slug: row.slug,
-        label: nicheLabel(row.query) || row.query,
-        query: row.query,
-        score: opportunity.score,
-        rank: 0,
-      },
-      opportunity,
-    });
+    try {
+      const research = researchFromCache(row.query, payload, {
+        fetchedAt: row.fetchedAt,
+      });
+      const opportunity = scoreNiche(signalsFrom(research));
+      scored.push({
+        niche: {
+          slug: row.slug,
+          label: nicheLabel(row.query) || row.query,
+          query: row.query,
+          score: opportunity.score,
+          rank: 0,
+        },
+        opportunity,
+      });
+    } catch (err) {
+      /**
+       * One unreadable cache file must not cost the whole ranking. Skip it and
+       * keep the rooms that scored; the next refresh can repair the bad file.
+       */
+      console.warn(
+        `[trending] skipping ${row.slug}: ${(err as Error).message}`,
+      );
+    }
   }
 
   if (!scored.length) return [];
@@ -126,8 +136,78 @@ async function rankFromDisk(limit = 30): Promise<TrendingNiche[]> {
 }
 
 /**
+ * How long the disk ranking is reused in-process.
+ *
+ * The table is the normal path and is already cheap; this cache only matters
+ * when the table is empty or Postgres is down, where a request would otherwise
+ * read 51 files, rebuild every room and re-score it. Ten minutes is long enough
+ * to absorb a burst of landing-page visits and short enough that a fresh cron
+ * write becomes visible without a restart.
+ */
+export const DISK_RANK_TTL_MS = 10 * 60 * 1000;
+
+interface DiskRankCacheEntry {
+  at: number;
+  niches: TrendingNiche[];
+}
+
+let diskRankCache: DiskRankCacheEntry | null = null;
+let diskRankInFlight: Promise<TrendingNiche[]> | null = null;
+/** Bumped by resetTrendingCache so an older in-flight read cannot repopulate it. */
+let diskRankGeneration = 0;
+
+/**
+ * Forget the cached disk ranking. Exported for tests and for callers that know
+ * the data directory just changed out of band.
+ */
+export function resetTrendingCache(): void {
+  diskRankCache = null;
+  diskRankInFlight = null;
+  diskRankGeneration += 1;
+}
+
+/**
+ * One disk ranking shared by every request in this process.
+ *
+ * The in-flight promise is cached as well as the result, so a burst of ten
+ * requests after a restart reads and scores the cache once, not ten times. A
+ * failure clears the in-flight slot and is deliberately not cached: the next
+ * request may succeed (for example while Postgres is still coming up).
+ */
+async function rankFromDiskCached(
+  read: () => Promise<TrendingNiche[]>,
+  now: () => number,
+): Promise<TrendingNiche[]> {
+  if (diskRankCache && now() - diskRankCache.at < DISK_RANK_TTL_MS) {
+    return diskRankCache.niches;
+  }
+  if (diskRankInFlight) return diskRankInFlight;
+
+  const generation = diskRankGeneration;
+  const startedAt = now();
+  let pending!: Promise<TrendingNiche[]>;
+  pending = read()
+    .then((niches) => {
+      if (generation === diskRankGeneration) {
+        diskRankCache = { at: startedAt, niches };
+      }
+      return niches;
+    })
+    .finally(() => {
+      if (diskRankInFlight === pending) diskRankInFlight = null;
+    });
+  diskRankInFlight = pending;
+  return pending;
+}
+
+/**
  * Replace the `trending_niches` rows from the cache. Zero credits: this reads
  * pulls that are already on disk and never calls a vendor.
+ *
+ * Reads the disk directly rather than through the TTL cache: a refresh is the
+ * operation that exists to pick up changes, so it must not repeat a stale
+ * ranking. A successful write clears the cache so the next reader sees the new
+ * rows.
  *
  * An empty cache leaves the existing rows alone rather than wiping a useful
  * table because the data directory was momentarily unreadable.
@@ -154,6 +234,7 @@ export async function refreshTrending(): Promise<{ written: number }> {
     }
   });
 
+  resetTrendingCache();
   return { written: ranked.length };
 }
 
@@ -166,14 +247,27 @@ interface TrendingRow {
 }
 
 /**
+ * Test seams for the disk fallback. Routes call `listTrending()` with none of
+ * these; the defaults are the real cache reader and the wall clock.
+ */
+export interface ListTrendingOptions {
+  rankFromDisk?: () => Promise<TrendingNiche[]>;
+  now?: () => number;
+}
+
+/**
  * What the landing page shows. Reads the ranked rows; when the table is empty
  * or the database cannot be reached, falls back to ranking the cache on disk.
  *
  * The catch is deliberate and narrow: a database outage must not take the free
  * half of the product down with it. Bubbles are a cache view, so the honest
- * answer is the same rows computed a different way, not an error page.
+ * answer is the same rows computed a different way, not an error page. The disk
+ * result is reused for DISK_RANK_TTL_MS so that outage path is not paid for on
+ * every request.
  */
-export async function listTrending(): Promise<TrendingNiche[]> {
+export async function listTrending(
+  opts: ListTrendingOptions = {},
+): Promise<TrendingNiche[]> {
   try {
     const { rows } = await currentDb().query<TrendingRow>(
       "SELECT slug, label, query, score, rank FROM trending_niches" +
@@ -197,7 +291,9 @@ export async function listTrending(): Promise<TrendingNiche[]> {
     );
   }
 
-  return rankFromDisk();
+  const read = opts.rankFromDisk ?? (() => rankFromDisk());
+  const now = opts.now ?? Date.now;
+  return rankFromDiskCached(read, now);
 }
 
 /**

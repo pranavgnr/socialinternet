@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { connection, NextResponse } from "next/server";
 
-import { runCanary } from "@/lib/canary";
+import { redactSecrets, runCanary } from "@/lib/canary";
 
 export const maxDuration = 800;
 
@@ -58,8 +58,12 @@ async function run(req: Request) {
       skipped,
     });
   } catch (err) {
+    console.error(
+      "[cron/canary] run failed:",
+      redactSecrets((err as Error).message),
+    );
     return NextResponse.json(
-      { ok: false, error: (err as Error).message },
+      { ok: false, error: "Canary run failed" },
       { status: 500 },
     );
   }

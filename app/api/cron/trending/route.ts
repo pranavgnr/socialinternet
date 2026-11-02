@@ -1,5 +1,6 @@
 import { connection, NextResponse } from "next/server";
 
+import { redactSecrets } from "@/lib/canary";
 import {
   cronSecretOk,
   refreshTrending,
@@ -9,7 +10,7 @@ import {
 export const maxDuration = 800;
 
 /**
- * GET /api/cron/trending?secret=…  (or header `x-cron-secret`)
+ * GET /api/cron/trending  (header `x-cron-secret` only)
  *
  * The free half runs every time: rebuild `trending_niches` from the pulls
  * already on disk, which costs nothing. `?refresh=1` adds the paid half —
@@ -28,8 +29,7 @@ async function run(req: Request) {
   }
 
   const url = new URL(req.url);
-  const given =
-    req.headers.get("x-cron-secret") ?? url.searchParams.get("secret") ?? "";
+  const given = req.headers.get("x-cron-secret") ?? "";
   if (!cronSecretOk(given, secret)) {
     return NextResponse.json({ ok: false, error: "Bad secret." }, { status: 401 });
   }
@@ -52,8 +52,12 @@ async function run(req: Request) {
       stopped: work?.stopped ?? null,
     });
   } catch (err) {
+    console.error(
+      "[cron/trending] refresh failed:",
+      redactSecrets((err as Error).message),
+    );
     return NextResponse.json(
-      { ok: false, error: (err as Error).message },
+      { ok: false, error: "Trending refresh failed" },
       { status: 500 },
     );
   }

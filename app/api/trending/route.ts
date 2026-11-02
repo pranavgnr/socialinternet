@@ -17,12 +17,10 @@ export async function GET() {
   try {
     return NextResponse.json({ ok: true, niches: await listTrending() });
   } catch (err) {
+    // The public route must not hand a raw DB or disk error to a stranger.
+    console.error("[trending] listing failed:", (err as Error).message);
     return NextResponse.json(
-      {
-        ok: false,
-        niches: [],
-        error: (err as Error).message,
-      },
+      { ok: false, niches: [], error: "Could not load niches" },
       { status: 500 },
     );
   }

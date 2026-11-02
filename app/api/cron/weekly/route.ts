@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { listAccounts, mondayOf, runWeekly, storeAt, dataRoot } from "@/lib/weekly";
@@ -5,7 +7,7 @@ import { listAccounts, mondayOf, runWeekly, storeAt, dataRoot } from "@/lib/week
 export const maxDuration = 800;
 
 /**
- * GET /api/cron/weekly?secret=…  (or header `x-cron-secret`)
+ * GET /api/cron/weekly  (header `x-cron-secret` only)
  *
  * The Monday job: for every account that has ever had a plan, re-read it and
  * record what changed. Nothing here is free — each account is a real pull — so
@@ -14,6 +16,12 @@ export const maxDuration = 800;
  * A failing account never stops the rest: one dead handle must not cost the
  * other creators their Monday.
  */
+function secretOk(given: string, secret: string): boolean {
+  const a = createHash("sha256").update(given).digest();
+  const b = createHash("sha256").update(secret).digest();
+  return timingSafeEqual(a, b);
+}
+
 async function run(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
@@ -24,8 +32,8 @@ async function run(req: Request) {
   }
 
   const url = new URL(req.url);
-  const given = req.headers.get("x-cron-secret") ?? url.searchParams.get("secret") ?? "";
-  if (given !== secret) {
+  const given = req.headers.get("x-cron-secret") ?? "";
+  if (!secretOk(given, secret)) {
     return NextResponse.json({ ok: false, error: "Bad secret." }, { status: 401 });
   }
 

@@ -14,6 +14,14 @@ const STAGES = [
   "Writing your plan…",
 ];
 
+/**
+ * A 401 sends the visitor through Google and back to `/` with a fresh page.
+ * There is no return URL (that would be an open-redirect surface), so the one
+ * thing worth keeping — the handle they already typed — rides in session
+ * storage for this tab only.
+ */
+const PENDING_KEY = "c101:pendingHandle";
+
 const GET = [
   {
     t: "Advice shaped for what you actually post",
@@ -31,9 +39,12 @@ const GET = [
 
 export default function ConnectHandle({
   initialNiche,
+  signedIn = false,
 }: {
   /** set when the visitor picked a space on the discover page */
   initialNiche?: string;
+  /** whether the page already sees a signed-in visitor */
+  signedIn?: boolean;
 }) {
   const [handle, setHandle] = useState("");
   const [niche, setNiche] = useState(initialNiche ?? "");
@@ -43,13 +54,48 @@ export default function ConnectHandle({
   const [error, setError] = useState<string | null>(null);
   /** A 401 is not an error to apologise for: it needs a way forward. */
   const [needsSignIn, setNeedsSignIn] = useState(false);
+  /** The handle recovered after sign-in, shown as a reminder, never auto-read. */
+  const [resumed, setResumed] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    /**
+     * The handle typed before a 401 is still here when Google sends the visitor
+     * back. Fill the field and drop the key immediately: a later visit must not
+     * resurrect an old handle. Only a signed-in visitor gets the note, and
+     * nothing is submitted — a page load must never spend a credit.
+     *
+     * sessionStorage can be unavailable (privacy mode, blocked storage). A
+     * lost prefill is not worth taking the form down for.
+     */
+    try {
+      const saved = window.sessionStorage.getItem(PENDING_KEY);
+      if (saved) {
+        window.sessionStorage.removeItem(PENDING_KEY);
+        const pending = JSON.parse(saved) as {
+          handle?: unknown;
+          niche?: unknown;
+        };
+        const savedHandle =
+          typeof pending.handle === "string"
+            ? normalizeHandle(pending.handle)
+            : null;
+        if (savedHandle) {
+          setHandle(savedHandle);
+          if (typeof pending.niche === "string" && pending.niche.trim()) {
+            setNiche(pending.niche.trim());
+          }
+          if (signedIn) setResumed(savedHandle);
+        }
+      }
+    } catch {
+      // No storage, no prefill; the form still works.
+    }
+
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, []);
+  }, [signedIn]);
 
   /**
    * Reading an account that is not cached takes the better part of a minute.
@@ -102,6 +148,18 @@ export default function ConnectHandle({
        * sign-in button to press, because signing in again would not help.
        */
       if (res.status === 401) {
+        /**
+         * Keep the handle (and the chosen space) for the trip through Google.
+         * No return-URL parameter: the OAuth route stays untouched, so there is
+         * no redirect target an attacker could steer.
+         */
+        try {
+          const pending: { handle: string; niche?: string } = { handle: clean };
+          if (niche.trim()) pending.niche = niche.trim();
+          window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+        } catch {
+          // Storage blocked: sign-in still works, the handle just is not kept.
+        }
         setNeedsSignIn(true);
         setError(plain(json.error ?? "Sign in to read your account."));
         return;
@@ -178,6 +236,12 @@ export default function ConnectHandle({
           <p className="mt-3 text-[11.5px] leading-relaxed text-muted/70">
             Free · sign in with Google to read your account
           </p>
+
+          {resumed ? (
+            <p className="mt-2.5 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-[12px] leading-relaxed text-text">
+              You&apos;re signed in. Press the button to read @{plain(resumed)}.
+            </p>
+          ) : null}
 
           {niche ? (
             <div className="mt-2.5 flex items-center gap-2">

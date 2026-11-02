@@ -74,7 +74,7 @@ export default async function Landing({
         </div>
       </section>
 
-      <ConnectHandle initialNiche={initialNiche} />
+      <ConnectHandle initialNiche={initialNiche} signedIn={Boolean(user)} />
 
       <section className="border-t border-line/70 pt-5">
         <form action="/discover" method="get">

@@ -48,3 +48,44 @@ test("returns null for more than 30 characters", () => {
 test("accepts exactly 30 characters", () => {
   assert.equal(normalizeHandle("a".repeat(30)), "a".repeat(30));
 });
+
+test("accepts a bare instagram.com URL without a scheme", () => {
+  assert.equal(normalizeHandle("instagram.com/name"), "name");
+});
+
+test("accepts an uppercase host", () => {
+  assert.equal(normalizeHandle("HTTPS://WWW.INSTAGRAM.COM/Name/"), "name");
+});
+
+test("a profile URL with a content path keeps the profile segment", () => {
+  assert.equal(normalizeHandle("https://www.instagram.com/Name/reels"), "name");
+});
+
+for (const route of [
+  "p",
+  "post",
+  "reel",
+  "reels",
+  "tv",
+  "stories",
+  "explore",
+]) {
+  test(`rejects the content route /${route}/`, () => {
+    assert.equal(normalizeHandle(`https://www.instagram.com/${route}/`), null);
+  });
+}
+
+test("a bare reserved word is still a legal handle", () => {
+  assert.equal(normalizeHandle("explore"), "explore");
+});
+
+test("rejects a handle starting or ending with a dot", () => {
+  assert.equal(normalizeHandle(".priya"), null);
+  assert.equal(normalizeHandle("priya."), null);
+  assert.equal(normalizeHandle("https://www.instagram.com/.priya/"), null);
+});
+
+test("rejects two dots in a row", () => {
+  assert.equal(normalizeHandle("priya..sharma"), null);
+});
+

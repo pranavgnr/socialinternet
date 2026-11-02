@@ -7,10 +7,41 @@
  * own directory — so the same creator is read twice and charged twice.
  *
  * A handle is only letters, numbers, dots and underscores, at most 30
- * characters. Anything else is not a handle, and `null` says so instead of
- * passing a guess to a vendor.
+ * characters, and it cannot start or end with a dot or contain two in a row —
+ * Instagram itself rejects those. Anything else is not a handle, and `null`
+ * says so instead of passing a guess to a vendor.
  */
 const SHAPE = /^[a-z0-9._]{1,30}$/;
+
+/**
+ * Instagram paths that are content or navigation, never a profile. A pasted
+ * post URL must not become the handle "p" and spend a credit reading an
+ * account that does not exist.
+ *
+ * This list is checked only for URL-shaped input. A bare word such as
+ * "explore" is a legal Instagram handle, so typing it without a URL must keep
+ * working; the same word after instagram.com/ is the route.
+ */
+const CONTENT_ROUTES = new Set([
+  "p",
+  "post",
+  "reel",
+  "reels",
+  "tv",
+  "stories",
+  "explore",
+  "accounts",
+  "direct",
+  "about",
+  "legal",
+  "developer",
+  "web",
+  "challenge",
+  "directory",
+]);
+
+/** `https://…`, `http://…` or a bare `instagram.com/…`, with optional www. */
+const INSTAGRAM_URL = /^(?:https?:\/\/)?(?:www\.)?instagram\.com\//i;
 
 export function normalizeHandle(input: string): string | null {
   if (typeof input !== "string") return null;
@@ -18,14 +49,17 @@ export function normalizeHandle(input: string): string | null {
   let value = input.trim();
   if (!value) return null;
 
-  // A pasted profile URL: drop the scheme, host and everything after the
-  // handle (trailing slash, query string, fragments).
-  value = value.replace(
-    /^https?:\/\/(?:www\.)?instagram\.com\//i,
-    "",
-  );
-  value = value.replace(/^@/, "");
-  value = (value.split(/[/?#]/)[0] ?? "").toLowerCase();
+  const wasUrl = INSTAGRAM_URL.test(value);
+  if (wasUrl) value = value.replace(INSTAGRAM_URL, "");
 
-  return SHAPE.test(value) ? value : null;
+  value = value.replace(/^@/, "").toLowerCase();
+  const segment = value.split(/[/?#]/)[0] ?? "";
+
+  if (!segment) return null;
+  if (wasUrl && CONTENT_ROUTES.has(segment)) return null;
+  if (!SHAPE.test(segment)) return null;
+  if (segment.startsWith(".") || segment.endsWith(".")) return null;
+  if (segment.includes("..")) return null;
+
+  return segment;
 }

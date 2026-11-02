@@ -174,7 +174,7 @@ function secondPersonPlan(): GrowthPlan {
     account: {
       followers: 8200,
       bio: "Your jokes in telugu",
-      category: "You comedian",
+      category: "Comedian",
     },
     standing: {
       followers: 8200,
@@ -373,15 +373,12 @@ test("toCompetitorView strips advice and keeps the measured read", () => {
   assert.equal("moves" in wire, true);
   assert.deepEqual(wire.moves, []);
 
-  // The evidence the visitor asked for survives, but is addressed to the
-  // account, not to the visitor reading it.
+  // Authored prose survives, translated to the account.
   assert.equal(view.standing.medianViews, 8000);
   assert.equal(view.standing.unreadReason, "we could not read their recent posts");
   assert.equal(view.archetype.label, "comedian");
   assert.equal(view.archetype.blurb, "They tell short, spoken jokes to camera.");
   assert.equal(view.cohort.basis, "accounts about their size (8.2k followers)");
-  assert.equal(view.audit?.best.caption, "their best one");
-  assert.equal(view.audit?.worst.caption, "they flopped");
   assert.equal(view.audit?.gaps.length, 1);
   assert.equal(
     view.audit?.gaps[0]?.note,
@@ -390,12 +387,19 @@ test("toCompetitorView strips advice and keeps the measured read", () => {
   assert.equal(view.audit?.gaps[0]?.winners, "they said it out loud");
   assert.equal(view.audit?.gaps[0]?.losers, "they stayed silent");
   assert.equal(view.audit?.versusPeers, "They are ahead of 40% of them.");
+
+  // Verbatim evidence survives byte-for-byte: the account's caption, the
+  // audience's comment and the profile bio are quotes, not our prose.
+  assert.equal(view.audit?.best.caption, "your best one");
+  assert.equal(view.audit?.worst.caption, "you flopped");
   assert.equal(
     view.comments?.seeds[0]?.text,
-    "they should do the shopkeeper voice",
+    "you should do the shopkeeper voice",
   );
-  assert.deepEqual(view.comments?.seeds[0]?.ideas, ["they could film it"]);
-  assert.equal(view.account?.bio, "Their jokes in telugu");
+  assert.equal(view.account?.bio, "Your jokes in telugu");
+
+  // Comment ideas are advice rather than either evidence or a theme.
+  assert.deepEqual(view.comments?.seeds[0]?.ideas, []);
 });
 
 test("neutralisePerson rewrites second person, preserving case and apostrophes", () => {
@@ -449,19 +453,158 @@ test("URLs, handles and identifier keys are never rewritten", () => {
     "@your_name",
     "https://instagram.com/youandme",
   ]);
-  // Prose in the same object is still translated.
-  assert.equal(view.audit?.best.caption, "their best one");
+  // The caption is a quote and stays exactly as the account wrote it.
+  assert.equal(view.audit?.best.caption, "your best one");
 });
 
-test("a competitor plan has no second-person text anywhere in its JSON", () => {
-  const view = toCompetitorView(secondPersonPlan());
-  const wire = JSON.stringify(view);
-
-  assert.doesNotMatch(
-    wire,
-    /\b(you|your|yours|you're|you've|you'll|yourself)\b/i,
+test("captions are verbatim evidence and are never rewritten", () => {
+  const base = fullPlan();
+  const view = toCompetitorView(
+    fullPlan({
+      audit: {
+        ...base.audit!,
+        best: { ...base.audit!.best, caption: "you need to watch this" },
+        worst: { ...base.audit!.worst, caption: "your mother was right" },
+      },
+    }),
   );
-  // The original regression, called out explicitly.
+
+  assert.equal(view.audit?.best.caption, "you need to watch this");
+  assert.equal(view.audit?.worst.caption, "your mother was right");
+});
+
+test("audience comments are verbatim evidence and are never rewritten", () => {
+  const base = fullPlan();
+  const view = toCompetitorView(
+    fullPlan({
+      comments: {
+        ...base.comments!,
+        seeds: [
+          {
+            text: "you need to watch this",
+            kind: "request",
+            asked: 1,
+            likes: 2,
+            ideas: ["you could film it"],
+          },
+        ],
+        questions: ["can you show the strumming pattern?"],
+        objections: ["you missed the point"],
+        requests: ["you should do part 2"],
+        praise: ["you are the best"],
+        language: ["you", "your"],
+      },
+    }),
+  );
+
+  assert.equal(view.comments?.seeds[0]?.text, "you need to watch this");
+  assert.deepEqual(view.comments?.seeds[0]?.ideas, []);
+  assert.deepEqual(view.comments?.questions, [
+    "can you show the strumming pattern?",
+  ]);
+  assert.deepEqual(view.comments?.objections, ["you missed the point"]);
+  assert.deepEqual(view.comments?.requests, ["you should do part 2"]);
+  assert.deepEqual(view.comments?.praise, ["you are the best"]);
+  assert.deepEqual(view.comments?.language, ["you", "your"]);
+});
+
+test("the profile bio is verbatim evidence and is never rewritten", () => {
+  const view = toCompetitorView(
+    fullPlan({
+      account: {
+        followers: 8200,
+        bio: "Your jokes in telugu — you know the one",
+        category: "Comedian",
+      },
+    }),
+  );
+
+  assert.equal(
+    view.account?.bio,
+    "Your jokes in telugu — you know the one",
+  );
+});
+
+test("a competitor plan has no second person in authored prose", () => {
+  const view = toCompetitorView(secondPersonPlan());
+
+  const SECOND_PERSON = /\b(you|your|yours|you're|you've|you'll|yourself)\b/i;
+
+  /**
+   * Verbatim fields are excluded from this walk on purpose. They are quotes
+   * and are *expected* to still say "you"; rewriting them would falsify the
+   * evidence. Everything else in the result is authored prose and must not
+   * contain second person.
+   */
+  const VERBATIM_KEYS = new Set([
+    "caption",
+    "bio",
+    "text",
+    "username",
+    "author",
+    "title",
+  ]);
+  const VERBATIM_PATHS: readonly (readonly string[])[] = [
+    // a search phrase or language label is input, not prose
+    ["niche"],
+    ["nicheFit", "searched"],
+    ["language", "wanted"],
+    ["language", "word"],
+    // the audience's own words
+    ["comments", "questions", "*"],
+    ["comments", "objections", "*"],
+    ["comments", "requests", "*"],
+    ["comments", "praise", "*"],
+    ["comments", "language", "*"],
+    ["comments", "seeds", "*", "text"],
+    // links and the account's own handle
+    ["audit", "best", "url"],
+    ["audit", "worst", "url"],
+    ["handle"],
+  ];
+
+  const pathMatches = (
+    pattern: readonly string[],
+    path: readonly string[],
+  ): boolean =>
+    pattern.length === path.length &&
+    pattern.every((segment, i) => segment === "*" || segment === path[i]);
+
+  const isVerbatim = (path: readonly string[]): boolean =>
+    path.some((segment) => VERBATIM_KEYS.has(segment)) ||
+    VERBATIM_PATHS.some((pattern) => pathMatches(pattern, path));
+
+  const collect = (
+    value: unknown,
+    path: string[] = [],
+    out: { path: string[]; text: string }[] = [],
+  ): { path: string[]; text: string }[] => {
+    if (typeof value === "string") {
+      out.push({ path, text: value });
+    } else if (Array.isArray(value)) {
+      for (const item of value) collect(item, [...path, "*"], out);
+    } else if (value && typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) {
+        collect(item, [...path, key], out);
+      }
+    }
+    return out;
+  };
+
+  const strings = collect(view);
+  assert.ok(strings.length > 10, "the walk saw the whole plan");
+  for (const { path, text } of strings) {
+    if (isVerbatim(path)) continue;
+    // Opaque values are never prose: https URLs and @handles.
+    if (/^https?:\/\//i.test(text) || text.startsWith("@")) continue;
+    assert.doesNotMatch(
+      text,
+      SECOND_PERSON,
+      `${path.join(".")} still addresses the visitor: ${text}`,
+    );
+  }
+
+  // Authored prose is the class that must have changed.
   assert.equal(
     view.audit?.gaps[0]?.note,
     "Their best posts opened on a line.",
@@ -470,6 +613,17 @@ test("a competitor plan has no second-person text anywhere in its JSON", () => {
     view.cohort.basis,
     "accounts about their size (8.2k followers)",
   );
+  assert.equal(view.standing.unreadReason, "we could not read their recent posts");
+  assert.equal(view.archetype.blurb, "They tell short jokes to camera.");
+  assert.deepEqual(view.nicheFit?.reasons, ["their posts matched this room"]);
+
+  // Verbatim text is the class that must not have changed.
+  assert.equal(view.audit?.best.caption, "your best one");
+  assert.equal(
+    view.comments?.seeds[0]?.text,
+    "you should do the shopkeeper voice",
+  );
+  assert.equal(view.account?.bio, "Your jokes in telugu");
 });
 
 test("a competitor read never writes the visitor's plan or idea feed", async () => {

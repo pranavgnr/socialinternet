@@ -68,7 +68,7 @@ const MIN_COHORT = Number(process.env.PEER_MIN_COHORT ?? 3);
  * How many candidate profiles may be read just to learn a follower count.
  *
  * Related accounts arrive without one, so the band cannot be applied until they
- * are read — one result each ($0.0023). Six is the point where the cost of
+ * are read — one result each ($0.0027). Six is the point where the cost of
  * sorting stops being free: beyond it we are paying more to choose peers than to
  * read them.
  */

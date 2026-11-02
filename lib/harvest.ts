@@ -242,6 +242,25 @@ function normalise(
     : fromLegacy(row, platform, fallbackAccount);
 }
 
+/**
+ * A provider's `{ items }` payload in the rows the rest of the pipeline reads.
+ *
+ * Exported for the vendor canary. The canary must judge what the harvester
+ * would actually see — normalised `views` and `followers`, not whichever field
+ * name a vendor happened to use — otherwise a vendor could pass the health
+ * check while every reel it served scored zero downstream.
+ */
+export function normaliseProviderRows(
+  data: Record<string, unknown>,
+  platform: Platform,
+  fallbackAccount?: string,
+  baselineMedianViews?: number,
+): RawReel[] {
+  return items(data)
+    .map((row) => normalise(row, platform, fallbackAccount, baselineMedianViews))
+    .filter((r): r is RawReel => Boolean(r));
+}
+
 interface CallResult {
   data: Record<string, unknown>;
   creditsUsed: number;

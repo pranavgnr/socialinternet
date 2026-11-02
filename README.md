@@ -65,7 +65,8 @@ the free YouTube web reader needs no key. Instagram reads need one paid vendor.
 Copy `.env.example` to `.env.local`. The provider router picks the cheapest
 healthy vendor per call and fails over automatically:
 
-- `APIFY_TOKEN` — Instagram; $5 free every month, then $2.30 / 1,000 results.
+- `APIFY_TOKEN` — Instagram; $5 free every month, then $2.70 / 1,000 results
+  on the free plan ($2.30 on the $19/mo Starter plan).
 - `HIKERAPI_KEY` — Instagram; per-call price depends on account tier.
 - `SCRAPECREATORS_API_KEY` — Instagram; $1.88 / 1,000 requests.
 - `SOCIALCRAWL_API_KEY` — broadest coverage (transcripts, comments); $7.60 / 1,000 calls.

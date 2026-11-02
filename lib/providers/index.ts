@@ -147,6 +147,19 @@ export function availableProviders(path?: string): DataProvider[] {
   return live;
 }
 
+/**
+ * Every configured vendor, in the router's own order and *without* the run-time
+ * bench list.
+ *
+ * `availableProviders()` answers "what should serve the next call", which is
+ * the wrong question for the canary: it has to test each vendor individually,
+ * including one the router benched earlier in the process. Deliberately not
+ * sorted by price — a health check is not choosing a winner.
+ */
+export function configuredProviders(): DataProvider[] {
+  return ALL.filter((p) => p.configured());
+}
+
 export function providerSummary() {
   return ALL.map((p) => ({
     id: p.id,

@@ -10,7 +10,7 @@
  *
  *   hpix/ig-reels-scraper            $0.20 / 1,000   (~25,000 free)
  *   apidojo/instagram-scraper-api    $0.50 / 1,000   (~10,000 free)
- *   apify/instagram-scraper          $2.30 / 1,000   ( ~2,170 free)
+ *   apify/instagram-scraper          $2.70 / 1,000   ( ~1,850 free)
  *
  * The two cheap ones were tried live and both fail on **data**, not on price:
  *
@@ -22,13 +22,17 @@
  *
  * This adapter therefore uses the canonical, most expensive-per-result actor,
  * because it is the only one of the three that returns `videoPlayCount` on a
- * reel and honours the limit it is given. $2.30/1,000 sounds like the worst
+ * reel and honours the limit it is given. $2.70/1,000 sounds like the worst
  * deal here and is in fact the cheapest *working* one: the others are free data
  * that cannot price anything.
  *
- * Billing is a flat **$0.0023 per result** (`PRICE_PER_DATASET_ITEM`, read from
+ * The $2.30/1,000 rate belongs to the $19/month Starter plan. This account runs
+ * on the free plan, so the honest constant is the free-plan rate, not the one
+ * advertised on the pricing page.
+ *
+ * Billing is a flat **$0.0027 per result** (`PRICE_PER_DATASET_ITEM`, read from
  * the actor's own pricing table) with no per-query fee, so cost is linear. The
- * $5 monthly credit is **~2,170 results** — about 90 profile pulls of 24, or
+ * $5 monthly credit is **~1,850 results** — about 77 profile pulls of 24, or
  * roughly 20 complete plans a month, free.
  *
  * VERIFIED LIVE against a real token on 2026-10-27, not just against docs:
@@ -71,8 +75,9 @@ const BASE = "https://api.apify.com/v2";
  * This actor returns `likesCount`, `commentsCount`, `videoPlayCount`,
  * `displayUrl`, `shortCode`, `timestamp` and `videoDuration` — the names the
  * code below was already written against — and it honours `resultsLimit`
- * exactly (asked 3, returned 3). It costs $2.30/1,000 rather than $0.50/1,000,
- * and it is still by far the cheapest option that can actually price a niche.
+ * exactly (asked 3, returned 3). It costs $2.70/1,000 on the free plan rather
+ * than $0.50/1,000 ($2.30 once the account is on the $19/mo Starter plan), and
+ * it is still by far the cheapest option that can actually price a niche.
  *
  * VERIFIED LIVE against a real token on 2026-10-27. See the notes on `profile()`
  * for the one place its payload is thinner than expected.
@@ -81,14 +86,14 @@ const ACTOR = "apify~instagram-scraper";
 
 /**
  * `PRICE_PER_DATASET_ITEM`, read from the actor's own pricing table:
- * **$0.0023 per result**.
+ * **$0.0027 per result** on the free plan ($0.0023 on the $19/mo Starter plan).
  *
  * Unlike the previous actor there is no per-query fee, so cost is linear in the
  * number of results and one constant is the honest model. $5 of monthly credit
- * therefore buys **~2,170 results**, i.e. about 90 profile pulls of 24 reels, or
+ * therefore buys **~1,850 results**, i.e. about 77 profile pulls of 24 reels, or
  * roughly 20 complete plans a month for nothing.
  */
-const ITEM_USD = Number(process.env.APIFY_ITEM_USD ?? 0.0023);
+const ITEM_USD = Number(process.env.APIFY_ITEM_USD ?? 0.0027);
 
 /** Query kinds. Only used to pick a default `resultsLimit`; there is no fee. */
 type QueryKind = "user" | "search" | "post";
@@ -170,8 +175,14 @@ function addSpend(usd: number, results: number): Ledger {
   return next;
 }
 
-/** What this call costs on the actor's per-result price. */
-function price(_kind: QueryKind, items: number): number {
+/**
+ * What this call costs on the actor's per-result price.
+ *
+ * Exported so the canary test can assert the one number the whole cost model
+ * rests on instead of trusting a comment: `price("user", 1000)` is $2.70 on the
+ * free plan.
+ */
+export function price(_kind: QueryKind, items: number): number {
   return items * ITEM_USD;
 }
 
@@ -413,7 +424,7 @@ export const apify: DataProvider = {
    */
   cost: {
     usdPerCall: price("user", resultsLimit()),
-    label: `$2.30 / 1,000 results · ${monthlyFree().toFixed(0)} free each month`,
+    label: `$2.70 / 1,000 results · ${monthlyFree().toFixed(0)} free each month`,
     /**
      * Zero until the monthly allowance is used up. The router sorts on this,
      * so Apify is tried before a paid vendor while the $5 is still there — the
@@ -585,7 +596,7 @@ export const apify: DataProvider = {
    *
    * `resultsType: "details"` is the call that answers this. Live, for `@natgeo`,
    * it returned `followersCount: 268267261` — the real figure, against the 435
-   * that a YouTube fallback once printed. Costs one result, i.e. $0.0023.
+   * that a YouTube fallback once printed. Costs one result, i.e. $0.0027.
    */
   profile: async (handle) => {
     const clean = handle.replace(/^@/, "");

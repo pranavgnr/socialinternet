@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { looksLikeHandle } from "../lib/handle";
-import { toCompetitorView } from "../lib/competitor";
+import { neutralisePerson, toCompetitorView } from "../lib/competitor";
 import {
   MODE_ERROR,
   parsePlanMode,
@@ -33,7 +33,7 @@ function fullPlan(overrides: Partial<GrowthPlan> = {}): GrowthPlan {
     archetype: {
       id: "comedy",
       label: "comedian",
-      blurb: "Short, spoken jokes to camera.",
+      blurb: "You tell short, spoken jokes to camera.",
       songLed: false,
       recommendation: "hooks",
     },
@@ -43,7 +43,7 @@ function fullPlan(overrides: Partial<GrowthPlan> = {}): GrowthPlan {
       nicheMedianViews: 12000,
       sizeMatched: true,
     },
-    account: { followers: 8200, bio: "jokes in telugu", category: "Comedian" },
+    account: { followers: 8200, bio: "Your jokes in telugu", category: "Comedian" },
     standing: {
       followers: 8200,
       medianViews: 8000,
@@ -53,6 +53,7 @@ function fullPlan(overrides: Partial<GrowthPlan> = {}): GrowthPlan {
       percentile: 0.4,
       accountRead: true,
       postsRead: true,
+      unreadReason: "we could not read your recent posts",
     },
     diagnosis: "You post less often than accounts your size.",
     gaps: [{ label: "your usual post", you: "8k", cohort: "12k" }],
@@ -83,23 +84,23 @@ function fullPlan(overrides: Partial<GrowthPlan> = {}): GrowthPlan {
       posts: 10,
       watched: 6,
       medianViews: 8000,
-      best: { views: 40000, multiple: 5, caption: "the best one", url: "https://instagram.com/p/best" },
-      worst: { views: 1200, multiple: 0.15, caption: "the flat one", url: "https://instagram.com/p/worst" },
+      best: { views: 40000, multiple: 5, caption: "your best one", url: "https://instagram.com/p/best" },
+      worst: { views: 1200, multiple: 0.15, caption: "you flopped", url: "https://instagram.com/p/worst" },
       cadence: { medianGapDays: 3, longestGapDays: 9, daysSinceLast: 1 },
       shapes: [],
       hookModes: [],
       breadth: 3,
       consistency: 0.4,
       ceiling: 5,
-      versusPeers: "Ahead of 40% of them.",
+      versusPeers: "You are ahead of 40% of them.",
       gaps: [
         {
           lever: "opening",
-          winners: "a spoken line",
-          losers: "silence",
+          winners: "you said it out loud",
+          losers: "you stayed silent",
           support: 3,
           strength: 0.6,
-          note: "The posts that worked opened on a line.",
+          note: "Your best posts opened on a line.",
         },
       ],
     },
@@ -107,12 +108,12 @@ function fullPlan(overrides: Partial<GrowthPlan> = {}): GrowthPlan {
       read: 4,
       posts: 3,
       seeds: [
-        { text: "do the shopkeeper voice", kind: "request", asked: 3, likes: 12, ideas: [] },
+        { text: "you should do the shopkeeper voice", kind: "request", asked: 3, likes: 12, ideas: ["you could film it"] },
       ],
-      questions: ["where is this from"],
-      requests: ["more shopkeeper"],
-      objections: [],
-      language: ["shopkeeper", "voice"],
+      questions: ["where did you learn this"],
+      requests: ["you should do more"],
+      objections: ["you cannot fake this"],
+      language: ["your voice", "shopkeeper"],
     },
     hookRead: {
       mode: "spoken",
@@ -125,12 +126,129 @@ function fullPlan(overrides: Partial<GrowthPlan> = {}): GrowthPlan {
     language: {
       wanted: "telugu",
       basis: "own",
+      word: "telugu",
       kept: 10,
       seen: 12,
       dropped: 2,
+      caveat: "You should read these as indicative.",
     },
     ...overrides,
   };
+}
+
+/**
+ * A plan whose every kept prose field is written to the account's owner, as the
+ * builder really writes them. Used to prove the competitor view contains no
+ * second person anywhere in its serialised form.
+ */
+function secondPersonPlan(): GrowthPlan {
+  return fullPlan({
+    niche: "you comedy",
+    nicheFit: {
+      searched: "you comedy",
+      score: 0.8,
+      agreement: 0.8,
+      verdict: "matches",
+      ok: true,
+      accounts: [],
+      off: [],
+      creatorShape: "you comedy",
+      creatorLanguage: "your telugu",
+      reasons: ["your posts matched this room"],
+    },
+    archetype: {
+      id: "comedy",
+      label: "your comedian",
+      language: "your telugu",
+      blurb: "You tell short jokes to camera.",
+      songLed: false,
+      recommendation: "hooks",
+    },
+    cohort: {
+      accounts: 12,
+      basis: "accounts about your size (8.2k followers)",
+      nicheMedianViews: 12000,
+      sizeMatched: true,
+      platform: "instagram",
+    },
+    account: {
+      followers: 8200,
+      bio: "Your jokes in telugu",
+      category: "You comedian",
+    },
+    standing: {
+      followers: 8200,
+      medianViews: 8000,
+      bestViews: 40000,
+      reelsRead: 10,
+      vsNiche: 0.7,
+      percentile: 0.4,
+      accountRead: true,
+      postsRead: true,
+      unreadReason: "we could not read your recent posts",
+      readFrom: "instagram",
+    },
+    audit: {
+      posts: 10,
+      watched: 6,
+      medianViews: 8000,
+      best: {
+        views: 40000,
+        multiple: 5,
+        caption: "your best one",
+        url: "https://instagram.com/someone",
+      },
+      worst: {
+        views: 1200,
+        multiple: 0.15,
+        caption: "you flopped",
+        url: "https://instagram.com/someone-else",
+      },
+      cadence: { medianGapDays: 3, longestGapDays: 9, daysSinceLast: 1 },
+      shapes: [],
+      hookModes: [],
+      breadth: 3,
+      consistency: 0.4,
+      ceiling: 5,
+      versusPeers: "You are ahead of 40% of them.",
+      gaps: [
+        {
+          lever: "opening",
+          winners: "your spoken line",
+          losers: "you stayed silent",
+          support: 3,
+          strength: 0.6,
+          note: "Your best posts opened on a line.",
+        },
+      ],
+    },
+    comments: {
+      read: 4,
+      posts: 3,
+      seeds: [
+        {
+          text: "you should do the shopkeeper voice",
+          kind: "request",
+          asked: 3,
+          likes: 12,
+          ideas: ["you could film it"],
+        },
+      ],
+      questions: ["where did you learn this"],
+      requests: ["you should do more"],
+      objections: ["you cannot fake this"],
+      language: ["your voice"],
+    },
+    language: {
+      wanted: "your telugu",
+      basis: "own",
+      word: "your telugu",
+      kept: 10,
+      seen: 12,
+      dropped: 2,
+      caveat: "You should read these as indicative.",
+    },
+  });
 }
 
 function fixtureResearch(): NicheResearch {
@@ -176,7 +294,7 @@ function fixtureAnalysis(plan: GrowthPlan): AnalyseResult {
     archetype: {
       id: "comedy",
       label: "comedian",
-      blurb: "Short, spoken jokes to camera.",
+      blurb: "You tell short, spoken jokes to camera.",
       songLed: false,
       recommendation: "hooks",
       confidence: 0.8,
@@ -255,14 +373,103 @@ test("toCompetitorView strips advice and keeps the measured read", () => {
   assert.equal("moves" in wire, true);
   assert.deepEqual(wire.moves, []);
 
-  // The evidence the visitor asked for survives.
-  assert.deepEqual(view.standing, fullPlan().standing);
+  // The evidence the visitor asked for survives, but is addressed to the
+  // account, not to the visitor reading it.
+  assert.equal(view.standing.medianViews, 8000);
+  assert.equal(view.standing.unreadReason, "we could not read their recent posts");
   assert.equal(view.archetype.label, "comedian");
-  assert.equal(view.audit?.best.caption, "the best one");
-  assert.equal(view.audit?.worst.caption, "the flat one");
+  assert.equal(view.archetype.blurb, "They tell short, spoken jokes to camera.");
+  assert.equal(view.cohort.basis, "accounts about their size (8.2k followers)");
+  assert.equal(view.audit?.best.caption, "their best one");
+  assert.equal(view.audit?.worst.caption, "they flopped");
   assert.equal(view.audit?.gaps.length, 1);
-  assert.equal(view.comments?.seeds[0]?.text, "do the shopkeeper voice");
-  assert.equal(view.account?.bio, "jokes in telugu");
+  assert.equal(
+    view.audit?.gaps[0]?.note,
+    "Their best posts opened on a line.",
+  );
+  assert.equal(view.audit?.gaps[0]?.winners, "they said it out loud");
+  assert.equal(view.audit?.gaps[0]?.losers, "they stayed silent");
+  assert.equal(view.audit?.versusPeers, "They are ahead of 40% of them.");
+  assert.equal(
+    view.comments?.seeds[0]?.text,
+    "they should do the shopkeeper voice",
+  );
+  assert.deepEqual(view.comments?.seeds[0]?.ideas, ["they could film it"]);
+  assert.equal(view.account?.bio, "Their jokes in telugu");
+});
+
+test("neutralisePerson rewrites second person, preserving case and apostrophes", () => {
+  assert.equal(
+    neutralisePerson("Your best posts opened on a line."),
+    "Their best posts opened on a line.",
+  );
+  assert.equal(
+    neutralisePerson("accounts about your size (8.2k followers)"),
+    "accounts about their size (8.2k followers)",
+  );
+  assert.equal(
+    neutralisePerson("You're ahead of most of them."),
+    "They're ahead of most of them.",
+  );
+  assert.equal(
+    neutralisePerson("You’re ahead of most of them."),
+    "They’re ahead of most of them.",
+  );
+  assert.equal(
+    neutralisePerson("You've done it; you'll see. Yours, yourself."),
+    "They've done it; they'll see. Theirs, themselves.",
+  );
+  assert.equal(neutralisePerson("YOU'RE SURE"), "THEY'RE SURE");
+  // Substrings are not pronouns: a young youtuber stays a young youtuber.
+  assert.equal(neutralisePerson("a young youtuber"), "a young youtuber");
+});
+
+test("URLs, handles and identifier keys are never rewritten", () => {
+  const base = fullPlan();
+  const plan = fullPlan({
+    handle: "@your_name",
+    audit: {
+      ...base.audit!,
+      best: {
+        ...base.audit!.best,
+        caption: "your best one",
+        url: "https://instagram.com/youandme",
+      },
+    },
+    comments: {
+      ...base.comments!,
+      language: ["@your_name", "https://instagram.com/youandme"],
+    },
+  });
+
+  const view = toCompetitorView(plan);
+  assert.equal(view.handle, "@your_name");
+  assert.equal(view.audit?.best.url, "https://instagram.com/youandme");
+  assert.deepEqual(view.comments?.language, [
+    "@your_name",
+    "https://instagram.com/youandme",
+  ]);
+  // Prose in the same object is still translated.
+  assert.equal(view.audit?.best.caption, "their best one");
+});
+
+test("a competitor plan has no second-person text anywhere in its JSON", () => {
+  const view = toCompetitorView(secondPersonPlan());
+  const wire = JSON.stringify(view);
+
+  assert.doesNotMatch(
+    wire,
+    /\b(you|your|yours|you're|you've|you'll|yourself)\b/i,
+  );
+  // The original regression, called out explicitly.
+  assert.equal(
+    view.audit?.gaps[0]?.note,
+    "Their best posts opened on a line.",
+  );
+  assert.equal(
+    view.cohort.basis,
+    "accounts about their size (8.2k followers)",
+  );
 });
 
 test("a competitor read never writes the visitor's plan or idea feed", async () => {

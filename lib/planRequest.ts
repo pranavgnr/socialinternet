@@ -56,6 +56,13 @@ export interface PlanBuildDeps {
     opts: { force?: boolean; niche?: string; deep?: boolean },
   ) => Promise<AnalyseResult>;
   savePlan: (plan: GrowthPlan) => Promise<void>;
+  /**
+   * Own mode only: capture the creator profile after the plan is saved.
+   *
+   * Optional so the orchestrator can still be exercised without a database in
+   * the older offline tests; the plan route always supplies it.
+   */
+  saveCreatorProfile?: (plan: GrowthPlan) => Promise<void>;
   getProfile: () => Promise<Profile | null>;
   runPipeline: (args: {
     profile?: Profile;
@@ -102,6 +109,19 @@ export async function runPlanBuild(
   const { plan, research, seedReels, archetype, own } = analysed;
 
   await deps.savePlan(plan);
+
+  /**
+   * The creator profile is captured only for the plan this visitor keeps.
+   *
+   * Best-effort by design: a profile write must never turn a paid, successful
+   * plan into an error response (or trigger the route's refund), so the failure
+   * is logged and dropped. Competitor mode returned above and never reaches it.
+   */
+  try {
+    await deps.saveCreatorProfile?.(plan);
+  } catch (err) {
+    deps.logError(err);
+  }
 
   // The idea feed is rebuilt from the reels the analysis already paid for, so
   // this never pulls anything twice.

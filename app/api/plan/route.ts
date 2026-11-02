@@ -1,5 +1,7 @@
 import { NextResponse, after } from "next/server";
 
+import { currentUser } from "@/lib/auth";
+import { saveCreatorProfile } from "@/lib/creatorProfile";
 import { gate, settleAfter } from "@/lib/gate";
 import { normalizeHandle } from "@/lib/handle";
 import { take, tooMany, refund } from "@/lib/limits";
@@ -94,7 +96,15 @@ export async function POST(req: Request) {
      * after the run by what the vendor ledger says it cost. A refusal means
      * nothing was read, so the rate-limit slot is handed straight back too.
      */
-    const verdict = await gate("handle", { key: handle });
+    /**
+     * Resolve the account and let the gate use that same signed-in user, so the
+     * creator profile is written for the id the charge was made against.
+     */
+    const user = await currentUser();
+    const verdict = await gate("handle", {
+      key: handle,
+      getUser: async () => user,
+    });
     if (!verdict.ok) {
       refund(limitKey);
       return NextResponse.json(
@@ -127,6 +137,26 @@ export async function POST(req: Request) {
           {
             analyseHandle,
             savePlan: (p) => account.store.savePlan(p),
+            /**
+             * Own mode only (competitor mode never reaches this dep): remember
+             * who the creator is for the later marketplace. The gate above
+             * guarantees a signed-in user, so `user.id` is the id that was
+             * charged. A failure is caught and logged inside `runPlanBuild`.
+             */
+            saveCreatorProfile: async (plan) => {
+              if (!user) return;
+              await saveCreatorProfile(user.id, {
+                handle: plan.handle,
+                niche: plan.niche,
+                followers: plan.account?.followers,
+                platform:
+                  plan.platform === "youtube"
+                    ? "youtube"
+                    : plan.platform === "instagram"
+                      ? "instagram"
+                      : undefined,
+              });
+            },
             getProfile: () => account.store.getProfile(),
             runPipeline,
             /**
@@ -137,7 +167,10 @@ export async function POST(req: Request) {
              */
             scheduleAfter: (fn) => after(fn),
             logError: (err) =>
-              console.error("[plan] idea feed failed:", (err as Error).message),
+              console.error(
+                "[plan] post-build work failed:",
+                (err as Error).message,
+              ),
           },
         );
 

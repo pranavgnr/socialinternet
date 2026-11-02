@@ -16,7 +16,15 @@ export default async function Home({
   await connection();
   const [{ new: isNew, niche }, user] = await Promise.all([
     searchParams,
-    currentUser(),
+    /**
+     * A database outage must not take the front door down: the landing page is
+     * still useful to a signed-out visitor, and a 500 here would hide it. The
+     * failure is logged once, without the cookie or any connection string.
+     */
+    currentUser().catch((err) => {
+      console.error("[home] session read failed:", (err as Error).message);
+      return null;
+    }),
   ]);
 
   const account = user ? await currentAccount() : null;

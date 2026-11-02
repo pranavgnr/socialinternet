@@ -31,7 +31,11 @@ export default async function RoomPage({
 
   const { q } = await searchParams;
   const query = (q ?? "").trim();
-  const account = await currentAccount();
+  /** A DB blip falls through to the client builder, not a 500. */
+  const account = await currentAccount().catch((err) => {
+    console.error("[room] session read failed:", (err as Error).message);
+    return null;
+  });
   const saved = account ? await account.store.getRoom() : null;
 
   if (saved && query && saved.query.toLowerCase() === query.toLowerCase()) {

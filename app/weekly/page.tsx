@@ -45,7 +45,16 @@ function WeeklySkeleton() {
 }
 
 async function RecordedWeek() {
-  const account = await currentAccount();
+  /** A DB blip shows the empty state, not a 500 for a signed-in visitor. */
+  const account = await currentAccount().catch((err) => {
+    const message = (err as Error).message;
+    // `cookies()` always rejects at the end of prerendering; that is not a
+    // database failure and logging it would make every build look broken.
+    if (!/prerender/i.test(message)) {
+      console.error("[weekly] session read failed:", message);
+    }
+    return null;
+  });
   const plan = account ? await account.store.getPlan() : null;
   const history = account ? await account.store.getWeekly() : [];
   const digest = history[0] ?? null;

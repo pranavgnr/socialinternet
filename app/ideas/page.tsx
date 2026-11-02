@@ -24,7 +24,11 @@ function shape(archetype: { label: string; language?: string }): string {
 
 export default async function IdeasPage() {
   await connection();
-  const account = await currentAccount();
+  /** A DB blip shows the empty state, not a 500 for a signed-in visitor. */
+  const account = await currentAccount().catch((err) => {
+    console.error("[ideas] session read failed:", (err as Error).message);
+    return null;
+  });
 
   const [plan, ideas, runs] = account
     ? await Promise.all([

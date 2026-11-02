@@ -98,7 +98,7 @@ caption and says so.
 
 ## Weekly job
 
-`GET /api/cron/weekly?secret=…` (or `x-cron-secret`) re-reads every account that
+`GET /api/cron/weekly` (header `x-cron-secret` only) re-reads every account that
 has a plan, records the week, and diffs it against the previous one. It is
 capped (`WEEKLY_MAX`, default 3), sequential, and skips a week already recorded.
 `POST /api/weekly` is the one-press version; `POST /api/weekly/rebuild` rewrites

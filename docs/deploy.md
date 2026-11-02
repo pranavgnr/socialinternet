@@ -103,6 +103,7 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | Variable | Required? | Secret? | What it is / where to get it |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Yes | Yes | Postgres connection string. Supabase → Project Settings → Database → Connection string (use the Mumbai region). |
+| `DB_POOL_MAX` | No (default `5`) | No | Connections the shared Postgres pool may hold open. Raise it only when the plan allows more. |
 | `APP_URL` | Yes | No | The public URL, exactly as the browser shows it, e.g. `https://creators.example.com`. Used for the OAuth redirect and links. |
 | `GOOGLE_CLIENT_ID` | Yes | No | Google Cloud Console → APIs & Services → Credentials → OAuth client (Web). |
 | `GOOGLE_CLIENT_SECRET` | Yes | Yes | Same OAuth client. |
@@ -263,6 +264,13 @@ APP_URL=https://creators.example.com
 Then `docker compose up -d` to pick up the change. A mismatch here is the usual
 cause of `redirect_uri_mismatch`.
 
+The OAuth consent screen can stay in Google's **Testing** mode while you trial
+the app: only the test users you add can sign in, and everyone else sees the
+"unverified app" warning (100-user cap). The scopes used here — `openid`,
+`email` and `profile` — are non-sensitive, so publishing needs no Google
+verification. When the trial is over, flip the consent screen to **In
+production** in the same console; no code or redirect change is needed.
+
 ---
 
 ## 8. Cron jobs
@@ -276,18 +284,30 @@ the `x-cron-secret` header so it does not appear in access logs or process lists
 | Trending rebuild | Daily | `https://creators.example.com/api/cron/trending` |
 | Vendor canary | Daily | `https://creators.example.com/api/cron/canary` |
 
-Edit the crontab on the server:
+Put the secret in a private curl config file rather than on the command line, so
+it never appears in `ps` output or the shell history:
+
+```bash
+umask 077
+printf 'header = "x-cron-secret: %s"\n' "$(openssl rand -hex 32)" > /root/.creators-cron
+# or paste your existing CRON_SECRET instead of generating a new one:
+# printf 'header = "x-cron-secret: YOUR_CRON_SECRET"\n' > /root/.creators-cron
+chmod 600 /root/.creators-cron
+```
+
+The file must contain one line: `header = "x-cron-secret: …"`. Edit the crontab
+on the server:
 
 ```bash
 crontab -e
 ```
 
-Add (replace the domain and secret; times are the server's local time):
+Add (replace the domain; times are the server's local time):
 
 ```cron
-0  6 * * 1  curl -fsS -H "x-cron-secret: YOUR_CRON_SECRET" https://creators.example.com/api/cron/weekly   >> /var/log/creators-weekly.log 2>&1
-15 6 * * *  curl -fsS -H "x-cron-secret: YOUR_CRON_SECRET" https://creators.example.com/api/cron/trending >> /var/log/creators-trending.log 2>&1
-30 6 * * *  curl -fsS -H "x-cron-secret: YOUR_CRON_SECRET" https://creators.example.com/api/cron/canary   >> /var/log/creators-canary.log 2>&1
+0  6 * * 1  curl -fsS --config /root/.creators-cron https://creators.example.com/api/cron/weekly   >> /var/log/creators-weekly.log 2>&1
+15 6 * * *  curl -fsS --config /root/.creators-cron https://creators.example.com/api/cron/trending >> /var/log/creators-trending.log 2>&1
+30 6 * * *  curl -fsS --config /root/.creators-cron https://creators.example.com/api/cron/canary   >> /var/log/creators-canary.log 2>&1
 ```
 
 Notes:
@@ -300,8 +320,9 @@ Notes:
 - `/api/cron/canary` accepts the secret **only** through the header. It spends
   one profile read per configured Instagram vendor, bounded by
   `CANARY_MAX_USD`; vendors that would cross the ceiling are skipped.
-- Do not put the secret in a URL: `?secret=` is accepted by the weekly and
-  trending routes for manual use, but it lands in logs and shell history.
+- All three routes accept the secret **only** through the `x-cron-secret`
+  header. The old `?secret=` query parameter is gone: a URL secret lands in
+  access logs, proxy logs and shell history.
 
 Check a job by running its line by hand first, then confirm `GET /api/status`
 still looks right.

@@ -8,12 +8,33 @@ export type Queryable = {
 let pool: Pool | null = null;
 let testClient: Queryable | null = null;
 
+/**
+ * How many connections the app may hold open.
+ *
+ * Postgres providers cap connections per plan, and every extra idle socket is
+ * a connection the migration job or an operator console cannot use. Five is
+ * enough for one small VPS; `DB_POOL_MAX` raises it when the plan allows.
+ */
+function poolMax(): number {
+  const raw = process.env.DB_POOL_MAX;
+  if (!raw) return 5;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 5;
+}
+
 // The shared pg pool, created lazily from DATABASE_URL.
 export function db(): Pool {
   if (!pool) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
-    pool = new Pool({ connectionString: url });
+    pool = new Pool({
+      connectionString: url,
+      max: poolMax(),
+      // Give idle sockets back to the provider, and fail a dead database
+      // quickly instead of hanging a request forever.
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+    });
   }
   return pool;
 }

@@ -118,7 +118,7 @@ test("hikerapi puts comments where the harvester reads them", async () => {
   }
 });
 
-test("apify is ordered by what the next call actually costs, not list price", async () => {
+test("HikerAPI is first for Instagram paths even when Apify's next call is free", async () => {
   const snap = snapshotEnv();
   process.env.APIFY_TOKEN = "test-token";
   process.env.HIKERAPI_KEY = "test-key";
@@ -127,6 +127,7 @@ test("apify is ordered by what the next call actually costs, not list price", as
   delete process.env.SOCIALCRAWL_API_KEY;
   delete process.env.SCRAPECREATORS_API_KEY;
   delete process.env.YOUTUBE_API_KEY;
+  delete process.env.DATA_PROVIDER;
   try {
     const { availableProviders, resetCreditLedger } = await import("../lib/providers");
     resetCreditLedger();
@@ -135,8 +136,8 @@ test("apify is ordered by what the next call actually costs, not list price", as
     const hiker = ids.indexOf("hikerapi");
     assert.ok(apify >= 0 && hiker >= 0, `both vendors should be available, got ${ids}`);
     assert.ok(
-      apify < hiker,
-      `apify's next call is free inside the monthly allowance, so it must sort before HikerAPI (got ${ids})`,
+      hiker < apify,
+      `HikerAPI is the primary Instagram vendor, so it must sort first even though Apify's next call is free (got ${ids})`,
     );
   } finally {
     restoreEnv(snap);
@@ -195,7 +196,9 @@ test("an Instagram handle is never answered by the YouTube reader", async () => 
   process.env.YOUTUBE_WEB = "1";
 
   try {
-    const { harvestInstagramAccount } = await import("../lib/harvest");
+    const { harvestInstagramAccount, NO_INSTAGRAM_DATA_SOURCE } = await import(
+      "../lib/harvest"
+    );
     const { resetCreditLedger } = await import("../lib/providers");
     resetCreditLedger();
 
@@ -209,7 +212,7 @@ test("an Instagram handle is never answered by the YouTube reader", async () => 
           },
           () => harvestInstagramAccount("somebody"),
         ),
-      /no configured vendor reads instagram data/,
+      (err: Error) => err.message === NO_INSTAGRAM_DATA_SOURCE,
       "the router must refuse rather than silently read a same-named YouTube channel",
     );
     assert.equal(networkCalls, 0, "no network call may be made on the wrong network");

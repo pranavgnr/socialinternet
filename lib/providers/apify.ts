@@ -435,6 +435,16 @@ export const apify: DataProvider = {
   configured: () => Boolean(key()),
 
   /**
+   * Second for every Instagram path, behind HikerAPI.
+   *
+   * Price alone would put Apify first while its monthly allowance is unspent,
+   * which is exactly the ordering the Instagram plan replaced: HikerAPI is the
+   * primary vendor for everything, Apify the fallback. A free allowance buys
+   * another attempt, not the first one.
+   */
+  preference: (p: string) => (/instagram/i.test(p) ? -2 : 0),
+
+  /**
    * The account's recent posts.
    *
    * The plain profile URL, not `/reels/`. Instagram's reels tab is served by a
@@ -466,15 +476,18 @@ export const apify: DataProvider = {
    * an anonymous visitor, not by performance. Feeding that into the room would
    * replace "no data" with confidently wrong data.
    *
-   * So discovery stays on the free YouTube reader, which the router already
-   * prefers for `/search/` paths (`youtubeweb` returns -2 there, this returns
-   * nothing), and which measures real view counts for nothing. Apify is the
-   * *measurement* vendor: named accounts, real numbers.
+   * So discovery stays on HikerAPI, whose `/v2/search/reels` is the funded
+   * keyword reader. This refusal is a skip (`ProviderUnavailable`, not
+   * exhausted), so the router moves on to the next vendor rather than benching
+   * Apify for the rest of the run or claiming the search failed for a reason it
+   * did not.
    */
   searchReels: () => {
     throw new ProviderUnavailable(
       "apify",
-      "apify/instagram-scraper has no keyword search; discovery runs on the free YouTube reader",
+      "apify/instagram-scraper has no keyword search",
+      false,
+      true,
     );
   },
 

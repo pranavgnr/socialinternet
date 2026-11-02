@@ -7,6 +7,7 @@ import {
   harvestAccountReels,
   harvestInstagramAccount,
   harvestInstagramSearch,
+  NO_INSTAGRAM_DATA_SOURCE,
   resetCreditLedger,
 } from "./harvest";
 import {
@@ -19,7 +20,7 @@ import {
   roomLanguage,
 } from "./lang";
 import { platformOn } from "./platform";
-import { availableProviders, readiness } from "./providers";
+import { providersFor, readiness } from "./providers";
 import { keepOnSubject } from "./subject";
 import { isStopword } from "./text";
 import { watchToVerify, type WatchStats } from "./verifyLang";
@@ -84,7 +85,12 @@ const COMMENT_MAX = Number(process.env.LANG_COMMENT_MAX ?? 4);
 /** Hard ceiling on the credits that step may spend, whatever COMMENT_MAX says. */
 const COMMENT_CREDITS = Number(process.env.LANG_COMMENT_CREDITS ?? 4);
 const MAX_CREDITS_PER_SEARCH = 1 + ENRICH_MAX + COMMENT_CREDITS;
-const CACHE_TTL_HOURS = 12;
+/**
+ * How long a niche pull is served from disk. Read per call rather than captured
+ * at import, so the deployment (or a test) can widen it with
+ * `NICHE_CACHE_HOURS=168` without a code change.
+ */
+const cacheTtlHours = (): number => Number(process.env.NICHE_CACHE_HOURS ?? 12);
 /**
  * Where cached pulls live. CREATORS_DATA_DIR is the same override the rest of
  * the data layer uses (store, weekly), so a test or a second checkout can point
@@ -476,9 +482,9 @@ export async function nicheCacheStatus(query: string, handle?: string) {
     : null;
   return {
     slug,
-    cached: Boolean(stored) && matches && (ageHours ?? 1e9) < CACHE_TTL_HOURS,
+    cached: Boolean(stored) && matches && (ageHours ?? 1e9) < cacheTtlHours(),
     ageHours,
-    ttlHours: CACHE_TTL_HOURS,
+    ttlHours: cacheTtlHours(),
     // The search plus however many accounts are topped up for a baseline. The
     // real number comes back on the ledger; this is the planning figure.
     credits: 1 + ENRICH_MAX,
@@ -775,7 +781,7 @@ export async function researchNiche(opts: {
       ? (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5
       : Infinity;
     const sameHandle = (stored?.handle ?? undefined) === handle;
-    if (stored && sameHandle && ageHours < CACHE_TTL_HOURS) {
+    if (stored && sameHandle && ageHours < cacheTtlHours()) {
       return shape(query, handle, stored.payload, stored.errors, {
         cached: true,
         fetchedAt: stored.fetchedAt,
@@ -786,11 +792,14 @@ export async function researchNiche(opts: {
     }
   }
 
-  // Any configured vendor will do — the router picks the cheapest one.
-  if (!availableProviders().length) {
-    throw new Error(
-      "No data vendor is configured — set HIKERAPI_KEY or SOCIALCRAWL_API_KEY in .env.local. Niche search needs live data.",
-    );
+  /**
+   * A niche is an Instagram question, so an Instagram vendor has to exist before
+   * anything is attempted. The free YouTube reader used to stand in here; it
+   * cannot, and pretending "no vendor at all" or "out of credits" would hide the
+   * actual problem from a creator.
+   */
+  if (!providersFor("/instagram/search/reels", "instagram").length) {
+    throw new Error(NO_INSTAGRAM_DATA_SOURCE);
   }
 
   /**
@@ -801,7 +810,7 @@ export async function researchNiche(opts: {
    * credit count. That made "the paid key is empty" look like "the search is
    * impossible", and the page answered "we are at capacity" for a call the free
    * vendor would have served for nothing. Price the extras instead of the
-   * search: free-only runs skip cohort top-ups and comment reads, which are the
+   * search: paid-only runs skip cohort top-ups and comment reads, which are the
    * only things that actually cost money.
    */
   const cost = handle ? 2 : 1;
@@ -969,7 +978,7 @@ export function researchFromCache(
 function shape(
   query: string,
   handle: string | undefined,
-  payload: RawReel[],
+  rawPayload: RawReel[],
   errors: string[],
   meta: {
     cached: boolean;
@@ -980,6 +989,27 @@ function shape(
     verified?: WatchStats;
   },
 ): NicheResearch {
+  /**
+   * Instagram rows only, whatever a vendor or an old cache handed over.
+   *
+   * This is the last line of defence for the product rule: a niche view may not
+   * contain a row from another network, because every median, account and idea
+   * below is presented as an Instagram measurement. The router and the platform
+   * filter should make this a no-op; a cached pull written before the filter
+   * existed, or a vendor that ignored the request, must still not leak through.
+   *
+   * Reported once, with a count, rather than once per row: this is an operator
+   * signal, not a per-reel event.
+   */
+  const payload = rawPayload.filter(
+    (r) => (r.platform ?? "instagram") === "instagram",
+  );
+  if (payload.length !== rawPayload.length) {
+    console.warn(
+      `[niche] dropped ${rawPayload.length - payload.length} row(s) not from Instagram; a niche view is Instagram-only`,
+    );
+  }
+
   const ownReels = handle
     ? payload.filter((r) => r.account.toLowerCase() === handle.toLowerCase())
     : [];
@@ -1416,7 +1446,7 @@ export async function cachedNiches(
       ageHours: Math.round(ageHours * 10) / 10,
       reels: stored.payload.length,
       accounts: new Set(stored.payload.map((r) => r.account.toLowerCase())).size,
-      stale: ageHours >= CACHE_TTL_HOURS,
+      stale: ageHours >= cacheTtlHours(),
       ...(opts.withPayload ? { payload: stored.payload } : {}),
     });
   }

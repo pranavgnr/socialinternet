@@ -164,6 +164,18 @@ export class ProviderUnavailable extends Error {
     message: string,
     /** true when the account is empty, so retrying the same vendor is pointless */
     readonly exhausted = false,
+    /**
+     * true when the vendor *cannot* serve this kind of call at all, not just
+     * this one request.
+     *
+     * The difference matters to the router's final answer. "Every attempted
+     * vendor is out of credit or lacks the capability" means there is no data
+     * source for the call, which the Instagram product paths translate into one
+     * honest sentence. A 404 for a missing handle is also a `ProviderUnavailable`
+     * but is *not* a capability miss: it names the real problem and must keep its
+     * own message instead of being masked by that sentence.
+     */
+    readonly unsupported = false,
   ) {
     super(message);
     this.name = "ProviderUnavailable";

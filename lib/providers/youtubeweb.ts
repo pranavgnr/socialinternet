@@ -555,16 +555,16 @@ export const youtubeweb: DataProvider = {
   configured: () => process.env.YOUTUBE_WEB !== "0",
 
   /**
-   * How early this vendor is tried. Free first for *discovery*, last for
-   * anything that promises an Instagram account — a YouTube channel is not that
-   * account, and serving one would merge two different creators into a single
-   * baseline.
+   * Last for *every* path, including keyword search.
+   *
+   * This vendor used to be first for search because it is free. That is how an
+   * Instagram creator's niche evidence became a YouTube room: the search was
+   * answered by a network the creator is not on. Free is only a reason to try a
+   * vendor when it can answer the question; a YouTube search cannot answer an
+   * Instagram niche. The platform filter already removes it from Instagram
+   * calls — this makes the order honest even if a caller forgets to name one.
    */
-  preference: (p: string) => {
-    if (/search/i.test(p)) return -2;
-    if (/instagram/i.test(p)) return 50;
-    return 0;
-  },
+  preference: () => 99,
 
   async searchReels(query: string): Promise<PullResult> {
     if (!query.trim()) {

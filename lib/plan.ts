@@ -55,7 +55,11 @@ import type {
  */
 
 const HANDLE_DIR = path.join(process.cwd(), "data", "handles");
-const HANDLE_TTL_HOURS = 12;
+/**
+ * How long a handle read stays fresh. Read per call rather than captured at
+ * import, so a test (or a restart-free `.env.local` change) can move it.
+ */
+const handleTtlHours = (): number => Number(process.env.HANDLE_CACHE_HOURS ?? 12);
 const MAX_COHORT_ACCOUNTS = 40;
 
 /**
@@ -276,10 +280,9 @@ export interface OwnPull {
   /** The network this feed was actually read from. */
   platform: Platform;
   /**
-   * Set when the caller named no platform and Instagram could not be read, so
-   * the channel of the same name was used instead. The plan says so out loud:
-   * a creator who typed an Instagram handle must never be shown YouTube numbers
-   * as their own without being told which network was measured.
+   * Retained for compatibility with older callers; the automatic fallback that
+   * used to set it has been removed. A plan never builds itself from another
+   * network's channel now, so this should always be undefined for a fresh read.
    */
   fellBackFrom?: Platform;
   reels: RawReel[];
@@ -302,7 +305,7 @@ export async function pullOwn(
     ? (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5
     : Infinity;
 
-  if (!force && stored && ageHours < HANDLE_TTL_HOURS) {
+  if (!force && stored && ageHours < handleTtlHours()) {
     return {
       handle: clean,
       platform,
@@ -315,24 +318,12 @@ export async function pullOwn(
   }
 
   /**
-   * The free YouTube reader always exists, so only the Instagram path can be
-   * missing a vendor — and saying which one is the difference between a creator
-   * who can fix it and one who is told to check their spelling.
-   */
-  if (platform !== "youtube" && !availableProviders().length) {
-    throw new Error(
-      "No Instagram data source is configured — add HIKERAPI_KEY, APIFY_TOKEN or SOCIALCRAWL_API_KEY.",
-    );
-  }
-
-  /**
-   * Read the network the handle actually lives on.
+   * Read the network the handle lives on.
    *
-   * This used to call the Instagram reader unconditionally, so a YouTube handle
-   * was answered with an Instagram error while the free YouTube reader sat
-   * unused beside it. `harvestAccountReels` also goes through the provider
-   * router, so a spent paid balance now falls through to the free reader
-   * instead of killing the build.
+   * The Instagram path names its platform through `harvestInstagramAccount`, so
+   * the router refuses ("No Instagram data source is available right now") rather
+   * than answering with a same-named YouTube channel. `harvestAccountReels` also
+   * goes through the provider router for an explicit YouTube read.
    */
   const reels =
     platform === "youtube"
@@ -381,7 +372,7 @@ export async function handleIsCached(
   const stored = await readHandle(clean, platform);
   if (!stored) return false;
   const ageHours = (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5;
-  return ageHours < HANDLE_TTL_HOURS;
+  return ageHours < handleTtlHours();
 }
 
 /* ------------------------------------------------------------------ *
@@ -1418,41 +1409,22 @@ const VERDICT_RANK: Record<CohortFit["verdict"], number> = {
 };
 
 /**
- * Read the account from the network it lives on, and say so when that turned
- * out to be a different one than the caller assumed.
+ * Read the account from the network it lives on.
  *
- * The rule when no platform was named: try Instagram first, because that is the
- * product's primary source and the only network where a typed handle is
- * unambiguous to most creators. Fall back to YouTube *only* when Instagram
- * genuinely could not be read and a channel of that name exists — then the
- * whole plan is built from the channel, and `fellBackFrom` makes the plan say it
- * out loud instead of quietly printing YouTube numbers under an Instagram name.
+ * Instagram is the default and the only network the UI asks for. When a caller
+ * names a platform, that network is read; otherwise the handle is an Instagram
+ * handle, full stop. There is deliberately no "try Instagram, then YouTube"
+ * fallback here: a same-named channel is a different creator, and using one for
+ * the other installs a stranger's numbers as the creator's own baseline.
+ * YouTube remains callable only through an explicit `platform: "youtube"`,
+ * which no UI does.
  */
-async function readOwnAccount(
+export async function readOwnAccount(
   handle: string,
   force: boolean,
   platform?: Platform,
 ): Promise<OwnPull> {
-  if (platform) return pullOwn(handle, force, platform);
-
-  let instagramError: unknown = null;
-  try {
-    return await pullOwn(handle, force, "instagram");
-  } catch (err) {
-    instagramError = err;
-  }
-
-  /**
-   * A channel of the same name is only worth trusting as *this* creator when it
-   * has an audience. Without a floor, any handle with no Instagram account fell
-   * through to a 435-subscriber squatter and printed their numbers as yours.
-   */
-  const channel = await fetchYouTubeProfile(handle).catch(() => null);
-  if (!channel?.followers || channel.followers < 1000) throw instagramError;
-
-  const own = await pullOwn(handle, force, "youtube");
-  own.fellBackFrom = "instagram";
-  return own;
+  return pullOwn(handle, force, platform ?? "instagram");
 }
 
 export async function analyseHandle(

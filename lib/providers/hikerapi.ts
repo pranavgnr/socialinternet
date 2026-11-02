@@ -399,6 +399,17 @@ export const hikerapi: DataProvider = {
   configured: () => Boolean(key()),
 
   /**
+   * First for every Instagram path — the plan's primary vendor.
+   *
+   * Explicit rather than price-led: Apify's next call can be free inside its
+   * monthly allowance while HikerAPI charges $0.02, and "cheapest next call"
+   * would then send Instagram search to a vendor that has no keyword search at
+   * all. The preference states the product decision instead of hoping the price
+   * table agrees with it.
+   */
+  preference: (p: string) => (/instagram/i.test(p) ? -3 : 0),
+
+  /**
    * Reels for an account: resolve the username to a pk, then read a page of
    * clips. Two calls ($0.04 at the Start rate) and the profile call also yields
    * a real follower count, which the old pipeline could only guess from reel

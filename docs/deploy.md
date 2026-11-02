@@ -123,6 +123,8 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `CREDIT_BUDGET` | No (default `12`) | No | Vendor units allowed in one run. |
 | `CREDIT_BUDGET_USD` | No (default `1.00`) | No | Real-money ceiling for one run. |
 | `HARVEST_CACHE_HOURS` | No (default `12`) | No | How long a pulled sample stays fresh. |
+| `NICHE_CACHE_HOURS` | No (default `12`) | No | How long a niche pull is served from disk. Set `168` for a week of free reopens after a paid verification run. |
+| `HANDLE_CACHE_HOURS` | No (default `12`) | No | How long an account's own feed is reused before it is read again. `168` keeps a warmed handle open for a week. |
 | `ENRICH_MAX_CREDITS` | No (default `6`) | No | Posts bought for the deep pass per plan. |
 | `ENRICH_CREDIT_RESERVE` | No (default `5`) | No | Never spend the vendor key below this balance. |
 | `POST_CACHE_HOURS` | No (default `168`) | No | How long a bought post payload is reused. |

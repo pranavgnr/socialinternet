@@ -316,12 +316,12 @@ export const youtube: DataProvider = {
   configured: () => Boolean(key()),
 
   /**
-   * Free and excellent at keyword discovery; a bad first guess for an Instagram
-   * handle. Search goes here first because it costs nothing and the alternative
-   * is $0.015. Profile pulls go last so a benchmark handle is not sent to
-   * YouTube on the chance that the creator also posts Shorts.
+   * Last for every path. Dormant unless a caller explicitly names
+   * `platform: "youtube"`; Instagram calls never reach it through the platform
+   * filter, and this preference keeps it behind every Instagram vendor even on a
+   * path that forgot the filter.
    */
-  preference: (path) => (/search/.test(path) ? -1 : 10),
+  preference: () => 99,
 
   /**
    * A channel's recent uploads.

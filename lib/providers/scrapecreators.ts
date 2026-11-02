@@ -159,13 +159,13 @@ export const scrapecreators: DataProvider = {
   configured: () => Boolean(key()),
 
   /**
-   * The account reader. Cheapest vendor that returns real play counts, so it
-   * goes first for a named account and last for anything else.
+   * Last of the Instagram readers, and last for keyword search.
+   *
+   * The old -5 preference for named accounts put this vendor ahead of HikerAPI
+   * on profile reads; the plan's order is HikerAPI, Apify, SocialCrawl, then
+   * this one. It stays a useful backup for the shapes the others miss.
    */
-  preference: (p: string) => {
-    if (/search/i.test(p)) return 40;
-    return -5;
-  },
+  preference: (p: string) => (/search/i.test(p) ? 40 : 0),
 
   async profile(handle: string): Promise<PullResult> {
     const res = await call("/v1/instagram/profile", {

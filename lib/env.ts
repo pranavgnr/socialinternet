@@ -28,6 +28,28 @@ export function hoursFromEnv(name: string, fallback: number): number {
 }
 
 /**
+ * A whole number from `name`, or `fallback`.
+ *
+ * The integer twin of `hoursFromEnv`: empty, non-numeric, zero and negative
+ * values read as unset, and a fraction is floored. A cap read from the
+ * environment is a budget, so `1e9` must not become "read a billion profiles";
+ * callers pass their own `max` for the ceiling that fits the job.
+ */
+export function intFromEnv(
+  name: string,
+  fallback: number,
+  max = 1_000,
+): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const trimmed = raw.trim();
+  if (!trimmed) return fallback;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value < 1) return fallback;
+  return Math.min(Math.floor(value), Math.max(1, Math.floor(max)));
+}
+
+/**
  * Settings whose values are credentials. Used to scrub vendor error text before
  * it is logged, stored or posted to an operator webhook.
  */

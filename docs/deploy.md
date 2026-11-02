@@ -125,6 +125,8 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `HARVEST_CACHE_HOURS` | No (default `12`) | No | How long a pulled sample stays fresh. |
 | `NICHE_CACHE_HOURS` | No (default `12`) | No | How long a niche pull is served from disk. Set `168` for a week of free reopens after a paid verification run. |
 | `HANDLE_CACHE_HOURS` | No (default `12`) | No | How long an account's own feed is reused before it is read again. `168` keeps a warmed handle open for a week. |
+| `OWNER_CACHE_HOURS` | No (default `168`) | No | How long an owner's follower count from a niche search is reused. A cached count costs no profile read. |
+| `OWNER_PROFILE_MAX` | No (default `12`) | No | Fresh owner-profile reads allowed per niche search. Cached handles do not count. |
 | `ENRICH_MAX_CREDITS` | No (default `6`) | No | Posts bought for the deep pass per plan. |
 | `ENRICH_CREDIT_RESERVE` | No (default `5`) | No | Never spend the vendor key below this balance. |
 | `POST_CACHE_HOURS` | No (default `168`) | No | How long a bought post payload is reused. |

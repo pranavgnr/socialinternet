@@ -22,6 +22,7 @@ import {
 import { platformOn } from "./platform";
 import { providersFor, readiness } from "./providers";
 import { hoursFromEnv } from "./env";
+import { normaliseOwnerHandle, ownerProfileMax, resolveOwnerFollowers } from "./ownerProfiles";
 import { keepOnSubject } from "./subject";
 import { isStopword } from "./text";
 import { watchToVerify, type WatchStats } from "./verifyLang";
@@ -85,7 +86,14 @@ const VERIFY_MAX = Number(process.env.LANG_VERIFY_MAX ?? 8);
 const COMMENT_MAX = Number(process.env.LANG_COMMENT_MAX ?? 4);
 /** Hard ceiling on the credits that step may spend, whatever COMMENT_MAX says. */
 const COMMENT_CREDITS = Number(process.env.LANG_COMMENT_CREDITS ?? 4);
-const MAX_CREDITS_PER_SEARCH = 1 + ENRICH_MAX + COMMENT_CREDITS;
+/**
+ * The ceiling for one search now includes the owner profile reads that make
+ * `views / followers` possible. They are capped separately (see
+ * `ownerProfileMax`) and cached for a week, so a warm search buys none of them,
+ * but a cold one can.
+ */
+const MAX_CREDITS_PER_SEARCH =
+  1 + ENRICH_MAX + ownerProfileMax() + COMMENT_CREDITS;
 /**
  * How long a niche pull is served from disk. Read per call rather than captured
  * at import, so the deployment (or a test) can widen it with
@@ -444,6 +452,47 @@ const ROOM_FLOOR_SHARE = 0.01;
 
 function cleanHandle(h: string): string {
   return h.trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
+}
+
+/**
+ * Which owners a search still needs a size for, biggest reel first.
+ *
+ * One handle appears once, however many rows it owns, and an account whose rows
+ * already carry a follower count (the profile pulls do, the keyword search does
+ * not) is left out: buying that profile again would spend a credit to learn a
+ * number we already have. Ordering by the account's best reel is what makes the
+ * cap buy the accounts that set the room's top end, and ties break on the
+ * handle so two runs with the same payload spend the same calls.
+ */
+function ownerHandlesByReach(reels: RawReel[], known: Map<string, number>): string[] {
+  const best = new Map<string, number>();
+  for (const reel of reels) {
+    const handle = normaliseOwnerHandle(reel.account ?? "");
+    if (!handle || handle === "unknown" || known.has(handle)) continue;
+    const views = Number.isFinite(reel.views) ? reel.views : 0;
+    best.set(handle, Math.max(best.get(handle) ?? 0, views));
+  }
+  return [...best.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([handle]) => handle);
+}
+
+/**
+ * Counts already carried by a row, keyed like the resolver's Map.
+ *
+ * A profile pull stamps its follower count on every row it returns while a
+ * keyword row beside it has none, so the same account can look sized in one reel
+ * and unknown in the next. Spreading the known number across the account's rows
+ * is free and keeps the downstream `sizeKnown` question honest.
+ */
+function knownFollowerCounts(reels: RawReel[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const reel of reels) {
+    if (typeof reel.followers !== "number" || !(reel.followers > 0)) continue;
+    const handle = normaliseOwnerHandle(reel.account ?? "");
+    if (handle && !counts.has(handle)) counts.set(handle, reel.followers);
+  }
+  return counts;
 }
 
 async function readStored(slug: string): Promise<StoredNiche | null> {
@@ -893,6 +942,39 @@ export async function researchNiche(opts: {
         ? errors.join(" · ")
         : `No reels came back for "${query}". Try a broader phrase.`,
     );
+  }
+
+  /**
+   * Sizes for the accounts that came back without one.
+   *
+   * A keyword search names the owner of every row but never says how big that
+   * account is, which leaves every "this reel beat their usual" claim without
+   * its denominator. The counts are bought here, after the search and the
+   * baselines (the profile pulls already carry their own), capped per niche and
+   * cached for a week. The reads go through the router, so the ledger counts
+   * them: `/api/niche` refunds a pull whose `spent` is zero, and a search that
+   * bought twelve profiles is not free.
+   *
+   * Never in a free-only run: there is no free profile reader, so the attempt
+   * would only produce vendor errors and a file of false negatives.
+   */
+  if (payload.length) {
+    const followers = knownFollowerCounts(payload);
+    if (!freeOnly) {
+      const owners = ownerHandlesByReach(payload, followers);
+      if (owners.length) {
+        for (const [handle, count] of await resolveOwnerFollowers(owners)) {
+          followers.set(handle, count);
+        }
+      }
+    }
+    if (followers.size) {
+      for (const reel of payload) {
+        if (typeof reel.followers === "number" && reel.followers > 0) continue;
+        const count = followers.get(normaliseOwnerHandle(reel.account ?? ""));
+        if (typeof count === "number") reel.followers = count;
+      }
+    }
   }
 
   /**

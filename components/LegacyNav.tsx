@@ -8,9 +8,10 @@ import { usePathname } from "next/navigation";
  *
  * The Shambles header replaced the old NavLinks. Until the landing, profile and
  * niche pages replace /start, /room, /discover, /ideas and /weekly, this thin
- * row keeps those pages reachable. Explore stays public like it always was;
- * the plan-only links follow the old rule and appear only with a saved plan.
- * A signed-in visitor on the plan home keeps them too.
+ * row keeps those pages reachable. The rules are the old NavLinks rules:
+ * plan-less visitors get Start and Explore; a saved plan gets Explore, This
+ * week, Your reels and Check another handle. A signed-in visitor on the plan
+ * home keeps the plan links too.
  */
 const LEGACY_ROUTES = new Set([
   "/start",
@@ -36,6 +37,14 @@ export default function LegacyNav({ hasPlan }: { hasPlan: boolean }) {
       className="border-b border-white/10 bg-obsidian/60"
     >
       <div className="mx-auto flex w-full max-w-6xl items-center gap-1 overflow-x-auto px-5 py-1 text-[11px] text-muted-zinc">
+        {!hasPlan ? (
+          <Link
+            href="/start"
+            className={`${LINK} font-medium text-limelight`}
+          >
+            Start
+          </Link>
+        ) : null}
         <Link href="/discover" className={LINK}>
           Explore
         </Link>
@@ -46,6 +55,14 @@ export default function LegacyNav({ hasPlan }: { hasPlan: boolean }) {
             </Link>
             <Link href="/ideas" className={LINK}>
               Your reels
+            </Link>
+            <Link
+              href="/?new=1"
+              aria-label="Check a different handle"
+              className={LINK}
+            >
+              <span className="hidden sm:inline">Check another handle</span>
+              <span className="sm:hidden">Another</span>
             </Link>
           </>
         ) : null}

@@ -8,6 +8,7 @@ import { createHash, randomBytes, timingSafeEqual, randomUUID } from "node:crypt
 
 import { cookies } from "next/headers";
 import { Google } from "arctic";
+import { cache } from "react";
 
 import { currentDb, withClient } from "./db";
 import type { Queryable } from "./db";
@@ -103,13 +104,26 @@ export async function sessionUser(
   };
 }
 
-/** Reads the session cookie off the current request. The cookie names the
- * holder of the mapping; the real answer lives in the `sessions` row. */
-export async function currentUser(): Promise<SessionUser | null> {
-  const raw = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!raw) return null;
-  return sessionUser(raw);
-}
+/**
+ * Reads the session cookie off the current request. The cookie names the
+ * holder of the mapping; the real answer lives in the `sessions` row.
+ *
+ * Wrapped in React's `cache()` so every caller in one server render — the
+ * header chrome, the page — shares a single session-row read. The cache is
+ * render-scoped by React and never survives a request. Next renders the
+ * production tree twice per HTTP request (HTML and flight payload), so the
+ * process still performs two reads per request; deduping across those renders
+ * would need a cross-request store, which is deliberately not used.
+ * Outside a React server render (node:test, for example) React does not
+ * dedupe, so the suites still call the underlying function directly.
+ */
+export const currentUser = cache(
+  async function currentUser(): Promise<SessionUser | null> {
+    const raw = (await cookies()).get(SESSION_COOKIE)?.value;
+    if (!raw) return null;
+    return sessionUser(raw);
+  },
+);
 
 /**
  * Deletes one session (logout) and, while cleaning up, anything already

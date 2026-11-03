@@ -1,11 +1,9 @@
-import { Suspense } from "react";
 import Link from "next/link";
 
 import Gems from "./Gems";
 import OmniSearch from "./OmniSearch";
 import SignInButton from "./SignInButton";
-import { currentUser, type SessionUser } from "@/lib/auth";
-import { balance } from "@/lib/credits";
+import type { SessionUser } from "@/lib/auth";
 
 const PILL =
   "inline-flex min-h-[32px] items-center rounded-full border border-white/10 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-pure-white transition";
@@ -34,17 +32,6 @@ function AccountSkeleton() {
       className="inline-flex h-8 min-w-[92px] items-center rounded-full border border-white/10 bg-white/[0.04]"
     />
   );
-}
-
-/**
- * The half of the header that depends on who is asking. The static shell keeps
- * its shape; this streams in behind Suspense. A database outage must not take
- * the header (or the page under it) down, so both reads fall back to null.
- */
-async function HeaderAccount() {
-  const user = await currentUser().catch(() => null);
-  const credits = user ? await balance(user.id).catch(() => null) : null;
-  return <AccountArea user={user} credits={credits} />;
 }
 
 function AccountArea({
@@ -90,13 +77,69 @@ function AccountArea({
   );
 }
 
+/** The right-hand controls, rendered from the layout's single viewer read. */
+function IgWrappedLink() {
+  return (
+    <Link
+      href="/#vault"
+      aria-label="IG Wrapped — join the waitlist"
+      className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+    >
+      <LockIcon />
+      <span>IG WRAPPED</span>
+    </Link>
+  );
+}
+
+function JoinVipLink() {
+  return (
+    <Link
+      href="/#vault"
+      className="inline-flex min-h-[32px] items-center rounded-full bg-luxury-gold px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-luxury-gold/85"
+    >
+      JOIN VIP
+    </Link>
+  );
+}
+
+/** The same controls shape while the viewer resolves: no SIGN IN flash. */
+export function HeaderControlsFallback() {
+  return (
+    <>
+      <IgWrappedLink />
+      <AccountSkeleton />
+      <JoinVipLink />
+    </>
+  );
+}
+
+export function HeaderControls({
+  user,
+  credits,
+}: {
+  user: SessionUser | null;
+  credits: number | null;
+}) {
+  return (
+    <>
+      <IgWrappedLink />
+      <AccountArea user={user} credits={credits} />
+      <JoinVipLink />
+    </>
+  );
+}
+
 /**
- * The brand shell. Public and static on purpose: the only runtime read is the
- * account, and it lives behind Suspense. The search bar drops under the
- * wordmark row on narrow screens and sits between the wordmark and the VIP
- * controls from `sm` up.
+ * The presentational brand shell. The layout supplies the account/VIP controls
+ * slot and its fallback; they are the only part that depends on the visitor.
+ * The search bar drops under the wordmark row on narrow screens and sits
+ * between the wordmark and the VIP controls from `sm` up.
  */
-export default function SiteHeader() {
+export default function SiteHeader({
+  controls,
+}: {
+  controls: React.ReactNode;
+}) {
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-obsidian/85 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-3 px-5 py-3">
@@ -122,25 +165,7 @@ export default function SiteHeader() {
           aria-label="Account and VIP"
           className="ml-auto flex shrink-0 items-center gap-2"
         >
-          <Link
-            href="/#vault"
-            aria-label="IG Wrapped — join the waitlist"
-            className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
-          >
-            <LockIcon />
-            <span>IG WRAPPED</span>
-          </Link>
-
-          <Suspense fallback={<AccountSkeleton />}>
-            <HeaderAccount />
-          </Suspense>
-
-          <Link
-            href="/#vault"
-            className="inline-flex min-h-[32px] items-center rounded-full bg-luxury-gold px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-luxury-gold/85"
-          >
-            JOIN VIP
-          </Link>
+          {controls}
         </nav>
       </div>
     </header>

@@ -4,8 +4,11 @@ import { Plus_Jakarta_Sans, Space_Mono } from "next/font/google";
 
 import KokoConcierge from "@/components/KokoConcierge";
 import LegacyNav from "@/components/LegacyNav";
-import SiteHeader from "@/components/SiteHeader";
-import { currentAccount } from "@/lib/session";
+import SiteHeader, {
+  HeaderControls,
+  HeaderControlsFallback,
+} from "@/components/SiteHeader";
+import { getViewer } from "@/lib/viewer";
 
 import "./globals.css";
 
@@ -41,16 +44,22 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-/** Plan state for the temporary secondary nav. Mirrors the old NavLinks read. */
-async function LegacyNavAccount() {
-  let hasPlan = false;
-  try {
-    const account = await currentAccount();
-    hasPlan = Boolean(account ? await account.store.getPlan() : null);
-  } catch {
-    // No cookie store, or the database is down: a plain nav is fine.
-  }
-  return <LegacyNav hasPlan={hasPlan} />;
+/**
+ * The whole header chrome — account controls and the temporary legacy nav —
+ * comes from one viewer read. They share a Suspense boundary so the shell never
+ * asks for the session twice; the fallback is the same header with a neutral
+ * account skeleton.
+ */
+async function HeaderChrome() {
+  const { user, credits, hasPlan } = await getViewer();
+  return (
+    <>
+      <SiteHeader
+        controls={<HeaderControls user={user} credits={credits} />}
+      />
+      <LegacyNav hasPlan={hasPlan} />
+    </>
+  );
 }
 
 export default function RootLayout({
@@ -64,11 +73,8 @@ export default function RootLayout({
       className={`${jakarta.variable} ${spaceMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-bg text-text">
-        <SiteHeader />
-
-        {/* TODO(task-8): remove with the legacy routes. */}
-        <Suspense fallback={null}>
-          <LegacyNavAccount />
+        <Suspense fallback={<SiteHeader controls={<HeaderControlsFallback />} />}>
+          <HeaderChrome />
         </Suspense>
 
         <main className="mx-auto w-full max-w-2xl flex-1 px-5 py-5">

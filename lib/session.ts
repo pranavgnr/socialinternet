@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { cookies, headers } from "next/headers";
+import { cache } from "react";
 
 import { accountDir, createStore, type Store } from "./store";
 
@@ -24,25 +25,46 @@ export interface Account {
   fresh: boolean;
 }
 
+/** The account directory a signed-in user already owns, or null before one is
+ * minted. Pure and synchronous: the shell and the viewer share one shape. */
+export function accountForUser(user: {
+  legacyAccountId: string | null;
+}): Account | null {
+  if (!user.legacyAccountId) return null;
+  return {
+    id: user.legacyAccountId,
+    store: createStore(accountDir(user.legacyAccountId)),
+    fresh: false,
+  };
+}
+
+/** The signed-out visitor's account, carried by the `c101` cookie. */
+export async function accountForCookie(): Promise<Account | null> {
+  const raw = (await cookies()).get(COOKIE)?.value;
+  if (!raw || !SHAPE.test(raw)) return null;
+  return { id: raw, store: createStore(accountDir(raw)), fresh: false };
+}
+
 /** The visitor's own data, or null when they have not analysed anything yet.
  *
  * Signed in, the account is the directory id that was stamped on the user's
  * row at first sign-in (or minted on their first paid action). Signed out, it
  * is still the `c101` cookie id — every existing route keeps working.
+ *
+ * Render-scoped through React's `cache()`: a page and the shell in the same
+ * render share one account lookup, and the memo dies with the render. Next's
+ * second production render (flight payload) makes its own, by design.
  */
-export async function currentAccount(): Promise<Account | null> {
-  // A lazy import: auth.ts imports this module's cookie pieces, so a cycle in
-  // the other direction must never resolve at load time.
-  const { currentUser } = await import("./auth");
-  const user = await currentUser();
-  if (user) {
-    if (!user.legacyAccountId) return null; // ensureAccount() mints it first
-    return { id: user.legacyAccountId, store: createStore(accountDir(user.legacyAccountId)), fresh: false };
-  }
-  const raw = (await cookies()).get(COOKIE)?.value;
-  if (!raw || !SHAPE.test(raw)) return null;
-  return { id: raw, store: createStore(accountDir(raw)), fresh: false };
-}
+export const currentAccount = cache(
+  async function currentAccount(): Promise<Account | null> {
+    // A lazy import: auth.ts imports this module's cookie pieces, so a cycle in
+    // the other direction must never resolve at load time.
+    const { currentUser } = await import("./auth");
+    const user = await currentUser();
+    if (user) return accountForUser(user);
+    return accountForCookie();
+  },
+);
 
 /**
  * Read-or-create. Used only by the routes that spend money, so an empty

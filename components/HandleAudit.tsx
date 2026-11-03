@@ -37,12 +37,12 @@ function LockGlyph() {
 /**
  * The handle audit box.
  *
- * `/profile/<handle>` is built in Task 4. Until it exists, the box keeps the
- * behaviour that works today: a signed-out visitor is simply sent to the
- * route's href (a 404 is expected for one task, never a silent spend), while a
- * signed-in visitor keeps the old dashboard flow — read the account, save the
- * plan, reload `/`. Both paths still decide the destination with `routeFor`,
- * so the box cannot drift from the header search bar.
+ * `/profile/<handle>` serves a stored read for free. A signed-out visitor is
+ * sent to the route (the profile page offers sign-in there); a signed-in visitor
+ * keeps the paid read-and-save flow — read the account, save the plan, reload
+ * `/`, which now redirects to that profile. Both paths still decide the
+ * destination with `routeFor`, so the box cannot drift from the header search
+ * bar.
  */
 export default function HandleAudit({ signedIn = false }: { signedIn?: boolean }) {
   const router = useRouter();

@@ -1,8 +1,7 @@
 import { connection } from "next/server";
+import { redirect } from "next/navigation";
 
-import ChatPanel from "@/components/ChatPanel";
 import Landing from "@/components/Landing";
-import PlanView from "@/components/PlanView";
 import { currentUser } from "@/lib/auth";
 import { currentAccount } from "@/lib/session";
 
@@ -40,20 +39,14 @@ export default async function Home({
   const plan = stored?.archetype ? stored : null;
 
   /**
-   * TODO(task-4): once `/profile/[handle]` exists, a signed-in visitor with a
-   * saved plan goes there (`/profile/${plan.handle}`) instead of seeing the old
-   * dashboard. The route does not exist on this branch yet, so the dashboard
-   * stays as the working fallback until Task 4 lands. `?new=1` deliberately
-   * falls through to the landing page so a plan holder can audit another
-   * handle.
+   * A signed-in visitor with a saved plan belongs on their own profile, where
+   * the whole audit lives. `?new=1` deliberately falls through to the landing
+   * page so a plan holder can audit another handle. A plan without a handle has
+   * no profile to open, so it also falls back to the landing page rather than
+   * redirecting to `/profile/undefined`.
    */
-  if (user && plan && !isNew) {
-    return (
-      <div className="space-y-6">
-        <PlanView plan={plan} />
-        <ChatPanel />
-      </div>
-    );
+  if (user && plan && !isNew && plan.handle) {
+    redirect(`/profile/${encodeURIComponent(plan.handle)}`);
   }
 
   return <Landing signedIn={Boolean(user)} />;

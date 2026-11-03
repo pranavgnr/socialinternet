@@ -9,6 +9,7 @@ import ProfileHeader from "@/components/profile/ProfileHeader";
 import ReadPanel from "@/components/profile/ReadPanel";
 import ReelTrio from "@/components/profile/ReelTrio";
 import Vitals from "@/components/profile/Vitals";
+import YourToolsCard from "@/components/profile/YourToolsCard";
 import { normalizeHandle } from "@/lib/handle";
 import { enrichProfilePlan } from "@/lib/profileData";
 import { buildProfileView, type ProfileNextMove } from "@/lib/profileView";
@@ -146,6 +147,8 @@ export default async function ProfilePage({
           {view.own && view.nextMove ? (
             <NextMoveCard move={view.nextMove} />
           ) : null}
+
+          {view.own ? <YourToolsCard /> : null}
 
           <Vitals view={view} />
           <Dna view={view} />

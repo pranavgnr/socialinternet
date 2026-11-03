@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import Gems from "../Gems";
 import SignInButton from "../SignInButton";
-import { PENDING_HANDLE_KEY } from "../ConnectHandle";
+import { PENDING_HANDLE_KEY } from "@/lib/pendingHandle";
 import ActionRow from "./ActionRow";
 import CardMessage from "./CardMessage";
 import KokoAvatar from "./KokoAvatar";

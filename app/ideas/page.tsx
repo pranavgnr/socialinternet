@@ -64,6 +64,13 @@ export default async function IdeasPage() {
 
   return (
     <div className="space-y-4">
+      <Link
+        href={plan?.handle ? `/profile/${encodeURIComponent(plan.handle)}` : "/"}
+        className="mono inline-flex min-h-[44px] items-center text-[11px] font-bold uppercase tracking-[0.12em] text-muted-zinc transition hover:text-limelight"
+      >
+        &larr; Back to your profile
+      </Link>
+
       <header>
         <h1 className="text-[23px] font-semibold leading-tight tracking-tight">
           {songLed
@@ -122,14 +129,14 @@ export default async function IdeasPage() {
           )}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <Link
-              href="/start"
-              className="rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-black"
+              href="/?new=1"
+              className="inline-flex min-h-[44px] items-center rounded-xl bg-limelight px-4 text-[13px] font-semibold text-obsidian"
             >
               {ideas.length ? "See this week" : "Find a thinner room"}
             </Link>
             <Link
-              href="/discover"
-              className="rounded-xl border border-line px-4 py-2.5 text-[13px] font-semibold"
+              href="/?new=1"
+              className="inline-flex min-h-[44px] items-center rounded-xl border border-white/10 px-4 text-[13px] font-semibold"
             >
               Explore a niche
             </Link>

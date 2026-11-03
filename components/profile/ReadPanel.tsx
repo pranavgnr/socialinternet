@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import SignInButton from "../SignInButton";
-import { PENDING_HANDLE_KEY } from "../ConnectHandle";
+import { PENDING_HANDLE_KEY } from "@/lib/pendingHandle";
 import { plain } from "@/lib/plain";
 
 const STAGES = [
@@ -39,7 +39,7 @@ export default function ReadPanel({
   const [needsSignIn, setNeedsSignIn] = useState(!signedIn);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /** Keep the handle for the return from Google, exactly as ConnectHandle does. */
+  /** Keep the handle for the return from Google, as the other sign-in prompts do. */
   useEffect(() => {
     if (signedIn) return;
     try {

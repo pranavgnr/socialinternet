@@ -26,7 +26,7 @@ export default function NicheBubbles({ niches }: { niches: TrendingNiche[] }) {
         {niches.map((niche) => (
           <li key={niche.slug}>
             <Link
-              href={`/discover?q=${encodeURIComponent(niche.query)}`}
+              href={`/search/niche/${encodeURIComponent(niche.query)}`}
               className="inline-flex min-h-[44px] items-center rounded-full border border-line bg-panel px-3 text-[12.5px] text-text transition hover:border-accent/50 hover:text-accent"
             >
               {plain(niche.label)}

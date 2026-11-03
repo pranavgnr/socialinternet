@@ -35,6 +35,18 @@ export default function WeeklyPage() {
   );
 }
 
+/** `/weekly` has no nav of its own; this is the way back to the owner's plan. */
+function BackToProfile({ handle }: { handle?: string }) {
+  return (
+    <Link
+      href={handle ? `/profile/${encodeURIComponent(handle)}` : "/"}
+      className="mono inline-flex min-h-[44px] items-center text-[11px] font-bold uppercase tracking-[0.12em] text-muted-zinc transition hover:text-limelight"
+    >
+      &larr; Back to your profile
+    </Link>
+  );
+}
+
 function WeeklySkeleton() {
   return (
     <div className="space-y-4 py-6">
@@ -62,14 +74,15 @@ async function RecordedWeek() {
   if (!account || !plan) {
     return (
       <div className="space-y-4 py-6">
+        <BackToProfile />
         <h1 className="text-[19px] font-semibold tracking-tight">This week</h1>
         <p className="text-[16px] leading-relaxed text-muted">
           There is nothing to show yet. Analyse a handle once and every Monday after that gets a
           week here — what moved, and what to post about it.
         </p>
         <Link
-          href="/"
-          className="inline-flex min-h-[44px] items-center rounded-lg bg-accent px-4 text-[13px] font-semibold text-bg"
+          href="/?new=1"
+          className="inline-flex min-h-[44px] items-center rounded-lg bg-limelight px-4 text-[13px] font-semibold text-obsidian"
         >
           Analyse your handle
         </Link>
@@ -80,6 +93,7 @@ async function RecordedWeek() {
   if (!digest) {
     return (
       <div className="space-y-4 py-6">
+        <BackToProfile handle={plan.handle} />
         <h1 className="text-[19px] font-semibold tracking-tight">
           @{plan.handle}
           <span className="ml-2 text-[13px] font-normal text-muted">this week</span>
@@ -96,8 +110,11 @@ async function RecordedWeek() {
   const stale = digest.weekOf !== mondayOf();
 
   return (
-    <WeeklyView digest={digest} history={history} stale={stale}>
-      {stale ? <WeeklyRefresh label="Pull this week" /> : null}
-    </WeeklyView>
+    <div className="space-y-2">
+      <BackToProfile handle={plan.handle} />
+      <WeeklyView digest={digest} history={history} stale={stale}>
+        {stale ? <WeeklyRefresh label="Pull this week" /> : null}
+      </WeeklyView>
+    </div>
   );
 }

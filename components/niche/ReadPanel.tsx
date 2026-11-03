@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import SignInButton from "@/components/SignInButton";
-import { PENDING_HANDLE_KEY } from "@/components/ConnectHandle";
+import { PENDING_HANDLE_KEY } from "@/lib/pendingHandle";
 import { plain } from "@/lib/plain";
 
 const STAGES = [

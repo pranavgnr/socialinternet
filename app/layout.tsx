@@ -5,7 +5,6 @@ import { Plus_Jakarta_Sans, Space_Mono } from "next/font/google";
 import KokoConcierge from "@/components/KokoConcierge";
 import InstallPrompt from "@/components/InstallPrompt";
 import PwaRegister from "@/components/PwaRegister";
-import LegacyNav from "@/components/LegacyNav";
 import SiteHeader, {
   HeaderControls,
   HeaderControlsFallback,
@@ -60,21 +59,13 @@ export const viewport: Viewport = {
 };
 
 /**
- * The whole header chrome — account controls and the temporary legacy nav —
- * comes from one viewer read. They share a Suspense boundary so the shell never
- * asks for the session twice; the fallback is the same header with a neutral
- * account skeleton.
+ * The header chrome comes from one viewer read. It sits in a Suspense boundary
+ * so the shell never asks for the session twice; the fallback is the same
+ * header with a neutral account skeleton.
  */
 async function HeaderChrome() {
-  const { user, credits, hasPlan } = await getViewer();
-  return (
-    <>
-      <SiteHeader
-        controls={<HeaderControls user={user} credits={credits} />}
-      />
-      <LegacyNav hasPlan={hasPlan} />
-    </>
-  );
+  const { user, credits } = await getViewer();
+  return <SiteHeader controls={<HeaderControls user={user} credits={credits} />} />;
 }
 
 export default function RootLayout({

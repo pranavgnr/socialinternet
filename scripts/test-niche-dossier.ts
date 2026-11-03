@@ -555,6 +555,18 @@ const hasNiches =
   existsSync(nichesDir) &&
   readdirSync(nichesDir).some((file) => file.endsWith(".json"));
 
+/**
+ * A skipped test is easy to miss in a long report: node prints a `# SKIP` line,
+ * but the two shared-cache checks below then look like passes at a glance. Say
+ * it at module load, where it is guaranteed to print once, even though a
+ * skipped test's body never runs.
+ */
+if (!hasNiches) {
+  console.error(
+    `SKIPPED: no data/niches fixture at ${nichesDir} — 2 shared-cache checks did not run.`,
+  );
+}
+
 test(
   "every cached niche builds a dossier without throwing or leaking another platform",
   { skip: hasNiches ? false : `no niches on disk at ${nichesDir}` },

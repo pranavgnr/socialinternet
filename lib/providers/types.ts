@@ -143,6 +143,18 @@ export interface DataProvider {
    * or `data.users` when the vendor also returns account objects.
    */
   relatedProfiles?(handle: string): Promise<PullResult>;
+  /**
+   * A sample of an account's followers, for the bot-to-real estimate.
+   *
+   * Its own capability rather than a flavour of the profile read: it is the
+   * only call that inspects followers as rows, it costs money per page, and
+   * only one vendor (HikerAPI) has a working endpoint for it. Vendors without
+   * it are skipped by the router instead of being asked and failing.
+   *
+   * `pages` is a ceiling, not a promise: a vendor that cannot prove a cursor
+   * must make one honest request rather than invent one.
+   */
+  followersSample?(userId: string, pages: number): Promise<PullResult>;
   /** one post in full (caption, metrics, comments, MP4 link) */
   post(url: string): Promise<PullResult>;
   /**

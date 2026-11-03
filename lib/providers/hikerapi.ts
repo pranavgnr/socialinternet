@@ -28,6 +28,11 @@
  *     (epoch seconds) but **no follower count**. The displayed
  *     `social_context` ("43.5K followers") is rounded marketing text, not a
  *     measurement, and is deliberately not parsed as one.
+ *   - `/v1/user/followers/chunk?user_id=` answers with an array of chunks; the
+ *     first is a list of ~25 follower objects. The recorded fixture keeps 12
+ *     per chunk and its second element is empty, so no cursor can be derived
+ *     from it. `followersSample` makes exactly one request and parses every
+ *     chunk the response carries; it never guesses a pagination parameter.
  *   - `/gql/user/related/profiles?id=` is the right endpoint and parameter
  *     (a `user_id`-only request is a 422 asking for `id`), but it returned
  *     HTTP 500 `InstagramServerError` on all three live probes (2026-11-03).
@@ -407,6 +412,39 @@ function searchMedia(data: Record<string, unknown>): Record<string, unknown>[] {
   return modules.flatMap((module) => arr(obj(module).clips).map(asMedia));
 }
 
+/**
+ * Follower rows out of `/v1/user/followers/chunk`.
+ *
+ * The live body is an array of chunk lists (`[[follower, …], …]`); a wrapper
+ * (`{response: [...]}`) is accepted too so a vendor rename cannot silently turn
+ * the sample into zero rows. Every chunk is read because the recorded response
+ * really carried more than one, and rows are de-duplicated: a chunk boundary
+ * must never count the same person twice.
+ */
+function followerRows(data: Record<string, unknown>): Record<string, unknown>[] {
+  const inner = Array.isArray(data)
+    ? (data as unknown[])
+    : Array.isArray((data as { response?: unknown }).response)
+      ? ((data as { response: unknown[] }).response)
+      : [];
+
+  const rows: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const chunk of inner) {
+    if (!Array.isArray(chunk)) continue;
+    for (const item of chunk) {
+      const row = obj(item);
+      const username = str(row.username);
+      if (!username) continue;
+      const key = idStr(row.pk) ?? idStr(row.id) ?? username.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
 /** One Instagram media object -> the unified row `fromUnified()` reads. */
 function toUnified(
   media: Record<string, unknown>,
@@ -677,6 +715,51 @@ export const hikerapi: DataProvider = {
   },
 
   /**
+   * A sample of an account's followers, for the bot-to-real estimate.
+   *
+   * `/v1/user/followers/chunk?user_id=` bills one request and answers with an
+   * array of chunks. The recorded response's second element is empty, so there
+   * is no cursor to continue from; inventing one would spend money on a guess.
+   * The method therefore makes one request per sample, honours the page cap as
+   * a ceiling for any future paging, and returns every row the response
+   * actually carried.
+   */
+  async followersSample(userId: string, pages: number): Promise<PullResult> {
+    const clean = String(userId).trim();
+    if (!/^\d+$/.test(clean)) {
+      throw new ProviderUnavailable(
+        "hikerapi",
+        "a follower sample needs a numeric Instagram user id",
+        false,
+      );
+    }
+    const requested = Math.max(1, Math.floor(Number(pages) || 1));
+
+    const { data, usd } = await getWithRetry("/v1/user/followers/chunk", {
+      user_id: clean,
+    });
+
+    const followers = followerRows(data).map((row) => ({
+      username: str(row.username) ?? "",
+      full_name: str(row.full_name) ?? "",
+      is_private: Boolean(row.is_private),
+      is_verified: Boolean(row.is_verified),
+      profile_pic_url: str(row.profile_pic_url),
+    }));
+
+    return {
+      data: {
+        followers,
+        pagesRead: followers.length ? 1 : 0,
+        pagesRequested: requested,
+      },
+      usd,
+      units: 1,
+      remaining: null,
+    };
+  },
+
+  /**
    * Refused honestly, and for free.
    *
    * `/gql/user/related/profiles` is the endpoint, and `id` is its parameter
@@ -788,7 +871,9 @@ export const hikerapi: DataProvider = {
       data: {
         user: {
           username: str(user.username) ?? clean,
+          pk: idStr(user.pk) ?? idStr(user.id),
           follower_count: num(user.follower_count),
+          is_private: Boolean(user.is_private),
           media_count: num(user.media_count),
           biography: str(user.biography),
           category: str(user.category) ?? str(user.business_category),

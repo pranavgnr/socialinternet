@@ -443,6 +443,17 @@ export async function request(
       throw new NoDataVendor("no configured vendor can read Instagram's similar accounts");
     }
   }
+  /**
+   * A follower sample is its own capability, like similar accounts. Only a
+   * vendor with a verified followers endpoint may be asked; the rest would fail
+   * with something unrelated (or, worse, charge for a call they cannot answer).
+   */
+  if (path === "/instagram/followers/sample") {
+    providers = providers.filter((p) => typeof p.followersSample === "function");
+    if (!providers.length) {
+      throw new NoDataVendor("no configured vendor can sample Instagram followers");
+    }
+  }
   if (platform) {
     providers = providers.filter((p) => readsPlatform(p, platform));
     // Free vendors are gated by their own switches; if filtering left nothing,
@@ -622,6 +633,24 @@ async function dispatch(
         );
       }
       return provider.relatedProfiles(params.handle ?? "");
+    case "/instagram/followers/sample":
+      /**
+       * Same contract as similar accounts: a vendor that has never had a
+       * follower endpoint refuses as a capability gap (`unsupported: true`)
+       * rather than spending a call on the wrong resource.
+       */
+      if (!provider.followersSample) {
+        throw new ProviderUnavailable(
+          provider.id,
+          `${provider.id} cannot sample Instagram followers`,
+          false,
+          true,
+        );
+      }
+      return provider.followersSample(
+        params.userId ?? "",
+        Number(params.pages ?? 1),
+      );
     case "/instagram/post":
       return provider.post(params.url ?? "");
     case "/instagram/profile":

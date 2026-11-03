@@ -15,8 +15,6 @@ import type {
   ScoredSignal,
 } from "./types";
 
-const ROOT = dataRoot();
-
 export interface Store {
   getProfile: () => Promise<Profile | null>;
   saveProfile: (p: Profile) => Promise<void>;
@@ -107,10 +105,49 @@ export function createStore(dir: string): Store {
   };
 }
 
-/** The drive-wide store: shared niche research, plus the pre-launch account. */
-export const store = createStore(ROOT);
+/**
+ * The drive-wide store: shared niche research, plus the pre-launch account.
+ *
+ * The root is resolved **per call**, not captured at import. `CREATORS_DATA_DIR`
+ * is read when the process starts in production, but a test, a preview worker
+ * or a script can move it after this module is loaded — capturing the root here
+ * made the store keep writing to whatever `./data` meant at import time.
+ */
+let driveRoot: string | null = null;
+let driveStore: Store | null = null;
+
+function currentStore(): Store {
+  const root = dataRoot();
+  if (!driveStore || driveRoot !== root) {
+    driveRoot = root;
+    driveStore = createStore(root);
+  }
+  return driveStore;
+}
+
+export const store: Store = {
+  getProfile: () => currentStore().getProfile(),
+  saveProfile: (p) => currentStore().saveProfile(p),
+  getSignals: () => currentStore().getSignals(),
+  saveSignals: (s) => currentStore().saveSignals(s),
+  getPatterns: () => currentStore().getPatterns(),
+  savePatterns: (p) => currentStore().savePatterns(p),
+  getClusters: () => currentStore().getClusters(),
+  saveClusters: (c) => currentStore().saveClusters(c),
+  getIdeas: () => currentStore().getIdeas(),
+  saveIdeas: (i) => currentStore().saveIdeas(i),
+  getRuns: () => currentStore().getRuns(),
+  saveRuns: (r) => currentStore().saveRuns(r),
+  getPlan: () => currentStore().getPlan(),
+  savePlan: (p) => currentStore().savePlan(p),
+  getRoom: () => currentStore().getRoom(),
+  saveRoom: (p) => currentStore().saveRoom(p),
+  getWeekly: () => currentStore().getWeekly(),
+  saveWeekly: (w) => currentStore().saveWeekly(w),
+  updateIdea: (id, patch) => currentStore().updateIdea(id, patch),
+};
 
 /** Where one visitor's own plan, ideas and run history live. */
 export function accountDir(id: string): string {
-  return path.join(ROOT, "accounts", id);
+  return path.join(dataRoot(), "accounts", id);
 }

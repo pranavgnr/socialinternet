@@ -11,7 +11,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -27,6 +27,7 @@ import { ownerCachePath } from "../lib/ownerProfiles";
 import { apifyUsagePath } from "../lib/providers/apify";
 import { youtubeUsagePath } from "../lib/providers/youtube";
 import { subCachePath } from "../lib/providers/youtubeweb";
+import { accountDir, store } from "../lib/store";
 import { dataRoot as weeklyDataRoot } from "../lib/weekly";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "reel-engine-data-dir-"));
@@ -92,5 +93,42 @@ test("every cache path resolves under ./data when CREATORS_DATA_DIR is unset", (
   } finally {
     restore();
     rmSync(TMP, { recursive: true, force: true });
+  }
+});
+
+test("the shared store resolves CREATORS_DATA_DIR lazily, per use", async () => {
+  const first = mkdtempSync(path.join(os.tmpdir(), "reel-engine-store-a-"));
+  const second = mkdtempSync(path.join(os.tmpdir(), "reel-engine-store-b-"));
+  try {
+    process.env.CREATORS_DATA_DIR = first;
+    await store.saveIdeas([]);
+    assert.equal(
+      existsSync(path.join(first, "ideas.json")),
+      true,
+      "the first use must write under the directory set before it",
+    );
+    assert.equal(
+      existsSync(path.join(second, "ideas.json")),
+      false,
+      "nothing may be written to a directory that was not set yet",
+    );
+
+    process.env.CREATORS_DATA_DIR = second;
+    await store.saveIdeas([]);
+    assert.equal(
+      existsSync(path.join(second, "ideas.json")),
+      true,
+      "a later root change must move the store, not reuse the captured one",
+    );
+
+    assert.equal(
+      accountDir("abc"),
+      path.join(path.resolve(second), "accounts", "abc"),
+      "accountDir must follow the same lazy root",
+    );
+  } finally {
+    restore();
+    rmSync(first, { recursive: true, force: true });
+    rmSync(second, { recursive: true, force: true });
   }
 });

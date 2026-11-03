@@ -37,6 +37,12 @@ export interface GoogleProfile {
   sub: string;
   email: string;
   name?: string;
+  /**
+   * Google's `email_verified` claim. A missing claim is treated as unverified:
+   * an address Google has not confirmed must never own an account or inherit a
+   * visitor's existing plan.
+   */
+  emailVerified: boolean;
 }
 
 /** The Google OAuth client for this deployment. */
@@ -156,6 +162,14 @@ export async function signInWithGoogleProfile(
   p: GoogleProfile,
   legacyVisitorId?: string,
 ): Promise<{ userId: string; sessionId: string }> {
+  /**
+   * Refuse before touching the database. The callback also checks this, but the
+   * user row and the session are the irreversible part: an unverified address
+   * must never get either.
+   */
+  if (p.emailVerified !== true) {
+    throw new Error("Google account email is not verified");
+  }
   return withClient(async (q) => {
     const legacy =
       legacyVisitorId && SHAPE.test(legacyVisitorId) ? legacyVisitorId : null;
@@ -231,11 +245,16 @@ export function verifyState(
  * The signed-in user's claimed identity, straight out of the ID token payload.
  * The token is verified against Google's key set during the code exchange, so
  * decoding is enough — tampering fails earlier, before this is ever called.
+ *
+ * `emailVerified` is normalised to a boolean here: Google may omit the claim,
+ * and a missing claim must read as "not verified" rather than `undefined`
+ * slipping through a truthiness check.
  */
 export function decodeIdToken(idToken: string): {
   sub?: string;
   email?: string;
   name?: string;
+  emailVerified: boolean;
 } {
   const payloadPart = idToken.split(".")[1] ?? "";
   const claims = (() => {
@@ -244,10 +263,30 @@ export function decodeIdToken(idToken: string): {
         sub?: string;
         email?: string;
         name?: string;
+        email_verified?: unknown;
       };
     } catch {
       return {};
     }
   })();
-  return claims;
+  return {
+    sub: claims.sub,
+    email: claims.email,
+    name: claims.name,
+    emailVerified: claims.email_verified === true,
+  };
+}
+
+/**
+ * May these decoded claims own an account?
+ *
+ * A missing `email_verified` is unverified, exactly like `false`: only the
+ * literal `true` Google sends for a confirmed address passes.
+ */
+export function verifiedGoogleClaims(claims: {
+  sub?: string;
+  email?: string;
+  emailVerified?: boolean;
+}): claims is { sub: string; email: string; emailVerified: true } {
+  return Boolean(claims.sub && claims.email && claims.emailVerified === true);
 }

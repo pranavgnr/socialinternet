@@ -8,10 +8,12 @@ import { migrate } from "../lib/migrate";
 import { closeDb, setDbForTests, resetDbForTests } from "../lib/db";
 import type { Queryable } from "../lib/db";
 import {
+  decodeIdToken,
   deleteSession,
   sessionUser,
   setSigninAccountDir,
   signInWithGoogleProfile,
+  verifiedGoogleClaims,
   verifyState,
 } from "../lib/auth";
 
@@ -55,15 +57,91 @@ test("verifyState accepts equal values and rejects unequal ones", () => {
   assert.equal(verifyState("abc123", "abc1234"), false); // prefix games change length
 });
 
+/** An unsigned token is enough here: decodeIdToken only reads the payload. */
+function unsignedToken(claims: Record<string, unknown>): string {
+  return `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
+}
+
+test("decodeIdToken accepts only an explicit email_verified: true", () => {
+  const base = { sub: "google-sub-1", email: "creator@example.com" };
+
+  assert.equal(decodeIdToken(unsignedToken({ ...base, email_verified: true })).emailVerified, true);
+  assert.equal(decodeIdToken(unsignedToken({ ...base, email_verified: false })).emailVerified, false);
+  assert.equal(
+    decodeIdToken(unsignedToken(base)).emailVerified,
+    false,
+    "a missing claim must read as unverified",
+  );
+  assert.equal(
+    decodeIdToken(unsignedToken({ ...base, email_verified: "true" })).emailVerified,
+    false,
+    "a non-boolean claim must not be treated as verified",
+  );
+  assert.equal(decodeIdToken("not-a-token").emailVerified, false);
+});
+
+test("verifiedGoogleClaims requires a confirmed address and both identifiers", () => {
+  const base = { sub: "s", email: "e@example.com" };
+
+  assert.equal(verifiedGoogleClaims({ ...base, emailVerified: true }), true);
+  assert.equal(verifiedGoogleClaims({ ...base, emailVerified: false }), false);
+  assert.equal(verifiedGoogleClaims(base), false);
+  assert.equal(verifiedGoogleClaims({ email: "e@example.com", emailVerified: true }), false);
+  assert.equal(verifiedGoogleClaims({ sub: "s", emailVerified: true }), false);
+});
+
+test("an unverified Google email gets no user row and no session", async () => {
+  await withFreshDb(async (q) => {
+    await assert.rejects(
+      signInWithGoogleProfile({
+        sub: "google-sub-unverified",
+        email: "unverified@example.com",
+        emailVerified: false,
+      }),
+      /not verified/,
+    );
+
+    // A caller that forgot the field is treated exactly like `false`.
+    const missing = {
+      sub: "google-sub-missing",
+      email: "missing@example.com",
+    } as unknown as { sub: string; email: string; emailVerified: boolean };
+    await assert.rejects(signInWithGoogleProfile(missing), /not verified/);
+
+    const { rows: users } = await q.query("SELECT id FROM users");
+    const { rows: sessions } = await q.query("SELECT id FROM sessions");
+    assert.equal(users.length, 0);
+    assert.equal(sessions.length, 0);
+  });
+});
+
+test("a verified Google email signs in normally", async () => {
+  await withFreshDb(async (q) => {
+    const { userId, sessionId } = await signInWithGoogleProfile({
+      sub: "google-sub-verified",
+      email: "verified@example.com",
+      emailVerified: true,
+    });
+
+    const user = await sessionUser(sessionId);
+    assert.ok(user);
+    assert.equal(user.id, userId);
+    const { rows } = await q.query("SELECT id FROM users");
+    assert.equal(rows.length, 1);
+  });
+});
+
 test("signInWithGoogleProfile: same sub, same user, new session each time", async () => {
   await withFreshDb(async (q) => {
     const first = await signInWithGoogleProfile({
       sub: "google-sub-1",
+      emailVerified: true,
       email: "creator@example.com",
       name: "Creator One",
     });
     const second = await signInWithGoogleProfile({
       sub: "google-sub-1",
+      emailVerified: true,
       email: "creator@example.com",
       name: "Creator One",
     });
@@ -89,11 +167,13 @@ test("a profile update on re-sign-in rewrites email and name", async () => {
   await withFreshDb(async () => {
     await signInWithGoogleProfile({
       sub: "google-sub-1",
+      emailVerified: true,
       email: "old@example.com",
       name: "Old Name",
     });
     const second = await signInWithGoogleProfile({
       sub: "google-sub-1",
+      emailVerified: true,
       email: "new@example.com",
       name: "New Name",
     });
@@ -113,11 +193,11 @@ test("two parallel first-time sign-ins for one sub share a user, not a 500", asy
     // google_sub land at once — the SELECT-then-INSERT 500ed on one of them.
     const [a, b] = await Promise.all([
       signInWithGoogleProfile(
-        { sub: "google-sub-race", email: "race@example.com", name: "Race A" },
+        { sub: "google-sub-race", email: "race@example.com", name: "Race A", emailVerified: true },
         visitorA
       ),
       signInWithGoogleProfile(
-        { sub: "google-sub-race", email: "race@example.com", name: "Race B" },
+        { sub: "google-sub-race", email: "race@example.com", name: "Race B", emailVerified: true },
         visitorB
       ),
     ]);
@@ -153,7 +233,7 @@ test("the visitor's legacy account carries over on first sign-in only", async ()
     const later = randomUUID(); // a second visitor id seen on later sign-ins
 
     const { userId } = await signInWithGoogleProfile(
-      { sub: "google-sub-1", email: "creator@example.com" },
+      { sub: "google-sub-1", email: "creator@example.com", emailVerified: true },
       visitor
     );
     const { rows: first } = await q.query<{ legacy_account_id: string | null }>(
@@ -164,7 +244,7 @@ test("the visitor's legacy account carries over on first sign-in only", async ()
 
     // A second sign-in never retargets the directory, even with a new cookie.
     await signInWithGoogleProfile(
-      { sub: "google-sub-1", email: "creator@example.com" },
+      { sub: "google-sub-1", email: "creator@example.com", emailVerified: true },
       later
     );
     const { rows: second } = await q.query<{ legacy_account_id: string | null }>(
@@ -178,7 +258,7 @@ test("the visitor's legacy account carries over on first sign-in only", async ()
 test("a visitor cookie that is not UUID-shaped is never adopted", async () => {
   await withFreshDb(async (q) => {
     const { userId } = await signInWithGoogleProfile(
-      { sub: "google-sub-1", email: "creator@example.com" },
+      { sub: "google-sub-1", email: "creator@example.com", emailVerified: true },
       "not-a-uuid"
     );
     const { rows } = await q.query<{ legacy_account_id: string | null }>(
@@ -193,6 +273,7 @@ test("setSigninAccountDir mints a directory for a signed-in user, once", async (
   await withFreshDb(async (q) => {
     const { userId } = await signInWithGoogleProfile({
       sub: "google-sub-1",
+      emailVerified: true,
       email: "creator@example.com",
     });
     const { rows: before } = await q.query<{ legacy_account_id: string | null }>(
@@ -217,6 +298,7 @@ test("sessionUser resolves a live session and refuses an expired one", async () 
   await withFreshDb(async (q) => {
     const { sessionId, userId } = await signInWithGoogleProfile({
       sub: "google-sub-1",
+      emailVerified: true,
       email: "creator@example.com",
       name: "Creator One",
     });
@@ -244,6 +326,7 @@ test("deleteSession removes the row so the id can never be replayed", async () =
   await withFreshDb(async () => {
     const { sessionId } = await signInWithGoogleProfile({
       sub: "google-sub-1",
+      emailVerified: true,
       email: "creator@example.com",
     });
     assert.ok(await sessionUser(sessionId));

@@ -16,6 +16,7 @@ import {
   decodeIdToken,
   googleClient,
   signInWithGoogleProfile,
+  verifiedGoogleClaims,
   verifyState,
 } from "@/lib/auth";
 import { COOKIE } from "@/lib/session";
@@ -61,7 +62,13 @@ export async function GET(req: Request) {
     // A wrong, expired or already-spent code gets exactly one polite bounce.
     return NextResponse.redirect(bounced);
   }
-  if (!claims.sub || !claims.email) {
+  /**
+   * A confirmed email is part of the identity: an unverified or missing
+   * `email_verified` claim gets the same polite bounce, before any user row or
+   * session exists. `decodeIdToken` has already normalised a missing claim to
+   * `false`.
+   */
+  if (!verifiedGoogleClaims(claims)) {
     return NextResponse.redirect(bounced);
   }
 
@@ -69,7 +76,12 @@ export async function GET(req: Request) {
   // row on first sign-in, so their existing JSON plan follows them in.
   const visitorLegacy = store.get(COOKIE)?.value;
   const { sessionId } = await signInWithGoogleProfile(
-    { sub: claims.sub, email: claims.email, name: claims.name ?? undefined },
+    {
+      sub: claims.sub,
+      email: claims.email,
+      name: claims.name ?? undefined,
+      emailVerified: claims.emailVerified,
+    },
     visitorLegacy,
   );
 

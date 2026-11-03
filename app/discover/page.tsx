@@ -109,7 +109,7 @@ export default async function DiscoverPage({
         <h1 className="mt-3 text-[28px] font-semibold leading-[1.1] tracking-tight sm:text-[34px]">
           What&rsquo;s working in a niche
         </h1>
-        <p className="mt-3 max-w-lg text-[14px] leading-relaxed text-muted">
+        <p className="mt-3 max-w-lg text-[16px] leading-relaxed text-muted">
           No handle needed. Type a space and see the reels breaking out there, the
           view count yours has to beat, and the accounts worth studying — before
           you commit to anything.

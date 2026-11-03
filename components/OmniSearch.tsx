@@ -60,17 +60,17 @@ export default function OmniSearch() {
             setValue(event.target.value);
             if (error) setError(null);
           }}
-          placeholder="Search a niche or paste an @handle"
+          placeholder="Search a niche or @handle"
           autoComplete="off"
           spellCheck={false}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : undefined}
-          className="min-w-0 flex-1 bg-transparent py-1 text-[13px] text-pure-white outline-none placeholder:text-muted-zinc"
+          className="min-h-[44px] min-w-0 flex-1 bg-transparent py-2 text-[16px] text-pure-white outline-none placeholder:text-muted-zinc"
         />
         <button
           type="submit"
           aria-label="Search"
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-limelight text-[15px] font-semibold text-obsidian transition hover:bg-limelight/85"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-limelight text-[18px] font-semibold text-obsidian transition hover:bg-limelight/85"
         >
           <span aria-hidden="true">→</span>
         </button>

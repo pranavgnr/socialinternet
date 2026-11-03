@@ -207,7 +207,7 @@ export default function KokoStudio({
             href={backHref}
             prefetch={false}
             aria-label="Back"
-            className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-full border border-white/10 px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-pure-white transition hover:border-white/25 hover:bg-white/5"
+            className="inline-flex min-h-[44px] shrink-0 items-center gap-1 rounded-full border border-white/10 px-3 text-[11px] font-bold uppercase tracking-[0.1em] text-pure-white transition hover:border-white/25 hover:bg-white/5"
           >
             <span aria-hidden="true">←</span> Back
           </Link>
@@ -216,7 +216,7 @@ export default function KokoStudio({
             <h1 className="min-w-0 text-[15px] font-extrabold uppercase leading-tight tracking-[-0.02em] text-pure-white sm:text-[19px]">
               <span className="text-limelight">Koko</span> AI Command Studio
             </h1>
-            <p className="mono text-[9px] uppercase tracking-[0.12em] text-muted-zinc">
+            <p className="mono text-[11px] uppercase tracking-[0.12em] text-muted-zinc">
               <span className="text-limelight" aria-hidden="true">
                 ●
               </span>{" "}
@@ -225,7 +225,7 @@ export default function KokoStudio({
           </div>
         </div>
 
-        <div className="inline-flex min-h-[32px] shrink-0 items-center rounded-full border border-white/10 bg-card px-3">
+        <div className="inline-flex min-h-[44px] shrink-0 items-center rounded-full border border-white/10 bg-card px-3">
           {credits === null ? (
             <span className="mono text-[11px] text-muted-zinc">
               <span aria-hidden="true">💎</span> —<span className="sr-only"> gem balance unknown</span>
@@ -250,14 +250,14 @@ export default function KokoStudio({
               <h2 className="text-[16px] font-semibold text-pure-white">
                 Sign in to work with Koko
               </h2>
-              <p className="mt-2 max-w-xl text-[12.5px] leading-relaxed text-muted-zinc">
+              <p className="mt-2 max-w-xl text-[15px] leading-relaxed text-muted-zinc">
                 Koko answers only from the account or niche that was read. Sign
                 in so the gems and the thread belong to you
                 {handle ? `, then @${handle} is kept for this tab` : ""}.
               </p>
               <SignInButton
                 label="Continue with Google"
-                className="mt-4 inline-flex min-h-[38px] items-center rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
+                className="mt-4 inline-flex min-h-[44px] items-center rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
               />
             </div>
           </div>
@@ -277,13 +277,13 @@ export default function KokoStudio({
 
           {script && scriptPending ? (
             <div className="card mt-4 p-4 sm:p-5">
-              <p className="mono text-[9px] font-bold uppercase tracking-[0.16em] text-limelight">
+              <p className="mono text-[11px] font-bold uppercase tracking-[0.16em] text-limelight">
                 One tap · 1 💎
               </p>
               <h2 className="mt-1.5 text-[15px] font-semibold text-pure-white">
                 Script this idea
               </h2>
-              <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-zinc">
+              <p className="mt-1.5 text-[15px] leading-relaxed text-muted-zinc">
                 {script.concept
                   ? `“${script.concept}”`
                   : "The stored concept for this idea is empty."}
@@ -293,14 +293,14 @@ export default function KokoStudio({
                   type="button"
                   onClick={sendScript}
                   disabled={busy}
-                  className="inline-flex min-h-[36px] items-center rounded-lg bg-limelight px-3.5 text-[10px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85 disabled:opacity-60"
+                  className="inline-flex min-h-[44px] items-center rounded-lg bg-limelight px-3.5 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85 disabled:opacity-60"
                 >
                   Script this idea (1 💎)
                 </button>
                 <button
                   type="button"
                   onClick={() => setScriptPending(false)}
-                  className="inline-flex min-h-[36px] items-center rounded-lg border border-white/10 px-3.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-zinc transition hover:text-pure-white"
+                  className="inline-flex min-h-[44px] items-center rounded-lg border border-white/10 px-3.5 text-[11px] font-bold uppercase tracking-[0.1em] text-muted-zinc transition hover:text-pure-white"
                 >
                   Not now
                 </button>
@@ -315,7 +315,7 @@ export default function KokoStudio({
             {turns.map((turn, index) =>
               turn.role === "user" ? (
                 <div key={`u-${index}`} className="flex justify-end">
-                  <p className="max-w-[88%] min-w-0 whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-limelight/20 bg-limelight/[0.08] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-pure-white [overflow-wrap:anywhere]">
+                  <p className="max-w-[88%] min-w-0 whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-limelight/20 bg-limelight/[0.08] px-3.5 py-2.5 text-[15px] leading-relaxed text-pure-white [overflow-wrap:anywhere]">
                     {turn.content}
                   </p>
                 </div>
@@ -338,7 +338,7 @@ export default function KokoStudio({
           {error ? (
             <p
               role="alert"
-              className="mt-3 rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[12.5px] leading-relaxed text-bad"
+              className="mt-3 rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[15px] leading-relaxed text-bad"
             >
               {error}
             </p>
@@ -367,18 +367,21 @@ export default function KokoStudio({
               }}
               rows={2}
               maxLength={600}
+              onFocus={(event) =>
+                event.currentTarget.scrollIntoView({ block: "center" })
+              }
               disabled={busy}
               placeholder="Ask Koko anything about your niche, competitors, scripts, or rates..."
-              className="min-h-[52px] w-full resize-y rounded-lg border border-white/10 bg-obsidian/60 px-3 py-2.5 text-[13px] leading-relaxed text-pure-white outline-none placeholder:text-muted-zinc/70 focus:border-limelight/60 focus:ring-1 focus:ring-limelight/20 disabled:opacity-60"
+              className="min-h-[52px] w-full resize-y rounded-lg border border-white/10 bg-obsidian/60 px-3 py-2.5 text-[16px] leading-relaxed text-pure-white outline-none placeholder:text-muted-zinc/70 focus:border-limelight/60 focus:ring-1 focus:ring-limelight/20 disabled:opacity-60"
             />
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="mono text-[10px] text-muted-zinc">
+              <p className="mono text-[11px] text-muted-zinc">
                 {message.length}/600 · Enter sends · Shift+Enter for a new line
               </p>
               <button
                 type="submit"
                 disabled={busy || !message.trim()}
-                className="inline-flex min-h-[36px] items-center rounded-lg bg-limelight px-4 text-[10px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-limelight/85 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-limelight/85 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? "Sending…" : "Send"}
               </button>

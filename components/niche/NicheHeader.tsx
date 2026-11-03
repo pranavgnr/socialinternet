@@ -11,14 +11,14 @@ function Count({
 }) {
   return (
     <div>
-      <dt className="mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+      <dt className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
         {label}
       </dt>
       <dd className="mono mt-1.5 text-[24px] font-bold leading-none text-limelight sm:text-[28px]">
         {value}
       </dd>
       {hint ? (
-        <p className="mt-1.5 max-w-[9rem] text-[8.5px] leading-snug text-muted-zinc/70">
+        <p className="mt-1.5 max-w-[9rem] text-[11px] leading-snug text-muted-zinc/70">
           {hint}
         </p>
       ) : null}
@@ -51,7 +51,7 @@ export default function NicheHeader({
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-limelight/70 to-transparent"
       />
-      <p className="mono text-[9.5px] font-bold uppercase tracking-[0.2em] text-limelight">
+      <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-limelight">
         Niche Intelligence Dossier
       </p>
 
@@ -60,7 +60,7 @@ export default function NicheHeader({
           <h1 className="break-words text-[30px] font-extrabold leading-[1.03] tracking-[-0.04em] text-pure-white [overflow-wrap:anywhere] sm:text-[44px]">
             {query}
           </h1>
-          <p className="mt-2.5 text-[12px] leading-relaxed text-muted-zinc">
+          <p className="mt-2.5 text-[15px] leading-relaxed text-muted-zinc">
             Reels in this room, ranked by views per follower.{" "}
             <span className="mono text-[11px] text-muted-zinc">
               {stale ? "As of" : "Read"} {ageLabel(ageHours)}

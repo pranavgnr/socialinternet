@@ -34,7 +34,7 @@ export default function RoomPlanView({ room }: { room: RoomPlan }) {
         <h1 className="mt-2 text-[26px] font-semibold leading-[1.1] tracking-tight sm:text-[32px]">
           {titleCase(room.query)}
         </h1>
-        <p className="mt-2 max-w-lg text-[14px] leading-relaxed text-muted">
+        <p className="mt-2 max-w-lg text-[16px] leading-relaxed text-muted">
           {plain(room.headline)}
         </p>
 
@@ -74,7 +74,7 @@ export default function RoomPlanView({ room }: { room: RoomPlan }) {
         <p className={`text-[12px] font-semibold uppercase tracking-[0.12em] ${tone.badge}`}>
           {room.verdict.label}
         </p>
-        <p className="mt-2 text-[14px] leading-relaxed">{plain(room.verdict.sentence)}</p>
+        <p className="mt-2 text-[16px] leading-relaxed">{plain(room.verdict.sentence)}</p>
       </section>
 
       {room.steps.length ? (
@@ -88,8 +88,8 @@ export default function RoomPlanView({ room }: { room: RoomPlan }) {
                   {plain(step.title)}
                 </h3>
               </div>
-              <p className="mt-2 text-[13px] leading-relaxed text-muted">{plain(step.why)}</p>
-              <p className="mt-2.5 border-t border-line/60 pt-2.5 text-[13px] leading-relaxed">
+              <p className="mt-2 text-[16px] leading-relaxed text-muted">{plain(step.why)}</p>
+              <p className="mt-2.5 border-t border-line/60 pt-2.5 text-[16px] leading-relaxed">
                 {plain(step.action)}
               </p>
               {step.evidence.length ? (
@@ -108,7 +108,7 @@ export default function RoomPlanView({ room }: { room: RoomPlan }) {
                       ) : (
                         <span className="text-text">{e.handle}</span>
                       )}
-                      <span className="mono ml-1.5 text-[10.5px] text-muted/60">{e.metric}</span>
+                      <span className="mono ml-1.5 text-[11px] text-muted/60">{e.metric}</span>
                     </li>
                   ))}
                 </ul>
@@ -118,7 +118,7 @@ export default function RoomPlanView({ room }: { room: RoomPlan }) {
         </section>
       ) : (
         <section className="card px-4 py-4">
-          <p className="text-[13.5px] leading-relaxed text-muted">
+          <p className="text-[16px] leading-relaxed text-muted">
             Nothing in this pull was strong enough to copy yet — the winning posts
             either came from one account or did not repeat a shape. Read a wider
             phrase, or come back after a few more posts land here.

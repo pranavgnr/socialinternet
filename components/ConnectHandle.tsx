@@ -254,7 +254,7 @@ export default function ConnectHandle({
           </p>
 
           {resumed ? (
-            <p className="mt-2.5 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-[12px] leading-relaxed text-text">
+            <p className="mt-2.5 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-[15px] leading-relaxed text-text">
               You&apos;re signed in. Press the button to read @{plain(resumed)}.
             </p>
           ) : null}
@@ -306,7 +306,7 @@ export default function ConnectHandle({
             <p className="text-[13px] font-medium text-text">
               Sign in to read your account
             </p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               Your plan is built from your own public posts. Sign in with Google
               to continue.
             </p>
@@ -317,11 +317,11 @@ export default function ConnectHandle({
             ) : null}
             <SignInButton
               label="Continue with Google"
-              className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+              className="mt-3 inline-flex min-h-[44px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
             />
           </div>
         ) : error ? (
-          <p className="mt-4 rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
+          <p className="mt-4 rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[16px] leading-relaxed text-bad">
             {error}
           </p>
         ) : null}
@@ -338,7 +338,7 @@ export default function ConnectHandle({
             </li>
           ))}
         </ul>
-        <p className="mt-4 text-[12px] leading-relaxed text-muted/70">
+        <p className="mt-4 text-[15px] leading-relaxed text-muted/70">
           Whatever you post about — singing, vlogging, dancing, fitness, baking,
           family life, money, AI tools, fashion, teaching — the plan is shaped for
           that kind of account, worked out from your own posts. No category to

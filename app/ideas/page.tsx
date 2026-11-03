@@ -72,7 +72,7 @@ export default async function IdeasPage() {
               ? "Your videos for this week"
               : "Your posts for this week"}
         </h1>
-        <p className="mt-1.5 max-w-lg text-[13px] leading-relaxed text-muted">
+        <p className="mt-1.5 max-w-lg text-[16px] leading-relaxed text-muted">
           {plan?.archetype ? `${shape(plan.archetype)}. ` : ""}
           {songLed
             ? "Each one names a song that broke out for accounts your size, and the line to start on."
@@ -95,7 +95,7 @@ export default async function IdeasPage() {
           <p className="text-[14px] font-medium">
             {ideas.length ? "You have skipped everything on the list." : "Nothing cleared the bar this week."}
           </p>
-          <p className="mx-auto mt-1 max-w-xs text-[12.5px] leading-relaxed text-muted">
+          <p className="mx-auto mt-1 max-w-xs text-[15px] leading-relaxed text-muted">
             {ideas.length ? (
               "That is fine — last week's list stays here until you pick one back up."
             ) : pulled ? (
@@ -116,7 +116,7 @@ export default async function IdeasPage() {
             )}
           </p>
           {ideas.length ? null : (
-            <p className="mx-auto mt-3 max-w-xs text-[12.5px] leading-relaxed text-muted">
+            <p className="mx-auto mt-3 max-w-xs text-[15px] leading-relaxed text-muted">
               A neighbouring room with a thinner field is usually the way in.
             </p>
           )}
@@ -142,7 +142,7 @@ export default async function IdeasPage() {
       ) : (
         <div className="card px-4 py-10 text-center">
           <p className="text-[14px] font-medium">Nothing here yet.</p>
-          <p className="mx-auto mt-1 max-w-xs text-[12.5px] leading-relaxed text-muted">
+          <p className="mx-auto mt-1 max-w-xs text-[15px] leading-relaxed text-muted">
             Put in your handle and this week’s posts appear here, ready to film.
           </p>
           <Link

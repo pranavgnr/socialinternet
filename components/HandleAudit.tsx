@@ -147,7 +147,7 @@ export default function HandleAudit({ signedIn = false }: { signedIn?: boolean }
 
       <label
         htmlFor={inputId}
-        className="mono block text-[10px] font-bold uppercase tracking-[0.16em] text-limelight"
+        className="mono block text-[11px] font-bold uppercase tracking-[0.16em] text-limelight"
       >
         Enter your handle to run an instant audit:
       </label>
@@ -173,6 +173,9 @@ export default function HandleAudit({ signedIn = false }: { signedIn?: boolean }
                 if (error) setError(null);
               }}
               placeholder="your_instagram_handle"
+              onFocus={(event) =>
+                event.currentTarget.scrollIntoView({ block: "center" })
+              }
               autoComplete="off"
               autoCapitalize="none"
               spellCheck={false}
@@ -193,7 +196,7 @@ export default function HandleAudit({ signedIn = false }: { signedIn?: boolean }
           <Link
             href="#vault"
             aria-label="IG Wrapped is locked — join the VIP waitlist"
-            className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl border border-luxury-gold/35 bg-luxury-gold/10 px-5 text-[10px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+            className="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-xl border border-luxury-gold/35 bg-luxury-gold/10 px-5 text-[11px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
           >
             <LockGlyph />
             IG Wrapped
@@ -205,7 +208,7 @@ export default function HandleAudit({ signedIn = false }: { signedIn?: boolean }
             Cached accounts open free. A fresh read uses 6 of your 15 daily gems
             after a free Google sign-in.
           </p>
-          <p className="mono text-[10px] uppercase tracking-[0.1em] text-muted-zinc/60">
+          <p className="mono text-[11px] uppercase tracking-[0.1em] text-muted-zinc/60">
             Public posts only
           </p>
         </div>
@@ -220,7 +223,7 @@ export default function HandleAudit({ signedIn = false }: { signedIn?: boolean }
           <p
             id={errorId}
             role="alert"
-            className="mt-3 rounded-lg border border-bad/40 bg-bad/5 px-3 py-2 text-[12.5px] leading-relaxed text-bad"
+            className="mt-3 rounded-lg border border-bad/40 bg-bad/5 px-3 py-2 text-[15px] leading-relaxed text-bad"
           >
             {error}
           </p>

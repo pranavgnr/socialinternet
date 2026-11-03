@@ -66,13 +66,13 @@ export default function LockedCard({
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="mono text-[10px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
             {selected ? "Selected" : "Locked"}
           </p>
           <h3 className="mt-2 text-[17px] font-semibold leading-tight text-pure-white">
             {title}
           </h3>
-          <p className="mt-2 text-[13px] leading-relaxed text-muted-zinc">
+          <p className="mt-2 text-[16px] leading-relaxed text-muted-zinc">
             {blurb}
           </p>
         </div>
@@ -89,7 +89,7 @@ export default function LockedCard({
           aria-controls={onSelect ? undefined : formId}
           aria-pressed={onSelect ? Boolean(selected) : undefined}
           onClick={onSelect ?? (() => setOpen((value) => !value))}
-          className={`inline-flex min-h-[34px] items-center gap-2 rounded-full border px-3.5 text-[10px] font-bold uppercase tracking-[0.12em] transition ${
+          className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border px-3.5 text-[11px] font-bold uppercase tracking-[0.12em] transition ${
             selected
               ? "border-luxury-gold/70 bg-luxury-gold text-obsidian"
               : "border-luxury-gold/35 bg-luxury-gold/10 text-luxury-gold hover:border-luxury-gold/60 hover:bg-luxury-gold/15"

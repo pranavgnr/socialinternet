@@ -32,7 +32,7 @@ export default function Faq() {
     <section aria-labelledby="faq-title" className="py-14 sm:py-20">
       <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-14">
         <div>
-          <p className="mono text-[10px] font-bold uppercase tracking-[0.2em] text-limelight">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-limelight">
             Direct answers
           </p>
           <h2
@@ -41,7 +41,7 @@ export default function Faq() {
           >
             The questions worth asking.
           </h2>
-          <p className="mt-3 max-w-sm text-[13.5px] leading-relaxed text-muted-zinc">
+          <p className="mt-3 max-w-sm text-[16px] leading-relaxed text-muted-zinc">
             No trial, no lock-in and no invented numbers. If something is still
             behind the velvet rope, this page says so.
           </p>
@@ -50,7 +50,7 @@ export default function Faq() {
         <div className="divide-y divide-white/10 border-y border-white/10">
           {FAQS.map((item) => (
             <details key={item.question} className="group py-5">
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-5 text-[15px] font-semibold leading-snug text-pure-white marker:content-none [&::-webkit-details-marker]:hidden">
+              <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-5 text-[16px] font-semibold leading-snug text-pure-white marker:content-none [&::-webkit-details-marker]:hidden">
                 <span>{item.question}</span>
                 <span
                   aria-hidden="true"
@@ -59,7 +59,7 @@ export default function Faq() {
                   +
                 </span>
               </summary>
-              <p className="mt-3 max-w-2xl pr-6 text-[13.5px] leading-relaxed text-muted-zinc">
+              <p className="mt-3 max-w-2xl pr-6 text-[16px] leading-relaxed text-muted-zinc">
                 {item.answer}
               </p>
             </details>

@@ -22,7 +22,7 @@ const LEGACY_ROUTES = new Set([
 ]);
 
 const LINK =
-  "inline-flex min-h-[28px] shrink-0 items-center rounded-md px-2 transition hover:text-pure-white";
+  "inline-flex min-h-[44px] shrink-0 items-center rounded-md px-2 transition hover:text-pure-white";
 
 export default function LegacyNav({ hasPlan }: { hasPlan: boolean }) {
   const pathname = usePathname();

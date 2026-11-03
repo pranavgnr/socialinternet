@@ -12,7 +12,7 @@ import type { ProfileIdea } from "@/lib/profileView";
 export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
   return (
     <section aria-labelledby="ideas-title" className="scroll-mt-24">
-      <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-limelight">
+      <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-limelight">
         Section 06
       </p>
       <h2
@@ -30,7 +30,7 @@ export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
                 <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-limelight">
                   Idea {String(index + 1).padStart(2, "0")}
                 </p>
-                <p className="mono text-[10px] uppercase tracking-[0.1em] text-muted-zinc">
+                <p className="mono text-[11px] uppercase tracking-[0.1em] text-muted-zinc">
                   {idea.theirViews}
                 </p>
               </div>
@@ -40,7 +40,7 @@ export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
               </p>
 
               <div className="mt-3 border-t border-white/10 pt-3">
-                <p className="mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+                <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
                   Why chosen
                 </p>
                 <ul className="mt-2 space-y-1.5">
@@ -60,10 +60,10 @@ export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
               </div>
 
               <div className="mt-3 border-t border-white/10 pt-3">
-                <p className="mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+                <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
                   The concept
                 </p>
-                <p className="mt-1.5 text-[12.5px] leading-relaxed text-pure-white">
+                <p className="mt-1.5 text-[15px] leading-relaxed text-pure-white">
                   {idea.concept || "The competitor's caption was not available."}
                 </p>
               </div>
@@ -72,7 +72,7 @@ export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
                 <Link
                   href={idea.scriptHref}
                   aria-label={`Script idea ${index + 1} from @${idea.fromHandle} for one gem in Koko`}
-                  className="inline-flex min-h-[36px] w-full items-center justify-center rounded-lg bg-limelight px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
+                  className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-limelight px-3 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
                 >
                   <span aria-hidden="true">Script this (1💎)</span>
                 </Link>
@@ -82,7 +82,7 @@ export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
         </ol>
       ) : (
         <div className="card mt-5 p-5">
-          <p className="text-[13px] leading-relaxed text-muted-zinc">
+          <p className="text-[16px] leading-relaxed text-muted-zinc">
             No Instagram competitor evidence in this read yet.
           </p>
         </div>

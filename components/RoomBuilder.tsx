@@ -73,7 +73,7 @@ export default function RoomBuilder({ query }: { query: string }) {
         <h1 className="text-[26px] font-semibold leading-tight tracking-tight">
           Pick a space first
         </h1>
-        <p className="text-[14px] leading-relaxed text-muted">
+        <p className="text-[16px] leading-relaxed text-muted">
           A plan for someone starting from zero is built from a room, not from an
           account. Say what you know and the rooms get priced for you.
         </p>
@@ -115,12 +115,12 @@ export default function RoomBuilder({ query }: { query: string }) {
       {needsSignIn ? (
         <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
           <p className="text-[13px] font-medium text-text">Sign in to read this room</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+          <p className="mt-1 text-[15px] leading-relaxed text-muted">
             {error ?? "A new space is a paid read. Rooms already read stay free."}
           </p>
           <SignInButton
             label="Continue with Google"
-            className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+            className="mt-3 inline-flex min-h-[44px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
           />
           <Link
             href="/start"
@@ -131,7 +131,7 @@ export default function RoomBuilder({ query }: { query: string }) {
         </div>
       ) : error ? (
         <>
-          <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
+          <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[16px] leading-relaxed text-bad">
             {error}
           </p>
           <div className="space-y-2">
@@ -156,7 +156,7 @@ export default function RoomBuilder({ query }: { query: string }) {
         </>
       ) : (
         <>
-          <ol className="space-y-2 text-[13px] leading-relaxed text-muted">
+          <ol className="space-y-2 text-[16px] leading-relaxed text-muted">
             <li>Finding the accounts posting here…</li>
             <li>Reading enough of each to know their usual views…</li>
             <li>Working out what the posts that broke out have in common…</li>

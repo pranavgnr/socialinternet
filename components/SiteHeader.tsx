@@ -6,7 +6,7 @@ import SignInButton from "./SignInButton";
 import type { SessionUser } from "@/lib/auth";
 
 const PILL =
-  "inline-flex min-h-[32px] items-center rounded-full border border-white/10 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-pure-white transition";
+  "inline-flex min-h-[44px] items-center rounded-full border border-white/10 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-pure-white transition";
 
 function LockIcon() {
   return (
@@ -58,10 +58,10 @@ function AccountArea({
       {credits !== null ? (
         <Gems
           value={credits}
-          className="min-h-[32px] rounded-full border border-white/10 bg-card px-2.5 text-[11px] text-pure-white"
+          className="min-h-[44px] rounded-full border border-white/10 bg-card px-2.5 text-[11px] text-pure-white"
         />
       ) : (
-        <span className="mono text-[10px] uppercase tracking-[0.12em] text-muted-zinc">
+        <span className="mono text-[11px] uppercase tracking-[0.12em] text-muted-zinc">
           Signed in
         </span>
       )}
@@ -83,7 +83,7 @@ function IgWrappedLink() {
     <Link
       href="/#vault"
       aria-label="IG Wrapped — join the waitlist"
-      className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+      className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
     >
       <LockIcon />
       <span>IG WRAPPED</span>
@@ -95,7 +95,7 @@ function JoinVipLink() {
   return (
     <Link
       href="/#vault"
-      className="inline-flex min-h-[32px] items-center rounded-full bg-luxury-gold px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-luxury-gold/85"
+      className="inline-flex min-h-[44px] items-center rounded-full bg-luxury-gold px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-luxury-gold/85"
     >
       JOIN VIP
     </Link>
@@ -146,7 +146,7 @@ export default function SiteHeader({
         <Link
           href="/"
           aria-label="Shambles home"
-          className="inline-flex shrink-0 items-baseline gap-1"
+          className="inline-flex min-h-[44px] shrink-0 items-center gap-1"
         >
           <span className="text-[17px] font-extrabold uppercase leading-none tracking-[-0.055em] text-pure-white">
             SHAMBLES

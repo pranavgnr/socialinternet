@@ -43,12 +43,12 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
           THE OPERATING SYSTEM FOR ELITE INSTAGRAM CREATORS.
         </h1>
 
-        <p className="mt-6 max-w-3xl text-[15px] leading-relaxed text-muted-zinc sm:text-[16.5px]">
+        <p className="mt-6 max-w-3xl text-[16px] leading-relaxed text-muted-zinc sm:text-[16.5px]">
           Precision algorithmic diagnostics, automated comment intelligence, and
           instant access to private lifestyle perks, private dining, and boutique
           resort privileges based on your true audience value.
         </p>
-        <p className="mono mt-3 text-[10px] uppercase tracking-[0.14em] text-luxury-gold">
+        <p className="mono mt-3 text-[11px] uppercase tracking-[0.14em] text-luxury-gold">
           Lifestyle privileges are planned for the wave-2 vault.
         </p>
 
@@ -85,7 +85,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
       <section aria-labelledby="example-title" className="py-14 sm:py-20">
         <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-center lg:gap-14">
           <div>
-            <p className="mono text-[10px] font-bold uppercase tracking-[0.2em] text-luxury-gold">
+            <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-luxury-gold">
               No testimonials, just the shape
             </p>
             <h2
@@ -94,7 +94,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
             >
               What an audit looks like.
             </h2>
-            <p className="mt-4 max-w-md text-[13.5px] leading-relaxed text-muted-zinc">
+            <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted-zinc">
               We do not publish invented creator quotes. This is a labelled
               example of the result shape — run the box above for numbers that
               were actually read from an account.
@@ -103,10 +103,10 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
 
           <article className="card relative overflow-hidden p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="mono rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-luxury-gold">
+              <span className="mono rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-luxury-gold">
                 Example
               </span>
-              <span className="mono rounded-full border border-white/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+              <span className="mono rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
                 Example data
               </span>
             </div>
@@ -115,7 +115,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
               <h3 className="text-[20px] font-semibold tracking-tight text-pure-white">
                 @example
               </h3>
-              <p className="mono text-[10px] uppercase tracking-[0.12em] text-muted-zinc">
+              <p className="mono text-[11px] uppercase tracking-[0.12em] text-muted-zinc">
                 Illustrative audit
               </p>
             </div>
@@ -123,7 +123,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
             <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10">
               {EXAMPLE_METRICS.map((metric) => (
                 <div key={metric.label} className="bg-card p-4">
-                  <dt className="text-[10.5px] leading-tight text-muted-zinc">
+                  <dt className="text-[11px] leading-tight text-muted-zinc">
                     {metric.label}
                   </dt>
                   <dd className="mono mt-1.5 text-[24px] font-bold leading-none text-pure-white">
@@ -134,10 +134,10 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
             </dl>
 
             <div className="mt-5 rounded-xl border border-limelight/20 bg-limelight/[0.04] p-4">
-              <p className="mono text-[9.5px] font-bold uppercase tracking-[0.14em] text-limelight">
+              <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-limelight">
                 Example diagnosis
               </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-muted-zinc">
+              <p className="mt-2 text-[16px] leading-relaxed text-muted-zinc">
                 Hooks land after the third second, and comment requests repeat
                 the same three questions. The next three Reels answer those
                 questions in the first line.
@@ -156,7 +156,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
         <section aria-labelledby="trending-title" className="pb-14 sm:pb-20">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="mono text-[10px] font-bold uppercase tracking-[0.2em] text-limelight">
+              <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-limelight">
                 Live from the cache
               </p>
               <h2
@@ -166,7 +166,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
                 What&rsquo;s working right now
               </h2>
             </div>
-            <p className="max-w-sm text-[12.5px] leading-relaxed text-muted-zinc">
+            <p className="max-w-sm text-[15px] leading-relaxed text-muted-zinc">
               Niches already read, ranked by opportunity. Open one free — no
               sign-in.
             </p>
@@ -178,7 +178,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
                 <Link
                   href={`/search/niche/${encodeURIComponent(niche.query)}`}
                   prefetch={false}
-                  className="group inline-flex min-h-[38px] items-center gap-2 rounded-full border border-white/10 bg-card px-4 text-[12.5px] text-pure-white transition hover:border-limelight/50 hover:text-limelight"
+                  className="group inline-flex min-h-[44px] items-center gap-2 rounded-full border border-white/10 bg-card px-4 text-[12.5px] text-pure-white transition hover:border-limelight/50 hover:text-limelight"
                 >
                   <span className="truncate">{plain(niche.label)}</span>
                   <span
@@ -214,7 +214,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
           </div>
           <Link
             href="#vault"
-            className="inline-flex min-h-[38px] w-fit items-center gap-2 rounded-full bg-luxury-gold px-4 text-[10px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-luxury-gold/85"
+            className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-full bg-luxury-gold px-4 text-[11px] font-bold uppercase tracking-[0.12em] text-obsidian transition hover:bg-luxury-gold/85"
           >
             Join the VIP waitlist
             <span aria-hidden="true">→</span>

@@ -252,7 +252,7 @@ export default function NicheSearch({
               ? "Sign in to read this account"
               : "Sign in to read this niche"}
           </p>
-          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+          <p className="mt-1 text-[15px] leading-relaxed text-muted">
             {signInFor === "competitor"
               ? "Reading a public account is a paid read. Sign in with Google to continue; the handle you typed is kept."
               : "Niches already looked at stay free. A new one needs a signed-in account."}
@@ -264,11 +264,11 @@ export default function NicheSearch({
           ) : null}
           <SignInButton
             label="Continue with Google"
-            className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+            className="mt-3 inline-flex min-h-[44px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
           />
         </div>
       ) : error ? (
-        <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
+        <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[16px] leading-relaxed text-bad">
           {error}
         </p>
       ) : null}
@@ -289,7 +289,7 @@ export default function NicheSearch({
           </div>
 
           <div className="card px-4 py-3.5">
-            <p className="text-[13px] leading-relaxed text-muted">
+            <p className="text-[16px] leading-relaxed text-muted">
               A reel here has to beat{" "}
               <span className="font-semibold text-text">
                 {compact(view.nicheMedianViews)} views
@@ -309,7 +309,7 @@ export default function NicheSearch({
            * must not imply when the median came from 33.
            */}
           {view.scanned > view.reels || view.subject.dropped > 0 ? (
-            <div className="rounded-xl border border-line/70 bg-surface/40 px-3.5 py-3 text-[12.5px] leading-relaxed text-muted">
+            <div className="rounded-xl border border-line/70 bg-surface/40 px-3.5 py-3 text-[15px] leading-relaxed text-muted">
               <p>
                 Checked {view.scanned} reel{view.scanned === 1 ? "" : "s"}.{" "}
                 <span className="text-text">

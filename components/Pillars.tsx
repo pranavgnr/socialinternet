@@ -62,7 +62,7 @@ export default function Pillars() {
     <section aria-labelledby="pillars-title" className="py-14 sm:py-20">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mono text-[10px] font-bold uppercase tracking-[0.2em] text-limelight">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-limelight">
             The system
           </p>
           <h2
@@ -72,7 +72,7 @@ export default function Pillars() {
             Three layers of unfair advantage.
           </h2>
         </div>
-        <p className="max-w-sm text-[13px] leading-relaxed text-muted-zinc">
+        <p className="max-w-sm text-[16px] leading-relaxed text-muted-zinc">
           Precision diagnostics first, competitor intelligence second, lifestyle
           privileges once the audience is verified.
         </p>
@@ -94,7 +94,7 @@ export default function Pillars() {
                   {pillar.number} <span className="text-muted-zinc/70">//</span>
                 </p>
                 <span
-                  className={`mono inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${
+                  className={`mono inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-bold uppercase tracking-[0.12em] ${
                     live
                       ? "border-limelight/25 bg-limelight/10 text-limelight"
                       : "border-luxury-gold/30 bg-luxury-gold/10 text-luxury-gold"
@@ -108,20 +108,20 @@ export default function Pillars() {
               <h3 className="mt-5 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-pure-white uppercase">
                 {pillar.title}
               </h3>
-              <p className="mt-3 text-[13.5px] leading-relaxed text-muted-zinc">
+              <p className="mt-3 text-[16px] leading-relaxed text-muted-zinc">
                 {pillar.body}
               </p>
 
               {planned ? (
                 <Link
                   href="#vault"
-                  className="mt-5 inline-flex min-h-[32px] w-fit items-center gap-2 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+                  className="mt-5 inline-flex min-h-[44px] w-fit items-center gap-2 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
                 >
                   Join the vault
                   <span aria-hidden="true">→</span>
                 </Link>
               ) : (
-                <p className="mono mt-5 text-[10px] uppercase tracking-[0.14em] text-muted-zinc/60">
+                <p className="mono mt-5 text-[11px] uppercase tracking-[0.14em] text-muted-zinc/60">
                   {live ? "Include it in your next audit" : "Part of the full profile view"}
                 </p>
               )}

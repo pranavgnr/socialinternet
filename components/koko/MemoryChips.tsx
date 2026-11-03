@@ -32,7 +32,7 @@ export default function MemoryChips({
 
   return (
     <section aria-label="Active memory loaded" className="mt-4">
-      <p className="mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted-zinc">
+      <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-muted-zinc">
         Active memory loaded
       </p>
       {chips.length ? (
@@ -40,7 +40,7 @@ export default function MemoryChips({
           {chips.map((chip) => (
             <li
               key={chip.key}
-              className="inline-flex min-h-[28px] items-center gap-1.5 rounded-full border border-white/10 bg-card px-3 text-[11px] text-pure-white"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-white/10 bg-card px-3 text-[11px] text-pure-white"
             >
               <span aria-hidden="true">{chip.icon}</span>
               <span className="min-w-0 break-words">{chip.label}</span>

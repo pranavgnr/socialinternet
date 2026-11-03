@@ -42,7 +42,7 @@ export default function ProfileHeader({
 
   return (
     <header className="relative border-b border-white/10 pb-7 pt-4 sm:pb-9">
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <span
             role="img"
@@ -53,26 +53,26 @@ export default function ProfileHeader({
           </span>
 
           <div className="min-w-0">
-            <h1 className="truncate text-[30px] font-extrabold leading-none tracking-[-0.04em] text-pure-white sm:text-[44px]">
+            <h1 className="break-words text-[30px] font-extrabold leading-[1.02] tracking-[-0.04em] text-pure-white [overflow-wrap:anywhere] sm:text-[44px]">
               @{handle}
             </h1>
             {badge ? (
-              <p className="mono mt-3 inline-flex min-h-[26px] items-center rounded-full border border-white/10 bg-card px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-limelight">
+              <p className="mono mt-3 inline-flex max-w-full min-h-[26px] flex-wrap items-center rounded-full border border-white/10 bg-card px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-limelight">
                 {badge}
               </p>
             ) : (
-              <p className="mono mt-3 text-[9px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+              <p className="mono mt-3 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
                 Not read yet
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-start gap-2 sm:justify-end">
+        <div className="flex flex-wrap items-start gap-2 lg:justify-end">
           <Link
             href="/#vault"
             aria-label="IG Wrapped is locked — join the waitlist"
-            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-3 text-[9px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
           >
             <GoldLock />
             <span>IG WRAPPED</span>
@@ -80,7 +80,7 @@ export default function ProfileHeader({
           <Link
             href="/#vault"
             aria-label="See my verified rate card — locked, join the waitlist"
-            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-3 text-[9px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
           >
             <GoldLock />
             <span>SEE MY VERIFIED RATE CARD</span>

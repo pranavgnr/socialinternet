@@ -12,7 +12,7 @@ export default function NotFound() {
       <h1 className="mt-3 text-[26px] font-semibold leading-tight tracking-tight">
         That page isn&rsquo;t here.
       </h1>
-      <p className="mx-auto mt-3 max-w-sm text-[13.5px] leading-relaxed text-muted">
+      <p className="mx-auto mt-3 max-w-sm text-[16px] leading-relaxed text-muted">
         It may have moved, or the link was mistyped. Your plan is still where you
         left it.
       </p>

@@ -78,7 +78,7 @@ export default function Vault() {
       className="scroll-mt-24 border-y border-white/10 py-14 sm:py-20"
     >
       <div className="max-w-3xl">
-        <p className="mono text-[10px] font-bold uppercase tracking-[0.2em] text-luxury-gold">
+        <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-luxury-gold">
           WAVE-2 PRIORITY ACCESS: EXCLUSIVE INVITATION ONLY
         </p>
         <h2
@@ -87,7 +87,7 @@ export default function Vault() {
         >
           THE VELVET-ROPE WAITLIST VAULT
         </h2>
-        <p className="mt-4 text-[14px] leading-relaxed text-muted-zinc">
+        <p className="mt-4 text-[16px] leading-relaxed text-muted-zinc">
           The privileges below are planned, not shipped. One request reserves
           your place for the feature you want first. No marketing sends in
           launch.
@@ -115,7 +115,7 @@ export default function Vault() {
         className="card mt-4 scroll-mt-24 p-5 sm:p-6"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-          <p className="mono text-[10px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
             Request access
           </p>
           <p className="text-[11.5px] text-muted-zinc">
@@ -126,7 +126,7 @@ export default function Vault() {
           </p>
         </div>
 
-        <p className="mt-2 text-[12px] leading-relaxed text-muted-zinc">
+        <p className="mt-2 text-[15px] leading-relaxed text-muted-zinc">
           {selected
             ? `Tell us where to reach you when ${selected.label} opens.`
             : "Tell us where to reach you when the wave-2 vault opens."}

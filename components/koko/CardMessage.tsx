@@ -37,7 +37,7 @@ export default function CardMessage({
   return (
     <article
       aria-label={`${label} reply`}
-      className="card w-full min-w-0 max-w-full overflow-hidden px-4 py-3.5 text-[13px] leading-relaxed text-pure-white sm:px-5"
+      className="card w-full min-w-0 max-w-full overflow-hidden px-4 py-3.5 text-[16px] leading-relaxed text-pure-white sm:px-5"
     >
       <div className="min-w-0 border-l-2 border-limelight pl-3 sm:pl-4">
         {blocks.length ? (

@@ -39,7 +39,7 @@ function WeeklySkeleton() {
   return (
     <div className="space-y-4 py-6">
       <h1 className="text-[19px] font-semibold tracking-tight">This week</h1>
-      <p className="text-[13.5px] leading-relaxed text-muted">Reading your week…</p>
+      <p className="text-[16px] leading-relaxed text-muted">Reading your week…</p>
     </div>
   );
 }
@@ -63,13 +63,13 @@ async function RecordedWeek() {
     return (
       <div className="space-y-4 py-6">
         <h1 className="text-[19px] font-semibold tracking-tight">This week</h1>
-        <p className="text-[13.5px] leading-relaxed text-muted">
+        <p className="text-[16px] leading-relaxed text-muted">
           There is nothing to show yet. Analyse a handle once and every Monday after that gets a
           week here — what moved, and what to post about it.
         </p>
         <Link
           href="/"
-          className="inline-flex min-h-[40px] items-center rounded-lg bg-accent px-4 text-[13px] font-semibold text-bg"
+          className="inline-flex min-h-[44px] items-center rounded-lg bg-accent px-4 text-[13px] font-semibold text-bg"
         >
           Analyse your handle
         </Link>
@@ -84,7 +84,7 @@ async function RecordedWeek() {
           @{plan.handle}
           <span className="ml-2 text-[13px] font-normal text-muted">this week</span>
         </h1>
-        <p className="text-[13.5px] leading-relaxed text-muted">
+        <p className="text-[16px] leading-relaxed text-muted">
           Your account has been read, but no week has been recorded yet. Make this week's one — it
           is what next Monday gets compared against.
         </p>

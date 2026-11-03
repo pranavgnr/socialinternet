@@ -8,7 +8,7 @@ import { plain } from "@/lib/plain";
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="mono text-[8.5px] font-bold uppercase tracking-[0.14em] text-muted-zinc/80">
+      <dt className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc/80">
         {label}
       </dt>
       <dd className="mono mt-1 text-[13px] font-bold leading-none text-pure-white">
@@ -36,7 +36,7 @@ export default function OutlierList({
     <section aria-labelledby="breakouts-title">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-limelight">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-limelight">
             Ranked reels
           </p>
           <h2
@@ -46,7 +46,7 @@ export default function OutlierList({
             Ranked by views per follower
           </h2>
         </div>
-        <p className="mono text-[10px] uppercase tracking-[0.1em] text-muted-zinc">
+        <p className="mono text-[11px] uppercase tracking-[0.1em] text-muted-zinc">
           Instagram reels only
         </p>
       </div>
@@ -74,7 +74,7 @@ export default function OutlierList({
                     <Link
                       href={`/profile/${profileHandle}`}
                       aria-label={`Read the profile for @${outlier.handle}, reel ${rank}`}
-                      className="min-w-0 truncate text-[15px] font-semibold text-pure-white underline decoration-white/20 underline-offset-4 transition hover:text-limelight hover:decoration-limelight/50"
+                      className="inline-flex min-h-[44px] min-w-0 items-center truncate text-[16px] font-semibold text-pure-white underline decoration-white/20 underline-offset-4 transition hover:text-limelight hover:decoration-limelight/50"
                     >
                       @{outlier.handle}
                     </Link>
@@ -90,7 +90,7 @@ export default function OutlierList({
                   )}
                   <p className="mono shrink-0 text-[14px] font-bold text-pure-white">
                     {compact(outlier.views)}{" "}
-                    <span className="text-[10px] font-normal uppercase tracking-[0.1em] text-muted-zinc">
+                    <span className="text-[11px] font-normal uppercase tracking-[0.1em] text-muted-zinc">
                       views
                     </span>
                   </p>
@@ -121,7 +121,7 @@ export default function OutlierList({
                    * or a link with no spaces. `anywhere` keeps a long token from
                    * widening the whole mobile layout viewport.
                    */
-                  <p className="mt-3 break-words text-[12.5px] leading-relaxed text-muted-zinc [overflow-wrap:anywhere]">
+                  <p className="mt-3 break-words text-[15px] leading-relaxed text-muted-zinc [overflow-wrap:anywhere]">
                     {plain(outlier.caption)}
                   </p>
                 ) : null}
@@ -131,7 +131,7 @@ export default function OutlierList({
                   target="_blank"
                   rel="noreferrer noopener"
                   aria-label={`Open reel ${rank} from @${outlier.handle} on Instagram`}
-                  className="mono mt-3 inline-flex min-h-[30px] items-center text-[10px] font-bold uppercase tracking-[0.1em] text-limelight underline decoration-limelight/30 underline-offset-4 transition hover:decoration-limelight"
+                  className="mono mt-3 inline-flex min-h-[44px] items-center text-[11px] font-bold uppercase tracking-[0.1em] text-limelight underline decoration-limelight/30 underline-offset-4 transition hover:decoration-limelight"
                 >
                   Open reel ↗
                 </a>

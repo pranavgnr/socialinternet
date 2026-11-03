@@ -52,7 +52,7 @@ export default function WeeklyRefresh({ label }: { label: string }) {
         type="button"
         onClick={run}
         disabled={working}
-        className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-line bg-panel px-4 text-[13px] font-medium transition hover:border-accent/50 hover:text-text disabled:opacity-50"
+        className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-line bg-panel px-4 text-[13px] font-medium transition hover:border-accent/50 hover:text-text disabled:opacity-50"
       >
         {working ? "Reading your account…" : label}
       </button>
@@ -61,16 +61,16 @@ export default function WeeklyRefresh({ label }: { label: string }) {
       </p>
       {needsSignIn ? (
         <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
-          <p className="text-[12.5px] leading-relaxed text-muted" role="alert">
+          <p className="text-[15px] leading-relaxed text-muted" role="alert">
             {error ?? "Sign in to refresh this week."}
           </p>
           <SignInButton
             label="Continue with Google"
-            className="mt-2.5 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+            className="mt-2.5 inline-flex min-h-[44px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
           />
         </div>
       ) : error ? (
-        <p className="text-[12.5px] leading-relaxed text-bad" role="alert">
+        <p className="text-[15px] leading-relaxed text-bad" role="alert">
           {error}
         </p>
       ) : null}

@@ -36,13 +36,13 @@ export default function KokoConcierge({
       href={kokoHref(pathname)}
       prefetch={false}
       aria-label="Open Koko, your AI director"
-      className={`koko-aura group fixed bottom-4 right-4 z-50 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-card/95 p-0 backdrop-blur transition hover:border-white/20 sm:bottom-6 sm:right-6 sm:h-auto sm:w-auto sm:justify-start sm:gap-3 sm:px-3 sm:py-2 ${className}`}
+      className={`koko-aura group fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] right-[calc(1rem+env(safe-area-inset-right,0px))] z-50 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-card/95 p-0 backdrop-blur transition hover:border-white/20 sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:right-[calc(1.5rem+env(safe-area-inset-right,0px))] sm:h-auto sm:w-auto sm:justify-start sm:gap-3 sm:px-3 sm:py-2 ${className}`}
       style={style}
     >
       <KokoAvatar tone={tone} className="h-9 w-9" />
       <span className="hidden flex-col pr-1 leading-tight sm:flex">
         <span className="text-[13px] font-semibold text-pure-white">Koko</span>
-        <span className="mono text-[10px] tracking-[0.06em] text-muted-zinc">
+        <span className="mono text-[11px] tracking-[0.06em] text-muted-zinc">
           <span style={{ color: accent }} aria-hidden="true">
             ●
           </span>{" "}

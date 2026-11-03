@@ -22,7 +22,7 @@ export default function Briefing({ lines }: { lines: string[] }) {
           <KokoAvatar className="h-8 w-8" />
         </span>
         <div className="min-w-0">
-          <p className="mono text-[9px] font-bold uppercase tracking-[0.18em] text-limelight">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-limelight">
             Koko
           </p>
           <h2
@@ -42,19 +42,19 @@ export default function Briefing({ lines }: { lines: string[] }) {
                 aria-hidden="true"
                 className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-limelight"
               />
-              <p className="text-[13px] leading-relaxed text-pure-white/90">
+              <p className="text-[16px] leading-relaxed text-pure-white/90">
                 {line}
               </p>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-4 text-[13px] leading-relaxed text-muted-zinc">
+        <p className="mt-4 text-[16px] leading-relaxed text-muted-zinc">
           {EMPTY_DOSSIER_LINE}
         </p>
       )}
 
-      <p className="mt-4 border-t border-white/10 pt-3 text-[10.5px] leading-relaxed text-muted-zinc/80">
+      <p className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-muted-zinc/80">
         Written from the numbers on this page.
       </p>
     </section>

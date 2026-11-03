@@ -31,7 +31,7 @@ export default function Vitals({ view }: { view: ProfileView }) {
     <section aria-labelledby="vitals-title" className="scroll-mt-24">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-limelight">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-limelight">
             Section 01
           </p>
           <h2
@@ -41,7 +41,7 @@ export default function Vitals({ view }: { view: ProfileView }) {
             01 // VITALS &amp; AUTHENTICITY
           </h2>
         </div>
-        <p className="mono text-[10px] uppercase tracking-[0.1em] text-muted-zinc">
+        <p className="mono text-[11px] uppercase tracking-[0.1em] text-muted-zinc">
           {vitals.reelsRead > 0 ? reelCount(vitals.reelsRead) : "No reels read"}
         </p>
       </div>
@@ -99,7 +99,7 @@ export default function Vitals({ view }: { view: ProfileView }) {
       </div>
 
       {view.comparison ? (
-        <p className="mono mt-3 rounded-lg border border-white/10 bg-card/60 px-3 py-2 text-[10px] leading-relaxed text-muted-zinc">
+        <p className="mono mt-3 rounded-lg border border-white/10 bg-card/60 px-3 py-2 text-[11px] leading-relaxed text-muted-zinc">
           {view.comparison}
         </p>
       ) : null}

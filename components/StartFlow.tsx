@@ -157,7 +157,7 @@ export default function StartFlow() {
         <h2 className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted">
           What do you actually know or enjoy?
         </h2>
-        <p className="mt-2 text-[12.5px] leading-relaxed text-muted/80">
+        <p className="mt-2 text-[15px] leading-relaxed text-muted/80">
           Pick up to four. These are what get priced — not what gets recommended.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -211,16 +211,16 @@ export default function StartFlow() {
       {needsSignIn ? (
         <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
           <p className="text-[13px] font-medium text-text">Sign in to compare niches</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+          <p className="mt-1 text-[15px] leading-relaxed text-muted">
             {error ?? "A fresh comparison needs a signed-in account. Rooms already read stay free."}
           </p>
           <SignInButton
             label="Continue with Google"
-            className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+            className="mt-3 inline-flex min-h-[44px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
           />
         </div>
       ) : error ? (
-        <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad">
+        <p className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[16px] leading-relaxed text-bad">
           {error}
         </p>
       ) : null}
@@ -243,7 +243,7 @@ export default function StartFlow() {
                 <li key={r.query} className="card px-4 py-4">
                   <div className="flex items-baseline justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="mono text-[10.5px] uppercase tracking-[0.14em] text-muted/70">
+                      <p className="mono text-[11px] uppercase tracking-[0.14em] text-muted/70">
                         #{r.rank}
                       </p>
                       <h3 className="mt-0.5 truncate text-[16px] font-semibold capitalize tracking-tight">
@@ -254,11 +254,11 @@ export default function StartFlow() {
                       <p className={`mono text-[13px] font-semibold ${b.tone}`}>
                         {b.label}
                       </p>
-                      <p className="mono text-[10.5px] text-muted/70">{r.score}/100</p>
+                      <p className="mono text-[11px] text-muted/70">{r.score}/100</p>
                     </div>
                   </div>
 
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted">
+                  <p className="mt-2 text-[16px] leading-relaxed text-muted">
                     <span className="font-medium text-text">{r.verdict}.</span>{" "}
                     A typical reel here gets {compact(r.medianViews)} views.
                   </p>
@@ -286,7 +286,7 @@ export default function StartFlow() {
                     ))}
                   </ul>
 
-                  <p className="mt-3 rounded-lg border border-line/70 bg-panel/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-muted">
+                  <p className="mt-3 rounded-lg border border-line/70 bg-panel/60 px-3 py-2.5 text-[15px] leading-relaxed text-muted">
                     {r.angle}
                   </p>
 
@@ -295,7 +295,7 @@ export default function StartFlow() {
                       {r.tags.slice(0, 6).map((t) => (
                         <span
                           key={t.tag}
-                          className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10.5px] text-muted"
+                          className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-[11px] text-muted"
                         >
                           #{t.tag}
                         </span>
@@ -317,7 +317,7 @@ export default function StartFlow() {
                           >
                             @{s.handle}
                           </a>{" "}
-                          <span className="mono text-[10.5px] text-muted/60">
+                          <span className="mono text-[11px] text-muted/60">
                             {compact(s.medianViews)} usual
                           </span>
                         </span>
@@ -342,7 +342,7 @@ export default function StartFlow() {
           </ol>
 
           {note ? (
-            <p className="rounded-xl border border-warn/40 bg-warn/5 px-3.5 py-3 text-[12.5px] leading-relaxed text-warn">
+            <p className="rounded-xl border border-warn/40 bg-warn/5 px-3.5 py-3 text-[15px] leading-relaxed text-warn">
               {note}
             </p>
           ) : null}

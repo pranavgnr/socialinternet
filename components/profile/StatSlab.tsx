@@ -46,11 +46,11 @@ export default function StatSlab({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-          <p className="mono text-[9.5px] font-bold uppercase leading-tight tracking-[0.14em] text-muted-zinc">
+          <p className="mono text-[11px] font-bold uppercase leading-tight tracking-[0.14em] text-muted-zinc">
             {label}
           </p>
           {tag ? (
-            <span className="mono text-[8.5px] font-bold uppercase leading-tight tracking-[0.12em] text-muted-zinc/70">
+            <span className="mono text-[11px] font-bold uppercase leading-tight tracking-[0.12em] text-muted-zinc/70">
               {tag}
             </span>
           ) : null}

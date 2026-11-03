@@ -106,7 +106,7 @@ export default function PlanView({
           href={profileUrl(plan.handle, plan.accountPlatform ?? plan.platform)}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-[34px] items-center text-[23px] font-semibold leading-tight tracking-tight transition hover:text-accent"
+          className="inline-flex min-h-[44px] items-center text-[23px] font-semibold leading-tight tracking-tight transition hover:text-accent"
         >
           @{plan.handle}
           {readOnly ? (
@@ -126,7 +126,7 @@ export default function PlanView({
           /* Identified, but the feed is out of reach. The follower count above is
              genuinely theirs; nothing below it is, so say which is which before
              the numbers start. */
-          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-relaxed">
+          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[15px] leading-relaxed">
             <strong className="font-semibold">
               We could read @{plan.handle}, but not their recent posts.
             </strong>{" "}
@@ -145,7 +145,7 @@ export default function PlanView({
           /* We never read this account. Printing a size here anyway means
              printing someone else's, so the page says what is missing and what
              the rest of it is still worth. */
-          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] leading-relaxed">
+          <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[15px] leading-relaxed">
             <strong className="font-semibold">
               We could not read @{plan.handle}.
             </strong>{" "}
@@ -165,7 +165,7 @@ export default function PlanView({
              network, which happens when a fallback vendor answers the reels call.
              Both numbers are real; putting them in one sentence without this line
              is what makes them read as if they describe one account. */
-          <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[12px] leading-relaxed text-muted">
+          <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[15px] leading-relaxed text-muted">
             The account and follower count are from {platformName(plan.accountPlatform)};
             the posts we measured came from {platformName(plan.platform)}. Both are real,
             but check a median against the right feed before acting on it.
@@ -176,7 +176,7 @@ export default function PlanView({
           /* The numbers are real but they are not measured on the same network
              as the account, so the comparison is not like-for-like. Say it once,
              here, rather than let a median look authoritative. */
-          <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[12px] leading-relaxed text-muted">
+          <p className="mt-2 rounded-lg border border-line bg-panel px-3 py-2 text-[15px] leading-relaxed text-muted">
             Your posts come from {platformName(plan.platform)}; the creators we compared
             you with are on {platformName(plan.cohort.platform)}. The numbers are real but
             it is not a like-for-like yardstick — treat the comparison as a rough guide.
@@ -231,8 +231,8 @@ export default function PlanView({
       </section>
 
       <section className="card px-4 py-4">
-        <p className="text-[14.5px] leading-relaxed">{plain(arch.blurb)}</p>
-        <p className="mt-2.5 border-t border-line/60 pt-2.5 text-[13px] leading-relaxed text-muted">
+        <p className="text-[16px] leading-relaxed">{plain(arch.blurb)}</p>
+        <p className="mt-2.5 border-t border-line/60 pt-2.5 text-[16px] leading-relaxed text-muted">
           {mine ? (
             readOnly ? (
               <>
@@ -263,7 +263,7 @@ export default function PlanView({
           )}
         </p>
         {mine && spread >= 3 ? (
-          <p className="mt-2 text-[13px] leading-relaxed text-muted">
+          <p className="mt-2 text-[16px] leading-relaxed text-muted">
             {readOnly ? "The best post did" : "Your best did"} {times(spread)}{" "}
             {readOnly ? "the usual" : "your usual"}, so the ceiling is clearly there — it just
             has not happened twice.
@@ -290,7 +290,7 @@ export default function PlanView({
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">This week, do one thing</h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               {mine
                 ? "Chosen because of what your own posts show — not what works for someone else."
                 : /*
@@ -305,15 +305,15 @@ export default function PlanView({
               <h3 className="text-[15.5px] font-semibold leading-snug">
                 {plain(plan.nextMove.title)}
               </h3>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+              <p className="mt-1.5 text-[16px] leading-relaxed text-muted">
                 {plain(plan.nextMove.why)}
               </p>
             </div>
             <div className="border-t border-line/70 px-4 py-3">
               <p className={`${LABEL} mb-1 text-accent`}>Do this</p>
-              <p className="text-[13.5px] leading-relaxed">{plain(plan.nextMove.action)}</p>
+              <p className="text-[16px] leading-relaxed">{plain(plan.nextMove.action)}</p>
               {plan.nextMove.stop ? (
-                <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+                <p className="mt-2 text-[15px] leading-relaxed text-muted">
                   <span className="text-muted/70">Stop: </span>
                   {plain(plan.nextMove.stop)}
                 </p>
@@ -337,14 +337,14 @@ export default function PlanView({
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">Where your hook lives</h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               “Make a better hook” is not advice. This says whether the first second that held
               people was something said, something written, or something happening.
             </p>
           </div>
           <div className="card px-4 py-4">
             <p className="text-[15px] font-medium">{hookModeLabel(plan.hookRead.mode)}</p>
-            <p className="mt-2 text-[13px] leading-relaxed text-muted">
+            <p className="mt-2 text-[16px] leading-relaxed text-muted">
               {plain(plan.hookRead.sentence)}
             </p>
             <p className="mt-2 text-[11.5px] text-muted/60">
@@ -353,7 +353,7 @@ export default function PlanView({
             </p>
             {plan.hookRead.examples.length ? (
               <div className="mt-3 space-y-1.5 border-t border-line/60 pt-2.5">
-                <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted/60">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-muted/60">
                   the openings that worked
                 </p>
                 {plan.hookRead.examples.map((e, i) => (
@@ -381,7 +381,7 @@ export default function PlanView({
             <h2 className="text-[17px] font-semibold tracking-tight">
               {readOnly ? "Best and worst posts" : "Your own posts, compared"}
             </h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               {readOnly
                 ? "The best and worst post on this account, side by side, with what separated them."
                 : "Your best and worst post, side by side. This is the only evidence that is about you and not about someone bigger."}
@@ -395,7 +395,7 @@ export default function PlanView({
                 rel="noreferrer"
                 className="px-3 py-3 transition hover:text-text"
               >
-                <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted/60">worked</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] text-muted/60">worked</p>
                 <p className="mt-1 text-[15px] font-medium tabular-nums">
                   {times(plan.audit.best.multiple)}
                 </p>
@@ -404,7 +404,7 @@ export default function PlanView({
                 </p>
               </a>
               <div className="px-3 py-3">
-                <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted/60">did not</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] text-muted/60">did not</p>
                 <p className="mt-1 text-[15px] font-medium tabular-nums">
                   {times(plan.audit.worst.multiple)}
                 </p>
@@ -415,7 +415,7 @@ export default function PlanView({
             </div>
             {plan.audit.gaps.slice(0, 3).map((g, i) => (
               <div key={`${g.lever}-${i}`} className="px-4 py-3">
-                <p className="text-[13px] leading-relaxed">
+                <p className="text-[16px] leading-relaxed">
                   <span className="text-muted/60">{g.lever}: </span>
                   {plain(g.note)}
                 </p>
@@ -446,7 +446,7 @@ export default function PlanView({
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">What people asked for</h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               Read from the comments under the posts that worked —{" "}
               {plan.comments.read === 1
                 ? "1 comment thread"
@@ -463,7 +463,7 @@ export default function PlanView({
           <div className="card divide-y divide-line/70">
             {plan.comments.seeds.slice(0, 5).map((c, i) => (
               <div key={`${c.text}-${i}`} className="px-4 py-3">
-                <p className="text-[13px] leading-relaxed">{beginning(c.text, 140)}</p>
+                <p className="text-[16px] leading-relaxed">{beginning(c.text, 140)}</p>
                 <p className="mt-1 text-[11px] text-muted/60">
                   {c.kind === "request"
                     ? "asked for"
@@ -489,7 +489,7 @@ export default function PlanView({
                   .slice(0, 6)
                   .map((c, i) => (
                     <div key={`raw-${i}`} className="px-4 py-3">
-                      <p className="text-[13px] leading-relaxed">{beginning(c.text, 140)}</p>
+                      <p className="text-[16px] leading-relaxed">{beginning(c.text, 140)}</p>
                       <p className="mt-1 text-[11px] text-muted/60">{c.kind}</p>
                     </div>
                   ))
@@ -501,7 +501,7 @@ export default function PlanView({
            missing pull look like a deleted feature. Say which it is. */
         <section className="card px-4 py-4">
           <h2 className="text-[17px] font-semibold tracking-tight">What people asked for</h2>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+          <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
             We did not read the comments under this account&rsquo;s posts — the pull came back
             without them. Analyse again to try.
           </p>
@@ -511,17 +511,17 @@ export default function PlanView({
       {/* Who the platform says they are — only for a creator already in the field. */}
       {plan.account?.bio || plan.account?.category ? (
         <section className="card px-4 py-4">
-          <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted/60">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-muted/60">
             {readOnly ? "How the account reads" : "How your account reads"}
           </p>
           {plan.account.category ? (
-            <p className="mt-1.5 text-[13px] leading-relaxed">
+            <p className="mt-1.5 text-[16px] leading-relaxed">
               Filed under <span className="font-medium">{plan.account.category}</span>
               {plan.account.verified ? " · verified" : ""}
             </p>
           ) : null}
           {plan.account.bio ? (
-            <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
               “{beginning(plan.account.bio, 180)}”
             </p>
           ) : null}
@@ -532,7 +532,7 @@ export default function PlanView({
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">Songs worth covering</h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               These broke out for accounts your size — not for accounts ten times bigger. On a
               cover the song does most of the work, so it is the cheapest thing to copy exactly.
             </p>
@@ -545,7 +545,7 @@ export default function PlanView({
                   <p className="min-w-0 text-[14.5px] font-medium leading-snug">
                     {s.title}
                     {s.fromYou ? (
-                      <span className="ml-2 rounded border border-accent/40 px-1 py-0.5 align-middle text-[9.5px] uppercase tracking-wider text-accent">
+                      <span className="ml-2 rounded border border-accent/40 px-1 py-0.5 align-middle text-[11px] uppercase tracking-wider text-accent">
                         you
                       </span>
                     ) : null}
@@ -582,7 +582,7 @@ export default function PlanView({
                 ? "What is landing for accounts your size"
                 : "Video shapes worth making more of"}
             </h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               {family === "craft"
                 ? "The shapes that broke out for accounts your size. The finished result does most of the work in all of them."
                 : "The shapes of video that broke out for accounts your size. Copy the shape; the subject stays yours."}
@@ -600,7 +600,7 @@ export default function PlanView({
                     {times(f.multiple)} usual
                   </span>
                 </div>
-                <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">
+                <p className="mt-0.5 text-[15px] leading-relaxed text-muted">
                   {sentenceCase(plain(f.what))}.
                 </p>
                 <p className="mt-1 text-[11.5px] leading-relaxed text-muted/70">
@@ -631,7 +631,7 @@ export default function PlanView({
         <section className="space-y-3">
           <div>
             <h2 className="text-[17px] font-semibold tracking-tight">How these open</h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted">
               For what you make, the first line is the decision — the topic is already yours.
               This is how the posts breaking out around your size start, and what was said.
             </p>
@@ -648,7 +648,7 @@ export default function PlanView({
                     {times(h.multiple)} usual
                   </span>
                 </div>
-                <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{h.what}</p>
+                <p className="mt-0.5 text-[15px] leading-relaxed text-muted">{h.what}</p>
                 {h.example ? (
                   <p className="mt-2 border-l border-line pl-2.5 text-[12.5px] italic leading-snug text-muted/80">
                     &ldquo;{plain(h.example)}&rdquo;
@@ -680,7 +680,7 @@ export default function PlanView({
       <section className="space-y-3">
         <div>
           <h2 className="text-[17px] font-semibold tracking-tight">Do these next, in order</h2>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+          <p className="mt-1 text-[15px] leading-relaxed text-muted">
             One at a time. Each one opens the post that proves it.
           </p>
         </div>
@@ -694,18 +694,18 @@ export default function PlanView({
                 </span>
                 <div className="min-w-0">
                   <h3 className="text-[15px] font-semibold leading-snug">{plain(m.title)}</h3>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{plain(m.why)}</p>
+                  <p className="mt-1.5 text-[16px] leading-relaxed text-muted">{plain(m.why)}</p>
                 </div>
               </div>
 
               <div className="border-t border-line/70 px-4 py-3">
                 <p className={`${LABEL} mb-1 text-accent`}>Do this</p>
-                <p className="text-[13.5px] leading-relaxed">{plain(m.action)}</p>
+                <p className="text-[16px] leading-relaxed">{plain(m.action)}</p>
               </div>
 
               {m.evidence.length ? (
                 <div className="space-y-1.5 border-t border-line/70 bg-panel2/40 px-4 py-2.5">
-                  <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted/60">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-muted/60">
                     the post behind it
                   </p>
                   {m.evidence.map((e, i) => (
@@ -730,7 +730,7 @@ export default function PlanView({
             </article>
           ))
         ) : (
-          <p className="card px-4 py-6 text-center text-[13px] leading-relaxed text-muted">
+          <p className="card px-4 py-6 text-center text-[16px] leading-relaxed text-muted">
             Nothing in your space was convincing enough to recommend yet. Check back in a week.
           </p>
         )}

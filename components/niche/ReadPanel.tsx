@@ -138,7 +138,7 @@ export default function ReadPanel({
     <section aria-labelledby="read-niche-title" className="card mt-6 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
             Niche not on disk
           </p>
           <h2
@@ -148,12 +148,12 @@ export default function ReadPanel({
             Read this niche
           </h2>
         </div>
-        <p className="mono text-[10px] uppercase tracking-[0.1em] text-muted-zinc">
+        <p className="mono text-[11px] uppercase tracking-[0.1em] text-muted-zinc">
           Public posts only
         </p>
       </div>
 
-      <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-muted-zinc">
+      <p className="mt-3 max-w-2xl text-[16px] leading-relaxed text-muted-zinc">
         A fresh read of{" "}
         <span className="font-semibold text-pure-white">&ldquo;{query}&rdquo;</span>{" "}
         costs six gems and takes about a minute. Once it is read, this dossier
@@ -165,7 +165,7 @@ export default function ReadPanel({
           <p className="text-[13px] font-medium text-pure-white">
             Sign in to read this niche
           </p>
-          <p className="mt-1 text-[12px] leading-relaxed text-muted-zinc">
+          <p className="mt-1 text-[15px] leading-relaxed text-muted-zinc">
             Reads are tied to an account so the gems and the daily allowance
             cannot be spent anonymously. Niches already read stay free.
           </p>
@@ -177,7 +177,7 @@ export default function ReadPanel({
           <span onClick={remember} className="mt-3 inline-flex">
             <SignInButton
               label="Continue with Google"
-              className="inline-flex min-h-[36px] items-center rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
+              className="inline-flex min-h-[44px] items-center rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
             />
           </span>
         </div>
@@ -187,7 +187,7 @@ export default function ReadPanel({
             type="button"
             onClick={read}
             disabled={busy}
-            className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? (
               "Reading…"
@@ -235,12 +235,12 @@ export default function ReadPanel({
           role="alert"
           className="mt-4 rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3"
         >
-          <p className="text-[12.5px] leading-relaxed text-bad">{error}</p>
+          <p className="text-[15px] leading-relaxed text-bad">{error}</p>
           {!needsSignIn ? (
             <button
               type="button"
               onClick={read}
-              className="mt-2 inline-flex min-h-[30px] items-center rounded-md border border-bad/40 px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-bad transition hover:bg-bad/10"
+              className="mt-2 inline-flex min-h-[44px] items-center rounded-md border border-bad/40 px-2.5 text-[11px] font-bold uppercase tracking-[0.1em] text-bad transition hover:bg-bad/10"
             >
               Try again
             </button>

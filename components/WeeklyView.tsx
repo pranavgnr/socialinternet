@@ -70,7 +70,7 @@ export default function WeeklyView({
           </a>
         </div>
 
-        <p className="text-[13px] leading-relaxed text-muted">
+        <p className="text-[16px] leading-relaxed text-muted">
           {stale ? (
             <>
               This is the week of <span className="text-text">{weekLabel(digest.weekOf)}</span>.
@@ -104,14 +104,14 @@ export default function WeeklyView({
         {digest.changes.length ? (
           <ul className="mt-2.5 space-y-2">
             {digest.changes.map((c, i) => (
-              <li key={i} className="flex gap-2.5 text-[13.5px] leading-relaxed">
+              <li key={i} className="flex gap-2.5 text-[16px] leading-relaxed">
                 <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-accent" />
                 <span>{c}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
+          <p className="mt-2 text-[16px] leading-relaxed text-muted">
             Nothing to compare against yet — this is the first week recorded. Next Monday this
             section tells you what actually moved, in numbers.
           </p>
@@ -125,7 +125,7 @@ export default function WeeklyView({
           aria-live="polite"
         >
           <h2 className={LABEL}>This week has no cohort behind it</h2>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{digest.stale}</p>
+          <p className="mt-1.5 text-[16px] leading-relaxed text-muted">{digest.stale}</p>
         </section>
       ) : null}
 
@@ -144,9 +144,9 @@ export default function WeeklyView({
                   </span>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-[14px] font-medium leading-snug">{titleCase(m.title)}</h3>
-                    <p className="mt-1 text-[13.5px] leading-relaxed text-muted">{m.action}</p>
+                    <p className="mt-1 text-[16px] leading-relaxed text-muted">{m.action}</p>
                     {m.why ? (
-                      <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted/80">{m.why}</p>
+                      <p className="mt-1.5 text-[15px] leading-relaxed text-muted/80">{m.why}</p>
                     ) : null}
                     {/* Who this was measured on — the name, not a count of posts. */}
                     {m.from?.length ? (
@@ -220,7 +220,7 @@ export default function WeeklyView({
         <section className="space-y-2.5">
           <div>
             <h2 className={LABEL}>What people asked for</h2>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted/80">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted/80">
               {digest.heard.read === 1
                 ? "1 comment thread read"
                 : `${digest.heard.read} comment threads read`}
@@ -232,7 +232,7 @@ export default function WeeklyView({
           <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-panel">
             {digest.heard.asks.map((a, i) => (
               <li key={`${a.text}-${i}`} className="px-4 py-3">
-                <p className="text-[13px] leading-relaxed">“{a.text}”</p>
+                <p className="text-[16px] leading-relaxed">“{a.text}”</p>
                 <p className="mt-1 text-[11.5px] text-muted/60">
                   {a.kind === "request"
                     ? "asked for"
@@ -256,7 +256,7 @@ export default function WeeklyView({
         <section className="space-y-2.5">
           <div>
             <h2 className={LABEL}>What people asked for</h2>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted/80">
+            <p className="mt-1 text-[15px] leading-relaxed text-muted/80">
               We did not read the comments under this account&rsquo;s posts — the pull came
               back without them. Refresh this week to try again.
             </p>
@@ -282,7 +282,7 @@ export default function WeeklyView({
                 <Link href={`/ideas#${idea.id}`} className="block px-4 py-3 transition hover:bg-panel2">
                   <div className="text-[13.5px] font-medium leading-snug">{titleCase(idea.title)}</div>
                   {idea.hook ? (
-                    <div className="mt-1 text-[12.5px] leading-relaxed text-muted">
+                    <div className="mt-1 text-[15px] leading-relaxed text-muted">
                       Open with: “{idea.hook}”
                     </div>
                   ) : null}
@@ -316,7 +316,7 @@ export default function WeeklyView({
           {/* A week of self-sourced posts is still a week, but it is a mirror,
               and the creator has to be told which one they are reading. */}
           {digest.ideasBasis === "own" ? (
-            <p className="text-[12px] leading-relaxed text-muted/70">
+            <p className="text-[15px] leading-relaxed text-muted/70">
               Every post here is learned from your own winners — no other account in your
               comparison produced one this week. Refresh to read the cohort again.
             </p>

@@ -44,7 +44,7 @@ function NextMoveCard({ move }: { move: ProfileNextMove }) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-limelight/70 to-transparent"
       />
-      <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-limelight">
+      <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-limelight">
         Next move this week
       </p>
       <h2
@@ -53,24 +53,24 @@ function NextMoveCard({ move }: { move: ProfileNextMove }) {
       >
         {move.title}
       </h2>
-      <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted-zinc">
+      <p className="mt-3 max-w-3xl text-[16px] leading-relaxed text-muted-zinc">
         {move.why}
       </p>
       <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
         <div>
-          <p className="mono text-[9px] font-bold uppercase tracking-[0.14em] text-limelight">
+          <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-limelight">
             Do this
           </p>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-pure-white">
+          <p className="mt-1.5 text-[15px] leading-relaxed text-pure-white">
             {move.action}
           </p>
         </div>
         {move.stop ? (
           <div>
-            <p className="mono text-[9px] font-bold uppercase tracking-[0.14em] text-luxury-gold">
+            <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxury-gold">
               Stop
             </p>
-            <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-zinc">
+            <p className="mt-1.5 text-[15px] leading-relaxed text-muted-zinc">
               {move.stop}
             </p>
           </div>

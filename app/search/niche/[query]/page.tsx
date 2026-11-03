@@ -48,18 +48,18 @@ function InvalidNiche({
 
   return (
     <div className="pb-24 pt-4 sm:pb-4">
-      <p className="mono text-[9.5px] font-bold uppercase tracking-[0.2em] text-limelight">
+      <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-limelight">
         Niche Intelligence Dossier
       </p>
       <h1 className="mt-3 break-words text-[30px] font-extrabold leading-[1.05] tracking-[-0.04em] text-pure-white [overflow-wrap:anywhere] sm:text-[40px]">
         That niche is not readable
       </h1>
-      <p className="mt-3 max-w-lg text-[13.5px] leading-relaxed text-muted-zinc">
+      <p className="mt-3 max-w-lg text-[16px] leading-relaxed text-muted-zinc">
         {message}
       </p>
       <Link
         href="/"
-        className="mono mt-5 inline-flex min-h-[36px] items-center rounded-lg border border-white/10 bg-card px-4 text-[10px] font-bold uppercase tracking-[0.1em] text-pure-white transition hover:border-limelight/40 hover:text-limelight"
+        className="mono mt-5 inline-flex min-h-[44px] items-center rounded-lg border border-white/10 bg-card px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-pure-white transition hover:border-limelight/40 hover:text-limelight"
       >
         Back to Shambles
       </Link>
@@ -168,7 +168,7 @@ export default async function NichePage({
               aria-labelledby="koko-cta-title"
               className="card relative overflow-hidden p-5 sm:p-6"
             >
-              <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
+              <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
                 Next move
               </p>
               <h2
@@ -231,13 +231,13 @@ export default async function NichePage({
   return (
     <div className="pb-24 sm:pb-4">
       <header className="border-b border-white/10 pb-7 pt-4 sm:pb-9">
-        <p className="mono text-[9.5px] font-bold uppercase tracking-[0.2em] text-limelight">
+        <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-limelight">
           Niche Intelligence Dossier
         </p>
         <h1 className="mt-3 break-words text-[30px] font-extrabold leading-[1.03] tracking-[-0.04em] text-pure-white [overflow-wrap:anywhere] sm:text-[44px]">
           {query}
         </h1>
-        <p className="mt-2.5 max-w-xl text-[12px] leading-relaxed text-muted-zinc">
+        <p className="mt-2.5 max-w-xl text-[15px] leading-relaxed text-muted-zinc">
           Not read yet. Once this room is read, the dossier opens free for anyone.
         </p>
       </header>

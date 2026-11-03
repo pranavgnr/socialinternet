@@ -19,7 +19,7 @@ export default function CommentIntel({
 }) {
   return (
     <section aria-labelledby="comments-title" className="scroll-mt-24">
-      <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-limelight">
+      <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-limelight">
         Section 05
       </p>
       <h2
@@ -31,14 +31,14 @@ export default function CommentIntel({
 
       {!intel ? (
         <div className="card mt-5 p-5">
-          <p className="text-[13px] leading-relaxed text-muted-zinc">
+          <p className="text-[16px] leading-relaxed text-muted-zinc">
             Comments were not available for this account.
           </p>
         </div>
       ) : (
         <div className="card mt-5 grid gap-6 p-5 sm:p-6 lg:grid-cols-[1fr_1.3fr]">
           <div>
-            <p className="mono text-[9.5px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+            <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
               Audience mood
             </p>
             {intel.mood.length ? (
@@ -66,14 +66,14 @@ export default function CommentIntel({
                 ))}
               </ul>
             ) : (
-              <p className="mt-3 text-[12.5px] leading-relaxed text-muted-zinc">
+              <p className="mt-3 text-[15px] leading-relaxed text-muted-zinc">
                 The comments read did not fall into a clear mood split.
               </p>
             )}
           </div>
 
           <div className="border-t border-white/10 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-            <p className="mono text-[9.5px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+            <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
               Top recurring requests
             </p>
             {intel.requests.length ? (
@@ -87,10 +87,10 @@ export default function CommentIntel({
                       {String(index + 1).padStart(2, "0")}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[12.5px] leading-relaxed text-pure-white">
+                      <p className="text-[15px] leading-relaxed text-pure-white">
                         “{request.text}”
                       </p>
-                      <p className="mono mt-1 text-[10px] uppercase tracking-[0.1em] text-muted-zinc">
+                      <p className="mono mt-1 text-[11px] uppercase tracking-[0.1em] text-muted-zinc">
                         {request.mentions} {mentionWord(request.mentions)}
                       </p>
                     </div>
@@ -98,7 +98,7 @@ export default function CommentIntel({
                 ))}
               </ol>
             ) : (
-              <p className="mt-3 text-[12.5px] leading-relaxed text-muted-zinc">
+              <p className="mt-3 text-[15px] leading-relaxed text-muted-zinc">
                 No recurring request surfaced in the comments read.
               </p>
             )}

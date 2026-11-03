@@ -23,7 +23,7 @@ export default function StartPage() {
         <h1 className="mt-3 text-[28px] font-semibold leading-[1.1] tracking-tight sm:text-[34px]">
           Where could you actually win?
         </h1>
-        <p className="mt-3 max-w-lg text-[14px] leading-relaxed text-muted">
+        <p className="mt-3 max-w-lg text-[16px] leading-relaxed text-muted">
           Most niche advice is a list of big spaces. This ranks the opposite way:
           it looks for rooms where small accounts are the ones breaking out, so
           the ranking answers &ldquo;can someone starting from nothing do this&rdquo;
@@ -37,7 +37,7 @@ export default function StartPage() {
         <h2 className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted">
           How the ranking works
         </h2>
-        <ul className="mt-2 space-y-1.5 text-[12px] leading-relaxed text-muted/80">
+        <ul className="mt-2 space-y-1.5 text-[15px] leading-relaxed text-muted/80">
           <li>
             <span className="text-text">Headroom (30%)</span> — how often the
             accounts breaking out are small ones. This is the signal that matters

@@ -150,12 +150,15 @@ export default function WaitlistForm({
               if (status.kind === "error") setStatus({ kind: "idle" });
             }}
             placeholder={contactPlaceholder}
+            onFocus={(event) =>
+              event.currentTarget.scrollIntoView({ block: "center" })
+            }
             autoComplete="email"
             inputMode="text"
             spellCheck={false}
             aria-required="true"
             aria-describedby={hintId}
-            className="mt-1.5 w-full rounded-lg border border-white/10 bg-obsidian/60 px-3 py-2 text-[13px] text-pure-white outline-none transition placeholder:text-muted-zinc/70 focus:border-limelight/60 focus:ring-1 focus:ring-limelight/20"
+            className="mt-1.5 min-h-[44px] w-full rounded-lg border border-white/10 bg-obsidian/60 px-3 py-2.5 text-[16px] text-pure-white outline-none transition placeholder:text-muted-zinc/70 focus:border-limelight/60 focus:ring-1 focus:ring-limelight/20"
           />
         </div>
 
@@ -175,9 +178,12 @@ export default function WaitlistForm({
             value={handle}
             onChange={(event) => setHandle(event.target.value)}
             placeholder={handlePlaceholder}
+            onFocus={(event) =>
+              event.currentTarget.scrollIntoView({ block: "center" })
+            }
             autoComplete="off"
             spellCheck={false}
-            className="mt-1.5 w-full rounded-lg border border-white/10 bg-obsidian/60 px-3 py-2 text-[13px] text-pure-white outline-none transition placeholder:text-muted-zinc/70 focus:border-limelight/60 focus:ring-1 focus:ring-limelight/20"
+            className="mt-1.5 min-h-[44px] w-full rounded-lg border border-white/10 bg-obsidian/60 px-3 py-2.5 text-[16px] text-pure-white outline-none transition placeholder:text-muted-zinc/70 focus:border-limelight/60 focus:ring-1 focus:ring-limelight/20"
           />
         </div>
       </div>
@@ -190,7 +196,7 @@ export default function WaitlistForm({
         <button
           type="submit"
           disabled={sending}
-          className="inline-flex min-h-[36px] items-center rounded-full bg-luxury-gold px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-luxury-gold/85 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-[44px] items-center rounded-full bg-luxury-gold px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-luxury-gold/85 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {sending ? "Sending…" : submitLabel}
         </button>

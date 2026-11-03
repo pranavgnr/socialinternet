@@ -4,7 +4,7 @@ import { reelBasisLine, type ReelCard } from "@/lib/profileView";
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-zinc">
+      <dt className="mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted-zinc">
         {label}
       </dt>
       <dd className="mono mt-1 text-[15px] font-bold leading-none text-pure-white">
@@ -41,7 +41,7 @@ export default function ReelTrio({
 }) {
   return (
     <section aria-labelledby={id} className="scroll-mt-24">
-      <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-limelight">
+      <p className="mono text-[11px] font-bold uppercase tracking-[0.18em] text-limelight">
         Section {section}
       </p>
       <h2
@@ -68,7 +68,7 @@ export default function ReelTrio({
                   target="_blank"
                   rel="noreferrer noopener"
                   aria-label={`Open reel ${index + 1} on Instagram`}
-                  className="mono text-[10px] uppercase tracking-[0.1em] text-muted-zinc underline-offset-4 transition hover:text-pure-white hover:underline"
+                  className="mono inline-flex min-h-[44px] items-center text-[11px] uppercase tracking-[0.1em] text-muted-zinc underline-offset-4 transition hover:text-pure-white hover:underline"
                 >
                   Open reel ↗
                 </a>
@@ -93,7 +93,7 @@ export default function ReelTrio({
               </dl>
 
               <div className="mt-4">
-                <p className="mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
+                <p className="mono text-[11px] font-bold uppercase tracking-[0.14em] text-muted-zinc">
                   {whyLabel}
                 </p>
                 <ul className="mt-2 space-y-2">
@@ -105,7 +105,7 @@ export default function ReelTrio({
                           tone === "top" ? "bg-limelight" : "bg-luxury-gold"
                         }`}
                       />
-                      <p className="text-[12px] leading-relaxed text-muted-zinc">
+                      <p className="text-[15px] leading-relaxed text-muted-zinc">
                         {line}
                       </p>
                     </li>
@@ -113,7 +113,7 @@ export default function ReelTrio({
                 </ul>
               </div>
 
-              <p className="mt-auto pt-4 text-[10.5px] leading-relaxed text-muted-zinc/70">
+              <p className="mt-auto pt-4 text-[11px] leading-relaxed text-muted-zinc/70">
                 {reelBasisLine(reel.basis)}
               </p>
             </li>
@@ -121,7 +121,7 @@ export default function ReelTrio({
         </ol>
       ) : (
         <div className="card mt-5 p-5">
-          <p className="text-[13px] leading-relaxed text-muted-zinc">
+          <p className="text-[16px] leading-relaxed text-muted-zinc">
             {emptyReason}
           </p>
         </div>

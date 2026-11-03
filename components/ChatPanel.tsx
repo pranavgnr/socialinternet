@@ -90,7 +90,7 @@ export default function ChatPanel() {
         <h2 className="text-[17px] font-semibold tracking-tight">
           Ask about your reels
         </h2>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+        <p className="mt-1 text-[15px] leading-relaxed text-muted">
           Answers use only what we read from your account and this plan. One credit
           per message.
         </p>
@@ -108,13 +108,13 @@ export default function ChatPanel() {
                     : "mr-8 rounded-xl border border-line/70 px-3 py-2.5"
                 }
               >
-                <p className="text-[13.5px] leading-relaxed">
+                <p className="text-[16px] leading-relaxed">
                   {turn.content}
                 </p>
               </div>
             ))
           ) : (
-            <p className="text-[13px] leading-relaxed text-muted">
+            <p className="text-[16px] leading-relaxed text-muted">
               Ask what to post, why a reel worked, or how to open the next one.
               The answer comes from your own account — never from the open
               internet.
@@ -140,7 +140,10 @@ export default function ChatPanel() {
               maxLength={600}
               disabled={busy}
               aria-label="Ask about your reels"
-              className="min-w-0 flex-1 rounded-xl border border-line bg-panel px-3 py-2.5 text-[14px] outline-none placeholder:text-muted/50 focus-within:border-accent/60 disabled:opacity-60"
+              onFocus={(event) =>
+                event.currentTarget.scrollIntoView({ block: "center" })
+              }
+              className="min-h-[44px] min-w-0 flex-1 rounded-xl border border-line bg-panel px-3 py-2.5 text-[16px] outline-none placeholder:text-muted/50 focus-within:border-accent/60 disabled:opacity-60"
             />
             <button
               type="submit"
@@ -176,18 +179,18 @@ export default function ChatPanel() {
       {needsSignIn ? (
         <div className="rounded-xl border border-accent/30 bg-accent/5 px-3.5 py-3.5">
           <p className="text-[13px] font-medium">Sign in to chat</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+          <p className="mt-1 text-[15px] leading-relaxed text-muted">
             Chat is tied to the account whose reels were analysed.
           </p>
           <SignInButton
             label="Continue with Google"
-            className="mt-3 inline-flex min-h-[36px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
+            className="mt-3 inline-flex min-h-[44px] items-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-black transition active:scale-[0.99]"
           />
         </div>
       ) : error ? (
         <p
           role="alert"
-          className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[13px] leading-relaxed text-bad"
+          className="rounded-xl border border-bad/40 bg-bad/5 px-3.5 py-3 text-[16px] leading-relaxed text-bad"
         >
           {error}
         </p>

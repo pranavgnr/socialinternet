@@ -58,7 +58,7 @@ export default function HeroTicker() {
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-limelight shadow-[0_0_10px_rgba(204,255,0,0.85)]"
           aria-hidden="true"
         />
-        <p className="mono text-[10px] font-bold uppercase tracking-[0.2em] text-limelight">
+        <p className="mono text-[11px] font-bold uppercase tracking-[0.2em] text-limelight">
           The creator question
         </p>
       </div>

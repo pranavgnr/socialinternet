@@ -4,7 +4,7 @@ import { currentUser } from "@/lib/auth";
 import { saveCreatorProfile } from "@/lib/creatorProfile";
 import { gate, settleAfter } from "@/lib/gate";
 import { normalizeHandle } from "@/lib/handle";
-import { take, tooMany, refund } from "@/lib/limits";
+import { take, tooMany, refund, refundSlotIfFree } from "@/lib/limits";
 import { runPipeline } from "@/lib/pipeline";
 import { creditLedger } from "@/lib/providers";
 import { analyseHandle } from "@/lib/plan";
@@ -118,6 +118,9 @@ export async function POST(req: Request) {
      * the settle below compares a snapshot taken now against one taken after.
      */
     const vendorUsdAtStart = creditLedger().lifetimeUsd;
+    /** Filled in once the build ends, so the settle and the slot refund read
+     * the exact same measurement. */
+    let vendorUsdSpent: number | null = null;
 
     /** `settleAfter` runs the whole build, then settles the charge: a throw
      * after the charge refunds it in full, and a run the ledger measured as
@@ -125,7 +128,7 @@ export async function POST(req: Request) {
     return await settleAfter(
       verdict.entryId,
       async () => {
-        const { plan, spent } = await runPlanBuild(
+        const { plan } = await runPlanBuild(
           {
             mode,
             handle,
@@ -174,9 +177,15 @@ export async function POST(req: Request) {
           },
         );
 
-        /** Nothing was bought, so nothing is charged: a handle already on disk is
-         * free to open, and the allowance is there to cap spending, not visits. */
-        if (spent === 0) refund(limitKey);
+        /**
+         * Nothing was bought, so nothing is charged: a handle already on disk is
+         * free to open, and the allowance is there to cap spending, not visits.
+         * Measured the same way the gem settle measures it — real vendor money,
+         * not the result's unit counter.
+         */
+        const vendorUsdSpentNow = creditLedger().lifetimeUsd - vendorUsdAtStart;
+        vendorUsdSpent = vendorUsdSpentNow;
+        refundSlotIfFree(limitKey, vendorUsdSpentNow);
 
         /**
          * Own mode keeps its existing response (the plan is on disk). Competitor
@@ -202,7 +211,7 @@ export async function POST(req: Request) {
          * measured cost up, which keeps the charge (conservative, never a free
          * plan).
          */
-        return creditLedger().lifetimeUsd - vendorUsdAtStart;
+        return vendorUsdSpent ?? creditLedger().lifetimeUsd - vendorUsdAtStart;
       },
     );
   } catch (err) {

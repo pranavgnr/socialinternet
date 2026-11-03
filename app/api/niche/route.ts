@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { gate, settleAfter } from "@/lib/gate";
-import { take, tooMany, refund } from "@/lib/limits";
+import { take, tooMany, refund, refundSlotIfFree } from "@/lib/limits";
 import {
   cachedNiches,
   nicheCacheStatus,
@@ -10,6 +10,7 @@ import {
   type NicheResearch,
 } from "@/lib/niche";
 import { attachCookie, ensureAccount } from "@/lib/session";
+import { creditLedger } from "@/lib/providers";
 import { friendly } from "@/lib/userError";
 
 export const maxDuration = 300;
@@ -82,9 +83,12 @@ export async function POST(req: Request) {
 
     /** `settleAfter` runs the pull and the response build, then settles the
      * charge: a throw after the charge refunds it in full, and a pull that
-     * turned out to cost the vendor nothing is refunded too. The count comes
-     * from the same field the rate-limit free read looks at. */
+     * turned out to cost the vendor nothing is refunded too. */
+    const vendorUsdAtStart = creditLedger().lifetimeUsd;
     let research: NicheResearch | undefined;
+    /** Filled in once the pull ends, so the settle and the slot refund read
+     * the exact same measurement. */
+    let vendorUsdSpent: number | null = null;
     return await settleAfter(
       verdict.entryId,
       async () => {
@@ -95,8 +99,13 @@ export async function POST(req: Request) {
         });
 
         /** Free searches are refunded: reopening a niche on disk must never use up
-         * the day's allowance, or a visitor gets locked out of their own work. */
-        if (research.credits.spent === 0) refund(limitKey);
+         * the day's allowance, or a visitor gets locked out of their own work.
+         * Measured in real vendor money, the same value the gem settle uses — a
+         * search can buy owner profile reads without moving the research unit
+         * counter. */
+        const vendorUsdSpentNow = creditLedger().lifetimeUsd - vendorUsdAtStart;
+        vendorUsdSpent = vendorUsdSpentNow;
+        refundSlotIfFree(limitKey, vendorUsdSpentNow);
 
         return await attachCookie(
           NextResponse.json({
@@ -115,7 +124,7 @@ export async function POST(req: Request) {
           account,
         );
       },
-      () => research?.credits.spent ?? 0,
+      () => vendorUsdSpent ?? creditLedger().lifetimeUsd - vendorUsdAtStart,
     );
   } catch (err) {
     return NextResponse.json(

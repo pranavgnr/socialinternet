@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { gate, settleAfter } from "@/lib/gate";
 import { normalizeHandle } from "@/lib/handle";
-import { take, tooMany, refund } from "@/lib/limits";
+import { take, tooMany, refund, refundSlotIfFree } from "@/lib/limits";
 import { analyseHandle } from "@/lib/plan";
 import { runPlanBuild } from "@/lib/planRequest";
 import { runProfileRead } from "@/lib/profileRequest";
@@ -60,11 +60,14 @@ export async function POST(req: Request) {
     }
 
     const vendorUsdAtStart = creditLedger().lifetimeUsd;
+    /** Filled in once the read ends, so the settle and the slot refund read
+     * the exact same measurement. */
+    let vendorUsdSpent: number | null = null;
 
     return await settleAfter(
       verdict.entryId,
       async () => {
-        const read = await runProfileRead(
+        await runProfileRead(
           { handle },
           {
             runPlan: async (h) => {
@@ -98,13 +101,17 @@ export async function POST(req: Request) {
 
         /**
          * A run the research measured as free (everything already on disk) must
-         * not use up the daily read allowance either. Same rule as /api/plan.
+         * not use up the daily read allowance either. Measured in real vendor
+         * money, the same value the gem settle uses — a competitor read can buy
+         * owner profiles without moving the research unit counter.
          */
-        if (read.spent === 0) refund(limitKey);
+        const vendorUsdSpentNow = creditLedger().lifetimeUsd - vendorUsdAtStart;
+        vendorUsdSpent = vendorUsdSpentNow;
+        refundSlotIfFree(limitKey, vendorUsdSpentNow);
 
         return await attachCookie(NextResponse.json({ ok: true }), account);
       },
-      () => creditLedger().lifetimeUsd - vendorUsdAtStart,
+      () => vendorUsdSpent ?? creditLedger().lifetimeUsd - vendorUsdAtStart,
     );
   } catch (err) {
     return NextResponse.json(

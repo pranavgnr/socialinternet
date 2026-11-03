@@ -76,13 +76,13 @@ export async function generateMetadata({
 
   if (!parsed.ok) {
     return {
-      title: "Niche dossier — Shambles",
+      title: "Niche dossier",
       robots: { index: false, follow: false },
     };
   }
 
   return {
-    title: `${parsed.query} — Shambles niche dossier`,
+    title: `${parsed.query} — niche dossier`,
     description: `Instagram reels in ${parsed.query}, ranked by views per follower, with Koko's briefing written only from the numbers read.`,
     robots: { index: true, follow: true },
   };

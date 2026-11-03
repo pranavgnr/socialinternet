@@ -26,11 +26,17 @@ const spaceMono = Space_Mono({
   variable: "--font-space-mono",
 });
 
+const TITLE = "Shambles — the AI that works for creators";
+const DESCRIPTION =
+  "Shambles reads a public Instagram account, shows what is actually working in its niche, and tells the creator what to post next. Koko, the AI director, does the work.";
+
 export const metadata: Metadata = {
   applicationName: "Shambles",
-  title: "Shambles — the AI that works for creators",
-  description:
-    "Shambles reads a public Instagram account, shows what is actually working in its niche, and tells the creator what to post next. Koko, the AI director, does the work.",
+  title: {
+    default: TITLE,
+    template: "%s — Shambles",
+  },
+  description: DESCRIPTION,
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [{ url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" }],
@@ -42,10 +48,17 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
   },
   openGraph: {
-    title: "Shambles — the AI that works for creators",
+    title: TITLE,
     description:
       "An AI director for Instagram creators: a real account audit, competitor intel and the next posts worth making.",
+    siteName: "Shambles",
     type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: TITLE,
+    description:
+      "An AI director for Instagram creators: a real account audit, competitor intel and the next posts worth making.",
   },
   robots: { index: true, follow: true },
 };

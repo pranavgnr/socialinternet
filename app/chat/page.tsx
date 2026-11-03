@@ -14,7 +14,7 @@ import { getViewer } from "@/lib/viewer";
 export const instant = false;
 
 export const metadata: Metadata = {
-  title: "Koko — Shambles AI director",
+  title: "Koko, your AI director",
   description:
     "Koko works from the account and niche that were actually read: scripts, competitor patterns and the next post.",
   robots: { index: false, follow: false },

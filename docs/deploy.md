@@ -1,4 +1,4 @@
-# Deploying Creators 101
+# Deploying Shambles
 
 This is the small-VPS guide: one server, Docker Compose, Postgres, Caddy for
 HTTPS, and cron for the jobs. It is written for a first deployment; you do not
@@ -120,6 +120,7 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `APIFY_ITEM_USD` | No (default `0.0027`) | No | What Apify bills per result on your plan. |
 | `APIFY_RESULTS_LIMIT` | No (default `24`) | No | Results requested per Apify profile read. |
 | `HIKERAPI_USD_PER_CALL` | No (default `0.02`) | No | What HikerAPI actually charges your account tier. |
+| `HIKERAPI_COMMENTS` | No (default `1`) | No | Fetch comments with a HikerAPI post read (one extra call). Set `0` to skip. |
 | `CREDIT_BUDGET` | No (default `12`) | No | Vendor units allowed in one run. |
 | `CREDIT_BUDGET_USD` | No (default `1.00`) | No | Real-money ceiling for one run. |
 | `WAITLIST_GLOBAL_PER_HOUR` | No (default `300`) | No | Global waitlist signup ceiling per hour across all IPs. The per-IP cap is 10/hour and one contact is capped at 5/hour; this is the backstop when an untrusted client can rotate or spoof `x-forwarded-for`. |
@@ -128,6 +129,10 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `HANDLE_CACHE_HOURS` | No (default `12`) | No | How long an account's own feed is reused before it is read again. `168` keeps a warmed handle open for a week. |
 | `OWNER_CACHE_HOURS` | No (default `168`) | No | How long an owner's follower count from a niche search is reused. A cached count costs no profile read. |
 | `OWNER_PROFILE_MAX` | No (default `12`) | No | Fresh owner-profile reads allowed per niche search. Cached handles do not count. |
+| `PEER_MAX` | No (default `6`) | No | Maximum similar accounts kept per plan. |
+| `PEER_LOOKUP_MAX` | No (default `6`) | No | Fresh follower reads bought while discovering peers. |
+| `PROFILE_CACHE_HOURS` | No (default `168`) | No | How long a stored profile dossier is served before a fresh read is offered. |
+| `AUTH_SAMPLE_PAGES` | No (default `0` = off) | No | Follower pages bought for the authenticity estimate. One page is below the 40-row floor, so sampling stays dormant until paging is verified. |
 | `ENRICH_MAX_CREDITS` | No (default `6`) | No | Posts bought for the deep pass per plan. |
 | `ENRICH_CREDIT_RESERVE` | No (default `5`) | No | Never spend the vendor key below this balance. |
 | `POST_CACHE_HOURS` | No (default `168`) | No | How long a bought post payload is reused. |
@@ -140,6 +145,9 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `CANARY_WEBHOOK_URL` | No | No (treat as private) | Optional webhook for a failed canary. |
 | `CREATORS_DATA_DIR` | No (default `./data`) | No | Where JSON plans and caches live. Compose sets `/app/data`. |
 | `COOKIE_SECURE` | No | No | Force the session cookie's `Secure` flag on/off when testing over LAN/HTTP. Leave unset in production. |
+| `GEMINI_API_KEY` | No | Yes | Google AI Studio / Cloud key. Turns on watching a reel's own MP4; without it profiles are captions-only and say so. Billed by Google per token, not in gems. |
+| `GEMINI_MODEL` | No (default `gemini-2.5-flash`) | No | Model used by the video reader when `GEMINI_API_KEY` is set. |
+| `VIDEO_READ_MAX` | No (default `6`) | No | Reels watched per profile, one at a time, inside a 90-second budget. Capped at `12`; `0` is treated as unset. |
 | `LLM_MODEL` | No (default `deepseek-chat`) | No | Model name. |
 | `LLM_BASE_URL` | No (default `https://api.deepseek.com/v1`) | No | Any OpenAI-compatible endpoint. |
 | `LLM_REASONING_EFFORT` | No (default `none`) | No | `none` is faster and cheaper for JSON extraction. |

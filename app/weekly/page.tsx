@@ -9,7 +9,7 @@ import { mondayOf } from "@/lib/weekly";
 export const instant = false;
 
 export const metadata = {
-  title: "This week — Creators 101",
+  title: "This week",
   description:
     "What moved on your account since last Monday, the moves to make in order, and the posts to make them with.",
 };

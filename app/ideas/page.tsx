@@ -9,6 +9,13 @@ import type { Recommendation } from "@/lib/types";
 
 export const instant = false;
 
+export const metadata = {
+  title: "This week's ideas",
+  description:
+    "The posts Shambles built for your account this week, each one traced to a public reel that beat its own account's usual views.",
+  robots: { index: false, follow: false },
+};
+
 /**
  * "Singer · Kannada" — the way a person would describe the account.
  *

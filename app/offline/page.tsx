@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Offline — Shambles",
+  title: "Offline",
   description: "Shambles needs a connection for live reads.",
   robots: { index: false, follow: false },
 };

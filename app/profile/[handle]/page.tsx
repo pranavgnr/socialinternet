@@ -27,7 +27,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const handle = normalizeHandle((await params).handle);
   return {
-    title: handle ? `@${handle} — Shambles audit` : "Shambles audit",
+    title: handle ? `@${handle} — audit` : "Profile audit",
     /**
      * Every profile is `noindex`: these are pages about someone's public
      * account, held as a seven-day artifact rather than a permanent record, and

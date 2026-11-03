@@ -2,6 +2,7 @@
   "name": "reel-engine",
   "version": "0.1.0",
   "private": true,
+  "description": "Shambles — the AI that works for creators: an Instagram account audit, niche intelligence and an AI director named Koko.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

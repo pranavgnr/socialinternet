@@ -11,6 +11,8 @@ import {
   type NicheView,
 } from "@/lib/niche";
 
+// TODO(task-8): redirect `/discover?q=<phrase>` to `/search/niche/<phrase>` and
+// retire this explorer once the dossier page has shipped.
 export const instant = false;
 
 export const metadata = {

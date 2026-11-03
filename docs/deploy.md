@@ -121,6 +121,11 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `APIFY_RESULTS_LIMIT` | No (default `24`) | No | Results requested per Apify profile read. |
 | `HIKERAPI_USD_PER_CALL` | No (default `0.02`) | No | What HikerAPI actually charges your account tier. |
 | `HIKERAPI_COMMENTS` | No (default `1`) | No | Fetch comments with a HikerAPI post read (one extra call). Set `0` to skip. |
+| `SCRAPECREATORS_USD_PER_CALL` | No (default `0.00188`) | No | What ScrapeCreators bills per request (`$47 / 25,000`). |
+| `CREDIT_COST_NICHE` | No (default `6`) | No | Gems charged for a fresh niche read. |
+| `CREDIT_COST_HANDLE` | No (default `6`) | No | Gems charged for a fresh handle/profile read. |
+| `CREDIT_COST_CHAT` | No (default `1`) | No | Gems charged for one Koko message. |
+| `CREDIT_DAILY_FREE` | No (default `15`) | No | The free gem pool per IST day. Never accumulates. |
 | `CREDIT_BUDGET` | No (default `12`) | No | Vendor units allowed in one run. |
 | `CREDIT_BUDGET_USD` | No (default `1.00`) | No | Real-money ceiling for one run. |
 | `WAITLIST_GLOBAL_PER_HOUR` | No (default `300`) | No | Global waitlist signup ceiling per hour across all IPs. The per-IP cap is 10/hour and one contact is capped at 5/hour; this is the backstop when an untrusted client can rotate or spoof `x-forwarded-for`. |
@@ -131,10 +136,17 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `OWNER_PROFILE_MAX` | No (default `12`) | No | Fresh owner-profile reads allowed per niche search. Cached handles do not count. |
 | `PEER_MAX` | No (default `6`) | No | Maximum similar accounts kept per plan. |
 | `PEER_LOOKUP_MAX` | No (default `6`) | No | Fresh follower reads bought while discovering peers. |
+| `PEER_MIN_COHORT` | No (default `3`) | No | Smallest size-matched peer set quoted as "accounts your size"; below it the plan compares against the whole room. |
 | `PROFILE_CACHE_HOURS` | No (default `168`) | No | How long a stored profile dossier is served before a fresh read is offered. |
 | `AUTH_SAMPLE_PAGES` | No (default `0` = off) | No | Follower pages bought for the authenticity estimate. One page is below the 40-row floor, so sampling stays dormant until paging is verified. |
 | `ENRICH_MAX_CREDITS` | No (default `6`) | No | Posts bought for the deep pass per plan. |
 | `ENRICH_CREDIT_RESERVE` | No (default `5`) | No | Never spend the vendor key below this balance. |
+| `ENRICH_ACCOUNTS` | No (default `6`) | No | Paid accounts topped up with their own feed during a niche search. |
+| `FREE_ENRICH_ACCOUNTS` | No (default `32`) | No | Accounts topped up when the reader is free. Patience-bound, not budget-bound. |
+| `ENRICH_COMMENTS_MAX` | No (default `4`) | No | Comment calls bought for thin posts in a plan. |
+| `LANG_VERIFY_MAX` | No (default `8`) | No | Reels downloaded and watched to settle a language the caption could not. Free, but cached. |
+| `LANG_COMMENT_MAX` | No (default `4`) | No | Posts bought for their comment section during language verification. `0` switches the paid step off. |
+| `LANG_COMMENT_CREDITS` | No (default `4`) | No | Hard credit ceiling for that paid comment step. |
 | `POST_CACHE_HOURS` | No (default `168`) | No | How long a bought post payload is reused. |
 | `WHISPER_MODEL` | No | No | Path to a whisper.cpp model. Not used in the Docker image (caption-only Linux). |
 | `HOOK_PAID_TRANSCRIPT` | No (default `0`) | No | `1` buys a transcript when no local model exists. Costs 10 vendor credits each. |
@@ -152,9 +164,16 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `LLM_BASE_URL` | No (default `https://api.deepseek.com/v1`) | No | Any OpenAI-compatible endpoint. |
 | `LLM_REASONING_EFFORT` | No (default `none`) | No | `none` is faster and cheaper for JSON extraction. |
 
-The credit prices can also be tuned with `CREDIT_COST_NICHE`,
-`CREDIT_COST_HANDLE`, `CREDIT_COST_CHAT` and `CREDIT_DAILY_FREE`; the defaults
-are fine for V1.
+The gem prices above are the defaults the code ships with; they can be tuned
+without a deploy.
+
+> **Video reading is billed by Google, not in gems.** When `GEMINI_API_KEY` is
+> set, watching a reel's MP4 spends Google tokens on the Google bill; no gem is
+> charged for it.
+>
+> **`VIDEO_READ_MAX=0` does not turn video reading off.** The env parser treats
+> `0` as "unset" and falls back to `6` (capped at `12`). To disable the feature,
+> leave `GEMINI_API_KEY` blank; without a key the reader never runs.
 
 ---
 

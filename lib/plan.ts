@@ -27,12 +27,14 @@ import { cohortFitness, pruneCohort } from "./cohort";
 import { instagramPeers } from "./peers";
 import { languageName, readLanguage } from "./lang";
 import { coherentLabel, labelFromCaptions, nicheQuality, normaliseNiche } from "./nicheLabel";
+import { plain } from "./plain";
 import { buildPlay, topSongTitle } from "./playbook";
 import { buildRows, fmt, median, medianGapDays, peersMedian, titleCase } from "./stats";
 import { contentWords } from "./text";
 import type {
   CohortFit,
   GrowthPlan,
+  PlanCompetitor,
   PlanFormat,
   PlanHook,
   PlanGap,
@@ -696,7 +698,22 @@ export interface PlanInput {
    * same whether they are the right size or not, and that difference is the
    * whole claim.
    */
-  peerRoom?: { basis: string; sizeMatched: boolean; accounts: number; band?: { low: number; high: number } };
+  peerRoom?: {
+    basis: string;
+    sizeMatched: boolean;
+    accounts: number;
+    band?: { low: number; high: number };
+    /**
+     * The peers module's own reasons, keyed by lower-cased handle.
+     *
+     * The profile page's competitor section prints "why this account was
+     * chosen", and those sentences are written next to the evidence in
+     * `lib/peers.ts` — "owns one of the top reels in this niche", "same
+     * language", "about your size". Re-deriving them later from a metric would
+     * invent a weaker claim, so they ride along with the room verdict.
+     */
+    reasons?: Record<string, string[]>;
+  };
 }
 
 /**
@@ -1265,6 +1282,41 @@ export function buildPlan({
         : undefined;
   if (roomNote) diagnosis.push(roomNote);
 
+  /**
+   * The top niche competitors the lead moves cite, kept so the profile page can
+   * show "3 next reel ideas" without a second vendor pull. Each entry is
+   * evidence — the competitor's handle, their winning reel's views, and why
+   * they were chosen — and the caption is the competitor's own words, never
+   * rewritten. Views come from the reel payload the research already holds.
+   */
+  const payloadViews = new Map(
+    (research.payload ?? []).map((r) => [r.url, r.views] as const),
+  );
+  const competitors: PlanCompetitor[] = [];
+  for (const move of play.moves) {
+    for (const e of move.evidence) {
+      if (!e.url) continue;
+      const handle = e.handle.replace(/^@/, "");
+      if (handle.toLowerCase() === clean.toLowerCase()) continue;
+      if (competitors.some((c) => c.url === e.url)) continue;
+      const peerReasons = peerRoom?.reasons?.[handle.toLowerCase()];
+      competitors.push({
+        handle,
+        views: payloadViews.get(e.url) ?? 0,
+        url: e.url,
+        caption: e.caption ?? move.title,
+        // Prefer the peers module's own reasons ("owns one of the top reels in
+        // this niche", "same language"); fall back to the metric that put the
+        // reel on the page when this account came from the room rather than
+        // the peer builder.
+        reasons:
+          peerReasons?.length ? peerReasons.map((r) => plain(r)) : [plain(e.metric)],
+      });
+      if (competitors.length >= 3) break;
+    }
+    if (competitors.length >= 3) break;
+  }
+
   return {
     language:
       research.language.dropped || evidence
@@ -1361,6 +1413,14 @@ export function buildPlan({
     moves: play.moves,
     questions: [],
     audit: audit ?? undefined,
+    /**
+     * The account's own reels actually read, retained so the profile page can
+     * show top-3/bottom-3 reels and the likes/comment ratios from posts that
+     * were really measured. Kept on the plan (rather than only in the handle
+     * cache) so a saved plan is self-contained for the profile render.
+     */
+    reels: mineReels,
+    competitors: competitors.length ? competitors : undefined,
     nextMove: buildNextMove({
       plan: { handle: clean, moves: play.moves, standing: {
         followers, medianViews: ownMedian, bestViews: ownBest,
@@ -1653,6 +1713,12 @@ export async function analyseHandle(
         sizeMatched: peers.sizeMatched,
         accounts: peers.accounts.length,
         band: peers.band,
+        reasons: Object.fromEntries(
+          peers.accounts.map((account) => [
+            account.handle.toLowerCase(),
+            account.reasons,
+          ]),
+        ),
       };
       dbg("rebuild OK", query, "peerReels", peers.reels.length, "accounts", peers.accounts.map((a) => a.handle).join(","), "shaped", rebuilt.payload?.length);
       return rebuilt;

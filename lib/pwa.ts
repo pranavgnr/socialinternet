@@ -6,38 +6,32 @@
  * and `scripts/test-pwa.ts` evaluates both against one table of URLs, which is
  * what keeps them honest.
  *
- * The cache is deliberately tiny. Shambles reads private accounts, spends
- * gems and moves credits, so nothing authenticated and nothing under `/api/`
- * is ever stored. Only build assets, icons, fonts and the `/offline` shell
- * may enter the cache.
+ * Safety does not come from inspecting cookies (a worker cannot read them). It
+ * comes from a public allowlist plus network-only navigations: only build
+ * assets, icons, fonts and the static offline shell may enter the cache. Every
+ * other request, including `/api/` and every private page, is left to the
+ * browser and never persisted.
  */
 
 export interface CacheRequestLike {
   method: string;
   url: string;
-  /** True when the worker cannot prove the request is anonymous. */
-  hasCredentials: boolean;
 }
 
 /** Prefixes whose GET responses are safe, public build output. */
 const CACHEABLE_PREFIXES = ["/_next/static/", "/icons/", "/fonts/"] as const;
 
 /** The only page shell allowed in the cache: the offline fallback itself. */
-const CACHEABLE_PATHS = new Set(["/offline", "/offline/"]);
+const CACHEABLE_PATHS = new Set(["/offline", "/offline/", "/offline.html"]);
 
 const FONT_FILE = /\.(?:woff2?|ttf|otf|eot)$/i;
 
 /**
- * True only for anonymous GETs of public assets.
- *
- * A worker cannot read the `Cookie` header, so callers pass `hasCredentials`
- * when they know a request is authenticated (the register/install code and the
- * sync test do). Everything else that is not an explicit public asset is left
- * alone: the browser talks to the network, and no private HTML is persisted.
+ * True only for GETs of public assets. The worker also checks same-origin and
+ * the response headers before storing anything; this helper decides the URL.
  */
 export function shouldCache(request: CacheRequestLike): boolean {
   if (request.method.toUpperCase() !== "GET") return false;
-  if (request.hasCredentials) return false;
 
   let pathname: string;
   try {
@@ -52,6 +46,45 @@ export function shouldCache(request: CacheRequestLike): boolean {
     return true;
   }
   return FONT_FILE.test(pathname);
+}
+
+/**
+ * How many entries the static cache may hold. Hashed chunks accumulate on every
+ * deploy; this cap keeps one cache from growing forever.
+ */
+export const CACHE_MAX_ENTRIES = 120;
+
+/** Shell entries that must survive a trim. */
+const PROTECTED_CACHE_PATHS = new Set([
+  "/offline",
+  "/offline/",
+  "/offline.html",
+]);
+
+function cachePathname(url: string): string | null {
+  try {
+    return new URL(url, "https://shambles.local").pathname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Oldest-first eviction list. `urls` is in `cache.keys()` insertion order;
+ * returns the URLs to delete so the cache is at most `max` entries. The offline
+ * shell is never returned, even when it is the oldest entry.
+ */
+export function cacheEntriesToTrim(
+  urls: string[],
+  max: number = CACHE_MAX_ENTRIES,
+): string[] {
+  if (urls.length <= max) return [];
+  const removable = urls.filter((url) => {
+    const pathname = cachePathname(url);
+    return pathname !== null && !PROTECTED_CACHE_PATHS.has(pathname);
+  });
+  const excess = urls.length - max;
+  return removable.slice(0, Math.min(excess, removable.length));
 }
 
 /** `v1` -> `shambles-static-v1`. Bump the version to invalidate a deploy. */
@@ -70,28 +103,68 @@ export function isAppCache(name: string): boolean {
  *
  * Desktop Chrome can install too, but the founder requirement is a phone-first
  * bar: desktop visitors get the browser's own affordance instead of a bar over
- * the page. iPadOS reports itself as a Mac, so the `Mobile/` token is checked
- * as well as the classic iOS tokens.
+ * the page. iPadOS in desktop-UA mode reports itself as a Macintosh, so touch
+ * capability is checked as well as the classic iOS tokens.
  */
-export function isInstallable(userAgent: string): boolean {
+export function isInstallable(
+  userAgent: string,
+  maxTouchPoints = 0,
+): boolean {
   const ua = userAgent || "";
   if (/iphone|ipad|ipod/i.test(ua)) return true;
   if (/android/i.test(ua)) return true;
+  if (/macintosh/i.test(ua) && maxTouchPoints > 1) return true;
   if (/mobile/i.test(ua) && !/windows nt|macintosh|cros/i.test(ua)) return true;
   return false;
 }
 
-/** iOS browsers do not fire `beforeinstallprompt`; Safari needs the hint. */
-export function isIosSafari(userAgent: string): boolean {
+/**
+ * The iOS "Share → Add to Home Screen" hint belongs to Safari only.
+ *
+ * CriOS (real Chrome on iOS), FxiOS, EdgiOS, Opera and every common in-app
+ * browser use WebKit but cannot run Safari's add-to-home flow, so they get no
+ * hint. iPadOS in desktop-UA mode looks like a Macintosh; `maxTouchPoints > 1`
+ * identifies it as an iPad.
+ */
+export function isIosSafari(
+  userAgent: string,
+  maxTouchPoints = 0,
+): boolean {
   const ua = userAgent || "";
   const ios = /iphone|ipad|ipod/i.test(ua);
-  if (!ios) return false;
-  // CriOS/FxiOS/EdgiOS/OPiOS still use WebKit but are not Safari's share sheet
-  // wording, so keep the hint to Safari proper.
-  return !/(crios|fxios|edgios|opios|mercury)/i.test(ua);
+  const ipadDesktop = /macintosh/i.test(ua) && maxTouchPoints > 1;
+  if (!ios && !ipadDesktop) return false;
+  if (
+    /(instagram|fban|fbav|line\/|snapchat|gsa\/|crios|fxios|edgios|opios|mercury)/i.test(
+      ua,
+    )
+  ) {
+    return false;
+  }
+  return /safari/i.test(ua);
 }
 
 export const INSTALL_DISMISS_MS = 30 * 24 * 60 * 60 * 1000;
+
+export interface VisitRecord {
+  /** Local calendar day, `YYYY-M-D`. */
+  day: string;
+  count: number;
+}
+
+/**
+ * Count one visit per calendar day. The first visit is 1, so a visitor sees the
+ * install bar on the second distinct day (or earlier after opening a profile),
+ * and a reload on the same day does not count twice.
+ */
+export function nextVisit(
+  previous: VisitRecord | null,
+  todayKey: string,
+): VisitRecord {
+  if (!previous || !previous.day) return { day: todayKey, count: 1 };
+  if (previous.day === todayKey) return previous;
+  return { day: todayKey, count: previous.count + 1 };
+}
 
 export interface InstallPromptState {
   /** Completed visits, including this one. */
@@ -106,7 +179,7 @@ export interface InstallPromptState {
 }
 
 /**
- * Show after the second visit or after a profile was opened, never in
+ * Show on the second distinct visit or after a profile was opened, never in
  * standalone mode, and stay quiet for 30 days after a dismissal.
  */
 export function shouldShowInstallPrompt(state: InstallPromptState): boolean {

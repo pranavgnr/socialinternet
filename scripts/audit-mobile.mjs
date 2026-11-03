@@ -241,6 +241,28 @@ const AUDIT_IN_PAGE = String.raw`(async () => {
     }
   }
 
+  // Micro labels must stay at least 11px on phones. Walk real text nodes so an
+  // inherited 11px is measured where the reader actually sees it.
+  const smallText = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let textNode;
+  while ((textNode = walker.nextNode())) {
+    const value = (textNode.textContent || "").replace(/\s+/g, " ").trim();
+    if (!value) continue;
+    const el = textNode.parentElement;
+    if (!el) continue;
+    if (el.closest("script,style,noscript,svg,.sr-only,[aria-hidden='true']")) continue;
+    if (!visible(el)) continue;
+    const size = parseFloat(getComputedStyle(el).fontSize);
+    if (size < 10.99) {
+      smallText.push({
+        tag: el.tagName.toLowerCase(),
+        label: value.slice(0, 50),
+        size,
+      });
+    }
+  }
+
   const overlays = [];
   const koko = document.querySelector(".koko-aura");
   if (koko && visible(koko)) overlays.push({ name: "koko", el: koko, rect: rectOf(koko) });
@@ -337,6 +359,8 @@ const AUDIT_IN_PAGE = String.raw`(async () => {
     smallCount: small.length,
     smallInputs: smallInputs.slice(0, 10),
     smallInputCount: smallInputs.length,
+    smallText: smallText.slice(0, 20),
+    smallTextCount: smallText.length,
     overlaps: overlaps.slice(0, 20),
     overlapCount: overlaps.length,
     overlapsAtRest,
@@ -438,6 +462,7 @@ async function main() {
           overflow: result?.overflow ?? null,
           small: result?.smallCount ?? null,
           inputs: result?.smallInputCount ?? null,
+          text: result?.smallTextCount ?? null,
           overlaps: result?.overlapCount ?? null,
           errors: consoleErrors.length,
           detail: [
@@ -445,6 +470,7 @@ async function main() {
             result?.overflow > 1 ? `overflowing: ${listLabels(result.overflowers, 3)}` : "",
             result?.smallCount ? `small: ${listLabels(result.small, 12)}` : "",
             result?.smallInputCount ? `inputs: ${listLabels(result.smallInputs, 3)}` : "",
+            result?.smallTextCount ? `text<11: ${listLabels(result.smallText, 5)}` : "",
             result?.overlapCount ? `overlap: ${listLabels(result.overlaps, 3)}` : "",
             !result?.overlapCount && result?.overlapsAtRest
               ? `${result.overlapsAtRest} control(s) behind a fixed bar at rest, all scroll clear`
@@ -462,6 +488,7 @@ async function main() {
           result.overflow > 1 ||
           result.smallCount > 0 ||
           result.smallInputCount > 0 ||
+          result.smallTextCount > 0 ||
           result.overlapCount > 0 ||
           consoleErrors.length > 0;
         if (bad) exitCode = 1;
@@ -588,12 +615,12 @@ async function main() {
 
     console.log("");
     console.log(
-      `${pad("VIEW", 10)}${pad("ROUTE", 42)}${pad("OVERFLOW", 10)}${pad("TARGETS", 9)}${pad("INPUTS", 8)}${pad("OVERLAP", 9)}${pad("ERRORS", 8)}`,
+      `${pad("VIEW", 10)}${pad("ROUTE", 42)}${pad("OVERFLOW", 10)}${pad("TARGETS", 9)}${pad("INPUTS", 8)}${pad("TEXT<11", 9)}${pad("OVERLAP", 9)}${pad("ERRORS", 8)}`,
     );
-    console.log("-".repeat(96));
+    console.log("-".repeat(105));
     for (const row of rows) {
       console.log(
-        `${pad(row.viewport, 10)}${pad(row.route, 42)}${pad(row.overflow === null ? "FAIL" : `${row.overflow}px`, 10)}${pad(row.small ?? "-", 9)}${pad(row.inputs ?? "-", 8)}${pad(row.overlaps ?? "-", 9)}${pad(row.errors, 8)}`,
+        `${pad(row.viewport, 10)}${pad(row.route, 42)}${pad(row.overflow === null ? "FAIL" : `${row.overflow}px`, 10)}${pad(row.small ?? "-", 9)}${pad(row.inputs ?? "-", 8)}${pad(row.text ?? "-", 9)}${pad(row.overlaps ?? "-", 9)}${pad(row.errors, 8)}`,
       );
       if (row.detail) console.log(`  └ ${row.detail}`);
     }
@@ -621,6 +648,7 @@ async function main() {
         row.overflow > 1 ||
         row.small > 0 ||
         row.inputs > 0 ||
+        row.text > 0 ||
         row.overlaps > 0 ||
         row.errors > 0 ||
         row.overflow === null,

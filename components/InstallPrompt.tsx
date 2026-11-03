@@ -4,8 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import {
+  isInstallable,
   isIosSafari,
+  nextVisit,
   shouldShowInstallPrompt,
+  type VisitRecord,
 } from "@/lib/pwa";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -22,31 +25,33 @@ function today(): string {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 
-function readVisits(): { day: string; count: number } {
+function readVisits(): VisitRecord | null {
   try {
     const raw = window.localStorage.getItem(VISIT_KEY);
-    if (!raw) return { day: today(), count: 0 };
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as { day?: string; count?: number };
-    return {
-      day: typeof parsed.day === "string" ? parsed.day : "",
-      count: typeof parsed.count === "number" ? parsed.count : 0,
-    };
+    if (typeof parsed.day !== "string" || typeof parsed.count !== "number") {
+      return null;
+    }
+    return { day: parsed.day, count: parsed.count };
   } catch {
-    return { day: today(), count: 0 };
+    return null;
   }
 }
 
-/** Count one visit per calendar day, so a reload is not a "second visit". */
+/**
+ * Count one visit per calendar day. The first visit is 1, so the bar appears on
+ * the second distinct day (or earlier after opening a profile); a reload on the
+ * same day does not count twice.
+ */
 function bumpVisit(): number {
-  const day = today();
-  const stored = readVisits();
-  const count = stored.day === day ? stored.count : stored.count + 1;
+  const next = nextVisit(readVisits(), today());
   try {
-    window.localStorage.setItem(VISIT_KEY, JSON.stringify({ day, count }));
+    window.localStorage.setItem(VISIT_KEY, JSON.stringify(next));
   } catch {
     // Storage blocked: no repeat prompt, but the site keeps working.
   }
-  return count;
+  return next.count;
 }
 
 function readNumber(key: string): number | null {
@@ -91,9 +96,14 @@ export default function InstallPrompt() {
         return;
       }
 
+      const deviceInstallable = isInstallable(
+        navigator.userAgent,
+        navigator.maxTouchPoints || 0,
+      );
       const mobile =
-        window.matchMedia("(max-width: 767px)").matches ||
-        window.matchMedia("(pointer: coarse)").matches;
+        deviceInstallable &&
+        (window.matchMedia("(max-width: 767px)").matches ||
+          window.matchMedia("(pointer: coarse)").matches);
       const standalone =
         window.matchMedia("(display-mode: standalone)").matches ||
         (navigator as Navigator & { standalone?: boolean }).standalone === true;
@@ -127,7 +137,10 @@ export default function InstallPrompt() {
         return;
       }
 
-      const onIos = isIosSafari(navigator.userAgent);
+      const onIos = isIosSafari(
+        navigator.userAgent,
+        navigator.maxTouchPoints || 0,
+      );
       setIos(onIos);
       if (onIos || promptRef.current) {
         setVisible(true);
@@ -218,7 +231,8 @@ export default function InstallPrompt() {
     <div
       ref={barRef}
       data-install-prompt
-      role="region"
+      role="status"
+      aria-live="polite"
       aria-label="Install Shambles"
       className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+76px)] z-40 mx-auto max-w-md sm:bottom-[calc(env(safe-area-inset-bottom,0px)+96px)]"
       style={{

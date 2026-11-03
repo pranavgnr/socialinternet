@@ -5,11 +5,11 @@ import { useEffect } from "react";
 /**
  * Registers the service worker in production only.
  *
- * A new deployment installs a worker that waits behind the current one. We do
- * not reload the page (that would wipe a half-typed message); instead the
- * waiting worker is told to activate on `pagehide`, so the next navigation
- * arrives on the new build. Update checks run on load and when the tab becomes
- * visible again.
+ * Strategy: the worker calls `skipWaiting()` on install and `clients.claim()`
+ * on activate, so a new deploy takes over without a waiting hand-off and
+ * without reloading the page. The registration still checks for updates on
+ * load and whenever the tab becomes visible, so a long-lived tab picks up the
+ * new worker; the next navigation then uses the new build.
  */
 export default function PwaRegister() {
   useEffect(() => {
@@ -20,45 +20,12 @@ export default function PwaRegister() {
 
     let disposed = false;
 
-    const activateWaiting = (registration: ServiceWorkerRegistration) => {
-      registration.waiting?.postMessage({ type: "SKIP_WAITING" });
-    };
-
-    const watchInstalling = (registration: ServiceWorkerRegistration) => {
-      const installing = registration.installing;
-      if (!installing) return;
-      installing.addEventListener("statechange", () => {
-        if (installing.state !== "installed") return;
-        if (!navigator.serviceWorker.controller) return;
-        // The old worker is still controlling this document. Let the visitor
-        // finish what they are doing, then hand over on the way out.
-        window.addEventListener(
-          "pagehide",
-          () => activateWaiting(registration),
-          { once: true },
-        );
-      });
-    };
-
     const register = async () => {
       try {
         const registration = await navigator.serviceWorker.register("/sw.js", {
           scope: "/",
         });
         if (disposed) return;
-
-        if (registration.waiting && navigator.serviceWorker.controller) {
-          window.addEventListener(
-            "pagehide",
-            () => activateWaiting(registration),
-            { once: true },
-          );
-        }
-
-        registration.addEventListener("updatefound", () =>
-          watchInstalling(registration),
-        );
-        watchInstalling(registration);
         await registration.update().catch(() => undefined);
       } catch (error) {
         // Private mode, a blocked worker or an unsupported browser: the site

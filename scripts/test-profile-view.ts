@@ -2,13 +2,19 @@
 //   npm run test:file -- test-profile-view
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 
-import { buildProfileView, assertInstagramOnly } from "../lib/profileView";
+import { buildProfileView, assertInstagramOnly, reelsToRead, type ProfileView } from "../lib/profileView";
+import {
+  readAuthenticity,
+  type FollowerSampleRow,
+} from "../lib/authenticity";
+import { creditLedger, resetCreditLedger } from "../lib/providers";
+import type { VideoReading } from "../lib/videoReader";
 import {
   readProfileView,
   saveProfileView,
@@ -27,6 +33,20 @@ import type { SessionUser } from "../lib/auth";
 import type { GrowthPlan, RawReel, PlanCompetitor } from "../lib/types";
 
 /* ------------------------------------------------------------------ fixtures */
+
+/**
+ * These tests must never reach a vendor, even when the developer's shell has a
+ * key exported. The one spend test below sets exactly the keys it needs.
+ */
+for (const key of [
+  "HIKERAPI_KEY",
+  "APIFY_TOKEN",
+  "SOCIALCRAWL_API_KEY",
+  "SCRAPECREATORS_API_KEY",
+  "GEMINI_API_KEY",
+]) {
+  delete process.env[key];
+}
 
 let seq = 0;
 function reel(views: number, likes?: number, comments?: number): RawReel {
@@ -99,6 +119,16 @@ const competitor = (h: string, views: number): PlanCompetitor => ({
   caption: "a cover of a song",
   reasons: [`2.4x the typical post here · ${views} views`],
 });
+
+/** A sample of followers who all look like people, for the estimate tests. */
+function cleanFollowers(n: number): FollowerSampleRow[] {
+  return Array.from({ length: n }, (_, i) => ({
+    username: `person_${i}`,
+    full_name: `Person ${i}`,
+    is_private: false,
+    profile_pic_url: `https://scontent.cdninstagram.com/v/t51/photo-${i}.jpg`,
+  }));
+}
 
 /* --------------------------------------------------------------- pure core */
 
@@ -219,9 +249,65 @@ test("missing likes/comments read as null, never as zero", () => {
   assert.equal(view.vitals.commentRatio, null);
 });
 
-test("botToReal is null in this task and no ratio is invented", () => {
+test("botToReal is null when no estimate was bought, and never invented", () => {
   const view = buildProfileView(plan({}), { own: false });
   assert.equal(view.vitals.botToReal, null);
+});
+
+test("a bought estimate lands in the vitals exactly as measured", () => {
+  const view = buildProfileView(plan({}), {
+    own: false,
+    authenticity: { realPct: 71, sample: 60, confidence: "medium" },
+  });
+  assert.deepEqual(view.vitals.botToReal, {
+    realPct: 71,
+    sample: 60,
+    confidence: "medium",
+  });
+});
+
+test("a watched reel gets its own bullets and the hook line", () => {
+  const p = plan({ reels: reels(8) });
+  const preview = buildProfileView(p, { own: false });
+  const watched = preview.winners[0]?.url ?? "";
+  const readings = new Map<string, VideoReading>([
+    [
+      watched,
+      {
+        basis: "video",
+        hookSeconds: 0.8,
+        hookType: "spoken",
+        onScreenText: "POV: you wake up",
+        pacing: "fast cuts, one idea per second",
+        loop: true,
+        why: ["It opens on a question", "The text lands before the first word"],
+      },
+    ],
+  ]);
+
+  const view = buildProfileView(p, { own: false, readings });
+  const card = view.winners[0];
+  assert.equal(card?.basis, "video");
+  assert.equal(card?.why[0], "Hook: spoken, lands at 0.8 s");
+  assert.deepEqual(card?.why.slice(1), [
+    "It opens on a question",
+    "The text lands before the first word",
+  ]);
+
+  // Every other card keeps the arithmetic bullets and tells the truth about it.
+  assert.equal(view.winners[1]?.basis, "captions");
+  for (const flop of view.flops) assert.equal(flop.basis, "captions");
+});
+
+test("the video reader watches exactly the reels the cards show", () => {
+  for (const n of [12, 7, 5, 2, 1]) {
+    const p = plan({ reels: reels(n) });
+    const view = buildProfileView(p, { own: false });
+    const shown = [...view.winners, ...view.flops].map((card) => card.url);
+    const watched = reelsToRead(p).map((reel) => reel.url);
+    assert.deepEqual(watched, shown, `n=${n}`);
+    assert.equal(new Set(watched).size, watched.length, `n=${n}: no duplicates`);
+  }
 });
 
 test("empty comments produce null commentIntel", () => {
@@ -695,6 +781,44 @@ test("profileStore round-trips a view and reads it back fresh", async () => {
   }
 });
 
+test("a stored view accepts a bot estimate and refuses a malformed one", async () => {
+  setDataDir(TMP);
+  process.env.PROFILE_CACHE_HOURS = "168";
+  try {
+    const view = buildProfileView(plan({ handle: "estimate_ok", reels: reels(2) }), {
+      own: false,
+      authenticity: { realPct: 71, sample: 60, confidence: "medium" },
+    });
+    await saveProfileView("estimate_ok", view);
+    const read = await readProfileView("estimate_ok", Date.now());
+    assert.deepEqual(read?.view.vitals.botToReal, {
+      realPct: 71,
+      sample: 60,
+      confidence: "medium",
+    });
+
+    const dir = profileDir();
+    writeFileSync(
+      path.join(dir, "estimate_bad.json"),
+      JSON.stringify({
+        handle: "estimate_bad",
+        savedAt: new Date().toISOString(),
+        view: {
+          ...view,
+          handle: "estimate_bad",
+          vitals: {
+            ...view.vitals,
+            botToReal: { realPct: 140, sample: 60, confidence: "medium" },
+          },
+        },
+      }),
+    );
+    assert.equal(await readProfileView("estimate_bad", Date.now()), null);
+  } finally {
+    restoreDir();
+  }
+});
+
 test("an expired view reads as absent", async () => {
   setDataDir(TMP);
   process.env.PROFILE_CACHE_HOURS = "168";
@@ -1002,8 +1126,242 @@ test("runProfileRead builds the neutral view and stores it", async () => {
   );
 });
 
-test("a thrown run refunds the charge in full", async () => {
-  await withFreshDb(async (_q, userId) => {
+test("runProfileRead stores the estimate and the video readings", async () => {
+  setDataDir(TMP);
+  try {
+    const stored: ProfileView[] = [];
+    const p = plan({
+      handle: "estimated_fixture",
+      account: { followers: 5000, bio: "Covers, every week" },
+      reels: reels(6),
+    });
+    const reader = {
+      async read() {
+        return {
+          basis: "video" as const,
+          hookSeconds: 1.2,
+          hookType: "visual" as const,
+          why: ["Wide shot first"],
+        };
+      },
+    };
+
+    await runProfileRead(
+      { handle: "estimated_fixture" },
+      {
+        runPlan: async () => ({ plan: p, spent: 6 }),
+        saveView: async (_h, v) => {
+          stored.push(v);
+        },
+        authenticity: {
+          read: async () => null,
+          save: async () => undefined,
+          account: async () => ({ pk: "42", isPrivate: false }),
+          sample: async () => cleanFollowers(60),
+        },
+        reader,
+      },
+    );
+
+    const view = stored[0];
+    assert.ok(view, "the read stored a view");
+    assert.deepEqual(view.vitals.botToReal, {
+      realPct: 100,
+      sample: 60,
+      confidence: "low",
+    });
+    const cards = [...view.winners, ...view.flops];
+    assert.equal(cards.length, 6);
+    for (const card of cards) {
+      assert.equal(card.basis, "video");
+      assert.equal(card.why[0], "Hook: visual, lands at 1.2 s");
+    }
+  } finally {
+    restoreDir();
+  }
+});
+
+test("a bought estimate is cached for the next read", async () => {
+  setDataDir(TMP);
+  try {
+    let sampled = 0;
+    const p = plan({
+      handle: "cached_estimate_fixture",
+      account: { followers: 5000 },
+      reels: reels(2),
+    });
+    const deps = {
+      runPlan: async () => ({ plan: p, spent: 6 }),
+      saveView: async (_h: string, _v: ProfileView) => undefined,
+    };
+
+    await runProfileRead(
+      { handle: "cached_estimate_fixture" },
+      {
+        ...deps,
+        authenticity: {
+          account: async () => ({ pk: "42", isPrivate: false }),
+          sample: async () => {
+            sampled += 1;
+            return cleanFollowers(60);
+          },
+        },
+      },
+    );
+    const cached = await readAuthenticity("cached_estimate_fixture");
+    assert.deepEqual(cached, { realPct: 100, sample: 60, confidence: "low" });
+
+    let stored: ProfileView | null = null;
+    await runProfileRead(
+      { handle: "cached_estimate_fixture" },
+      {
+        runPlan: async () => ({ plan: p, spent: 6 }),
+        saveView: async (_h, v) => {
+          stored = v;
+        },
+        authenticity: {
+          account: async () => {
+            throw new Error("should not be asked: the cache answers");
+          },
+          sample: async () => {
+            throw new Error("should not be sampled twice");
+          },
+        },
+      },
+    );
+    assert.equal(sampled, 1);
+    assert.deepEqual(stored?.vitals.botToReal, cached);
+  } finally {
+    restoreDir();
+  }
+});
+
+test("a failing sample or reader never fails the read", async () => {
+  const stored: ProfileView[] = [];
+  const p = plan({ account: { followers: 5000 }, reels: reels(6) });
+
+  const result = await runProfileRead(
+    { handle: "fragile_fixture" },
+    {
+      runPlan: async () => ({ plan: p, spent: 6 }),
+      saveView: async (_h, v) => {
+        stored.push(v);
+      },
+      authenticity: {
+        read: async () => null,
+        save: async () => undefined,
+        account: async () => ({ pk: "42", isPrivate: false }),
+        sample: async () => {
+          throw new Error("vendor down");
+        },
+      },
+      reader: {
+        async read() {
+          throw new Error("reader down");
+        },
+      },
+    },
+  );
+
+  assert.equal(result.handle, "fragile_fixture");
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0]?.vitals.botToReal, null);
+  assert.equal(stored[0]?.winners.length, 3);
+  for (const card of [...(stored[0]?.winners ?? []), ...(stored[0]?.flops ?? [])]) {
+    assert.equal(card.basis, "captions");
+  }
+});
+
+test("the sample and account calls are inside the measured vendor spend", async () => {
+  const keys = [
+    "HIKERAPI_KEY",
+    "HIKERAPI_USD_PER_CALL",
+    "APIFY_TOKEN",
+    "SOCIALCRAWL_API_KEY",
+    "SCRAPECREATORS_API_KEY",
+    "YOUTUBE_WEB",
+    "DATA_PROVIDER",
+    "CREDIT_BUDGET_USD",
+  ] as const;
+  const before = Object.fromEntries(keys.map((k) => [k, process.env[k]])) as Record<
+    string,
+    string | undefined
+  >;
+  const realFetch = globalThis.fetch;
+  const seen: string[] = [];
+  const fixture = readFileSync(
+    path.join(process.cwd(), "lib/providers/__fixtures__/hikerapi/followers_chunk.json"),
+    "utf8",
+  );
+
+  process.env.HIKERAPI_KEY = "test-key";
+  process.env.HIKERAPI_USD_PER_CALL = "0.02";
+  delete process.env.APIFY_TOKEN;
+  delete process.env.SOCIALCRAWL_API_KEY;
+  delete process.env.SCRAPECREATORS_API_KEY;
+  delete process.env.YOUTUBE_WEB;
+  delete process.env.DATA_PROVIDER;
+  process.env.CREDIT_BUDGET_USD = "100";
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    seen.push(url);
+    if (url.includes("/v2/user/by/username")) {
+      return new Response(
+        JSON.stringify({
+          status: true,
+          user: {
+            username: "spend_fixture",
+            pk: 32334432364,
+            id: "32334432364",
+            follower_count: 5000,
+            is_private: false,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (url.includes("/v1/user/followers/chunk")) {
+      return new Response(fixture, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response("{}", { status: 404 });
+  }) as typeof fetch;
+
+  resetCreditLedger();
+  const spentBefore = creditLedger().lifetimeUsd;
+  try {
+    const p = plan({
+      handle: "spend_fixture",
+      account: { followers: 5000 },
+      reels: reels(4),
+    });
+    await runProfileRead(
+      { handle: "spend_fixture" },
+      {
+        runPlan: async () => ({ plan: p, spent: 6 }),
+        saveView: async () => undefined,
+        authenticity: { read: async () => null },
+      },
+    );
+
+    const delta = creditLedger().lifetimeUsd - spentBefore;
+    assert.ok(delta >= 0.04, `the two calls cost ${delta}`);
+    assert.ok(seen.some((u) => u.includes("/v2/user/by/username")));
+    assert.ok(seen.some((u) => u.includes("/v1/user/followers/chunk")));
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const k of keys) {
+      const value = before[k];
+      if (value === undefined) delete process.env[k];
+      else process.env[k] = value;
+    }
+  }
+});
+
+test("a thrown run refunds the charge in full", async () => {  await withFreshDb(async (_q, userId) => {
     const verdict = await gate("handle", {
       key: "competitor_handle",
       getUser: async () => sessionUser(userId),

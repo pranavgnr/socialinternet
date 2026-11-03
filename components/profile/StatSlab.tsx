@@ -24,12 +24,15 @@ function GoldLock() {
  */
 export default function StatSlab({
   label,
+  tag,
   value,
   detail,
   locked = false,
   className = "",
 }: {
   label: string;
+  /** a small qualifier beside the label, e.g. "Estimate" */
+  tag?: string;
   value: ReactNode;
   detail?: ReactNode;
   locked?: boolean;
@@ -42,9 +45,16 @@ export default function StatSlab({
       } ${className}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="mono text-[9.5px] font-bold uppercase leading-tight tracking-[0.14em] text-muted-zinc">
-          {label}
-        </p>
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <p className="mono text-[9.5px] font-bold uppercase leading-tight tracking-[0.14em] text-muted-zinc">
+            {label}
+          </p>
+          {tag ? (
+            <span className="mono text-[8.5px] font-bold uppercase leading-tight tracking-[0.12em] text-muted-zinc/70">
+              {tag}
+            </span>
+          ) : null}
+        </div>
         {locked ? (
           <span className="shrink-0 text-luxury-gold" aria-hidden="true">
             <GoldLock />

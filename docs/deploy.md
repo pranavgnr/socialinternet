@@ -422,6 +422,29 @@ docker compose logs -f web
 
 ---
 
+## Video reading (Gemini)
+
+The profile page can watch a reel's own MP4 instead of reasoning only from its
+caption, but only when `GEMINI_API_KEY` is set. Without the key the page is
+captions-only and says so on every card; nothing breaks.
+
+- Reads at most `VIDEO_READ_MAX` reels per profile (default 6), one at a time,
+  inside a 90-second budget. Readings are cached for seven days by shortcode in
+  `video_readings.json` under the data directory.
+- The MP4 is downloaded from Instagram's CDN (HTTPS, Instagram hosts only,
+  15 MB and 20 s ceilings) and sent inline to Gemini.
+
+**Cost:** this is **not** paid for in gems. Google bills the Gemini API per
+token (input video tokens plus the answer), and the price is Google's to change.
+Check the current Gemini API pricing page and your Cloud billing before enabling
+it in production. A rough budget should be based on that page, not on a number
+hard-coded here.
+
+Rotate a leaked `GEMINI_API_KEY` in Google AI Studio / Cloud Console and update
+`.env.production`.
+
+---
+
 ## If a secret leaks
 
 Rotate it at the source, then update `.env.production` and restart:

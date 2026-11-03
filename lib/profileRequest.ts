@@ -6,9 +6,31 @@
  * or a Next request, exactly like `runPlanBuild` in `lib/planRequest.ts`. The
  * credit gate, the rate limiter and the settlement stay in the route around
  * this function; this function only builds and saves.
+ *
+ * Two optional extras run after the plan exists, and neither can fail the read:
+ *
+ *   - a follower sample produces the bot-to-real estimate for a public account
+ *     with at least 1,000 followers (cached seven days);
+ *   - the configured video reader watches the same top-3/bottom-3 reels the
+ *     page will show (captions only unless `GEMINI_API_KEY` is set).
+ *
+ * Both are deliberately inside this function: their vendor calls land on the
+ * shared ledger, so the route's measured settle sees the money they spent.
  */
-import { buildProfileView, type ProfileView } from "./profileView";
+import {
+  resolveAuthenticity,
+  type AuthenticityEstimate,
+  type AuthenticityOptions,
+} from "./authenticity";
+import { buildProfileView, reelsToRead, type ProfileView } from "./profileView";
 import type { GrowthPlan } from "./types";
+import {
+  configuredReader,
+  readReels,
+  videoReadMax,
+  type VideoReader,
+  type VideoReading,
+} from "./videoReader";
 
 export interface ProfileReadInput {
   handle: string;
@@ -24,6 +46,17 @@ export interface ProfileReadDeps {
   runPlan: (handle: string) => Promise<{ plan: GrowthPlan; spent: number }>;
   /** write the built view to the shared profile store */
   saveView: (handle: string, view: ProfileView) => Promise<void>;
+  /**
+   * The authenticity extras. Injected in tests; the defaults read the cache and
+   * buy one follower sample through the router.
+   */
+  authenticity?: AuthenticityOptions;
+  /** The video reader. Injected in tests; defaults to Gemini only with a key. */
+  reader?: VideoReader;
+  /** Per-profile video ceiling; defaults to `VIDEO_READ_MAX` (6). */
+  videoMax?: number;
+  /** Injected clock, epoch milliseconds, for tests. */
+  now?: () => number;
 }
 
 export interface ProfileReadResult {
@@ -36,16 +69,49 @@ export interface ProfileReadResult {
  * Build and store the neutral competitor view for a handle.
  *
  * The stored view is what later GETs serve for free, so this is the only place
- * a fresh read is ever turned into a reusable artifact. A throw anywhere here —
- * the plan build or the save — propagates to the route's `settleAfter`, which
- * refunds the charge in full.
+ * a fresh read is ever turned into a reusable artifact. A throw from the plan
+ * build or the save propagates to the route's `settleAfter`, which refunds the
+ * charge in full. The extras are wrapped: a vendor that cannot sample followers
+ * or read a video leaves the page with one fewer number, never with no page.
  */
 export async function runProfileRead(
   input: ProfileReadInput,
   deps: ProfileReadDeps,
 ): Promise<ProfileReadResult> {
   const { plan, spent } = await deps.runPlan(input.handle);
-  const view = buildProfileView(plan, { own: false });
+
+  let authenticity: AuthenticityEstimate | null = null;
+  try {
+    authenticity = await resolveAuthenticity(
+      plan.handle,
+      {
+        followers: plan.account?.followers ?? plan.standing?.followers,
+      },
+      deps.authenticity,
+    );
+  } catch {
+    authenticity = null;
+  }
+
+  let readings = new Map<string, VideoReading>();
+  try {
+    readings = await readReels(
+      reelsToRead(plan),
+      deps.reader ?? configuredReader(),
+      {
+        max: deps.videoMax ?? videoReadMax(),
+        now: deps.now,
+      },
+    );
+  } catch {
+    readings = new Map();
+  }
+
+  const view = buildProfileView(plan, {
+    own: false,
+    authenticity,
+    readings,
+  });
   await deps.saveView(input.handle, view);
   return { handle: input.handle, spent };
 }

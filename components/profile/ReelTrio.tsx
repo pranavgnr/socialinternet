@@ -18,8 +18,9 @@ function Metric({ label, value }: { label: string; value: string }) {
  * 03 or 04 — the top three or bottom three reels.
  *
  * Rank, the measured numbers, the "why" bullets and the basis line. The basis
- * line is not decoration: until the video reader ships, every structural claim
- * on this page comes from captions and numbers, and the page says so.
+ * line is not decoration: a card either watched the video (and says so) or it
+ * reasons from the caption and the numbers, and a viewer must be able to tell
+ * which one they are reading.
  */
 export default function ReelTrio({
   id,

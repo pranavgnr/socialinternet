@@ -19,11 +19,13 @@ function reelCount(n: number): string {
  *
  * Four slabs. Every figure is one the plan actually holds; where it does not,
  * the slab says what is missing instead of printing a zero or a guess. The
- * bot-to-real estimate is locked until the follower sample that produces it
- * exists, so it can never be mistaken for a measured percentage.
+ * bot-to-real slab is an estimate from a sampled follower list: it says how many
+ * followers were inspected and how confident the sample makes it, so it can
+ * never be mistaken for a measured percentage.
  */
 export default function Vitals({ view }: { view: ProfileView }) {
   const { vitals } = view;
+  const bot = vitals.botToReal;
 
   return (
     <section aria-labelledby="vitals-title" className="scroll-mt-24">
@@ -61,9 +63,13 @@ export default function Vitals({ view }: { view: ProfileView }) {
 
         <StatSlab
           label="Bot-to-real ratio"
-          locked
-          value="Estimate coming"
-          detail="Built from a sampled follower list in a later release. No percentage is shown until it is measured."
+          tag="Estimate"
+          value={bot ? `${bot.realPct}%` : "Not estimated"}
+          detail={
+            bot
+              ? `Estimated from a sample of ${bot.sample} followers · ${bot.confidence} confidence. A sample of the audience, not all of it.`
+              : "An estimate needs a public account with 1,000+ followers and at least 40 sampled followers."
+          }
         />
 
         <StatSlab

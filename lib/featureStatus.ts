@@ -11,11 +11,11 @@ export type FeatureStatus = "live" | "soon" | "planned";
 export type PillarKey = "audit" | "competitor-intel" | "lifestyle-vip";
 
 export const FEATURE_STATUS: Record<PillarKey, FeatureStatus> = {
-  // TODO(task-7): the bot-share estimate and video reader complete this pillar.
-  audit: "soon",
+  // Live from Task 7: the profile page samples followers for the bot-to-real
+  // estimate and watches reels through the video reader when a key is set.
+  audit: "live",
 
   // Live from Task 4: /profile/[handle] shows the competitor profile view.
-  // TODO(task-7): hook/structural reading from video completes competitor intel.
   "competitor-intel": "live",
 
   // TODO(wave-2): stays planned through the launch plan; no task flips it.

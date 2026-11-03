@@ -51,7 +51,32 @@ function isProfileView(value: unknown): value is ProfileView {
     return (
       typeof card.url === "string" &&
       typeof card.views === "number" &&
-      Array.isArray(card.why)
+      Array.isArray(card.why) &&
+      (card.basis === undefined ||
+        card.basis === "video" ||
+        card.basis === "captions")
+    );
+  };
+  /**
+   * The estimate is either absent or a real, bounded number. A hand-edited file
+   * claiming 140% must read as absent rather than as a page with a made-up
+   * percentage on it.
+   */
+  const isBotEstimate = (value: unknown): boolean => {
+    if (value === null || value === undefined) return true;
+    if (typeof value !== "object") return false;
+    const estimate = value as Record<string, unknown>;
+    return (
+      typeof estimate.realPct === "number" &&
+      Number.isFinite(estimate.realPct) &&
+      estimate.realPct >= 0 &&
+      estimate.realPct <= 100 &&
+      typeof estimate.sample === "number" &&
+      Number.isFinite(estimate.sample) &&
+      estimate.sample > 0 &&
+      (estimate.confidence === "low" ||
+        estimate.confidence === "medium" ||
+        estimate.confidence === "high")
     );
   };
   const isIdea = (idea: unknown): boolean => {
@@ -72,6 +97,7 @@ function isProfileView(value: unknown): value is ProfileView {
     view.own === false &&
     view.nextMove === undefined &&
     Boolean(view.vitals && typeof view.vitals === "object") &&
+    isBotEstimate((view.vitals as { botToReal?: unknown }).botToReal) &&
     Boolean(
       view.dna &&
         typeof view.dna === "object" &&

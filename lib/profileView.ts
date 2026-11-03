@@ -18,6 +18,7 @@ import { compact, times } from "./fmt";
 import { languageName } from "./lang";
 import { plain, sentenceCase } from "./plain";
 import type { GrowthPlan, PlanCompetitor, RawReel } from "./types";
+import { hookLine, shortcodeFromUrl, type ReelToRead, type VideoReading } from "./videoReader";
 
 /**
  * Whether the niche label is "verified" — the cohort check confirmed the room
@@ -47,9 +48,9 @@ export interface ProfileVitals {
   /** how many reels the ratios were computed from ("of N recent reels") */
   reelsRead: number;
   /**
-   * The bot-to-real estimate. `null` in this task — the follower sample that
-   * produces it ships in Task 7 — and the vitals slab says why instead of
-   * showing a made-up percentage.
+   * The bot-to-real estimate, when the account was large and public enough to
+   * sample. `null` means "not estimated" — the slab says why instead of showing
+   * a made-up percentage.
    */
   botToReal: ProfileBotEstimate | null;
 }
@@ -70,7 +71,11 @@ export interface ReelCard {
   comments: number | null;
   /** the "why it worked / flopped" bullets, in plain words */
   why: string[];
-  /** "captions" for now; the video reader (Task 7) adds "video" */
+  /**
+   * What the bullets rest on: the video itself, or the caption and the numbers.
+   * The card prints this, so a viewer never mistakes a caption guess for a
+   * watched video.
+   */
   basis: "video" | "captions";
 }
 
@@ -128,11 +133,15 @@ export interface ProfileView {
 }
 
 /** A reel as the plan holds it, with the counts it may not have carried. */
-interface PlanReel {
+export interface PlanReel {
   url: string;
   views: number;
   likes?: number;
   comments?: number;
+  /** kept so the video reader has something to fall back to */
+  caption?: string;
+  /** the signed CDN link the plan carried for this reel, when it did */
+  mediaUrl?: string;
 }
 
 const ROUND = (n: number): number => Number(n.toFixed(4));
@@ -159,6 +168,8 @@ function fromRaw(reel: RawReel): PlanReel {
     views: reel.views,
     likes: count(reel.likes),
     comments: count(reel.comments),
+    caption: reel.caption,
+    mediaUrl: reel.mediaUrl,
   };
 }
 
@@ -188,12 +199,14 @@ function reelsFromPlan(plan: GrowthPlan): PlanReel[] {
       add({
         url: plan.audit.best.url,
         views: plan.audit.best.views,
+        caption: plan.audit.best.caption,
       });
     }
     if (plan.audit?.worst) {
       add({
         url: plan.audit.worst.url,
         views: plan.audit.worst.views,
+        caption: plan.audit.worst.caption,
       });
     }
   }
@@ -293,7 +306,28 @@ function toReelCard(
   avgCommentShare: number,
   own: boolean,
   weakest: boolean,
+  reading?: VideoReading,
 ): ReelCard {
+  /**
+   * A watched reel earns its own bullets plus the one measured line about its
+   * opening. A caption reading (or no reading) keeps the arithmetic bullets the
+   * page has always used, and the basis line on the card tells the truth.
+   */
+  if (reading?.basis === "video") {
+    const hook = hookLine(reading);
+    return {
+      url: reel.url,
+      views: reel.views,
+      likes: reel.likes ?? null,
+      comments: reel.comments ?? null,
+      why: [
+        ...(hook ? [hook] : []),
+        ...reading.why.map((line) => plain(line)),
+      ],
+      basis: "video",
+    };
+  }
+
   return {
     url: reel.url,
     views: reel.views,
@@ -312,47 +346,89 @@ function toReelCard(
 }
 
 /**
- * Split the reels into disjoint winners and flops.
+ * The disjoint winners/flops split, before it is turned into cards.
  *
- * With six or more reels the page shows the strongest three and the weakest
- * three. With two to five the lists shrink around the middle, winners keeping
- * the odd reel, and no reel ever appears on both sides. With fewer than two
- * reels both lists are empty — the page explains rather than guessing.
+ * Exported because the video reader must watch exactly the reels the page will
+ * show — the same top three and bottom three, never a fifth opinion about which
+ * reels matter. With two to five reels the lists shrink around the middle,
+ * winners keeping the odd reel, and no reel ever appears on both sides. With
+ * fewer than two reels both lists are empty.
  */
+export function splitPlanReels(reels: PlanReel[]): {
+  winners: PlanReel[];
+  flops: PlanReel[];
+} {
+  const byViews = [...reels].sort((a, b) => b.views - a.views);
+  const n = byViews.length;
+
+  if (n < 2) return { winners: [], flops: [] };
+
+  if (n >= 6) {
+    return {
+      winners: byViews.slice(0, 3),
+      flops: byViews.slice(n - 3).reverse(), // worst first
+    };
+  }
+
+  const half = Math.ceil(n / 2);
+  return {
+    winners: byViews.slice(0, half),
+    flops: byViews.slice(half).reverse(),
+  };
+}
+
+/** The reels a profile read should watch: the same ones the cards will show. */
+export function reelsToRead(plan: GrowthPlan): ReelToRead[] {
+  const { winners, flops } = splitPlanReels(reelsFromPlan(plan));
+  return [...winners, ...flops].map((reel) => ({
+    url: reel.url,
+    shortcode: shortcodeFromUrl(reel.url),
+    mediaUrl: reel.mediaUrl,
+    caption: reel.caption ?? "",
+  }));
+}
+
 function splitReels(
   reels: PlanReel[],
   usualViews: number,
   avgLikeShare: number,
   avgCommentShare: number,
   own: boolean,
+  readings?: Map<string, VideoReading>,
 ): { winners: ReelCard[]; flops: ReelCard[] } {
-  const byViews = [...reels].sort((a, b) => b.views - a.views);
-  const n = byViews.length;
-
-  if (n < 2) return { winners: [], flops: [] };
-
-  let winners: PlanReel[];
-  let flops: PlanReel[];
-  if (n >= 6) {
-    winners = byViews.slice(0, 3);
-    flops = byViews.slice(n - 3).reverse(); // worst first
-  } else {
-    const half = Math.ceil(n / 2);
-    winners = byViews.slice(0, half);
-    flops = byViews.slice(half).reverse();
-  }
+  const { winners, flops } = splitPlanReels(reels);
 
   return {
     winners: winners.map((r) =>
-      toReelCard(r, usualViews, avgLikeShare, avgCommentShare, own, false),
+      toReelCard(
+        r,
+        usualViews,
+        avgLikeShare,
+        avgCommentShare,
+        own,
+        false,
+        readings?.get(r.url),
+      ),
     ),
     flops: flops.map((r) =>
-      toReelCard(r, usualViews, avgLikeShare, avgCommentShare, own, true),
+      toReelCard(
+        r,
+        usualViews,
+        avgLikeShare,
+        avgCommentShare,
+        own,
+        true,
+        readings?.get(r.url),
+      ),
     ),
   };
 }
 
-function computeVitals(plan: GrowthPlan, reels: PlanReel[]): ProfileVitals {
+function computeVitals(
+  plan: GrowthPlan,
+  reels: PlanReel[],
+  authenticity?: ProfileBotEstimate | null,
+): ProfileVitals {
   let likes = 0;
   let comments = 0;
   let viewsForLikes = 0;
@@ -380,7 +456,7 @@ function computeVitals(plan: GrowthPlan, reels: PlanReel[]): ProfileVitals {
     commentRatio: commentReels ? ROUND(comments / viewsForComments) : null,
     avgComments: commentReels ? Math.round(comments / commentReels) : null,
     reelsRead: reels.length,
-    botToReal: null,
+    botToReal: authenticity ?? null,
   };
 }
 
@@ -604,10 +680,19 @@ function buildIdeas(plan: GrowthPlan, ownView: boolean): ProfileIdea[] {
  * `opts.own` adds the next-move card (the owner's own plan). The DNA summary is
  * third person for both views; cohort quality lives in `comparison`, under the
  * vitals, rather than in the creator summary.
+ *
+ * `opts.authenticity` is the follower-sample estimate, when one was bought;
+ * `opts.readings` are the video readings for the reels the page will show.
+ * Both are optional and neither can make the view lie: absent is "not read",
+ * and a card whose reel was not watched keeps its caption basis.
  */
 export function buildProfileView(
   plan: GrowthPlan,
-  opts: { own: boolean },
+  opts: {
+    own: boolean;
+    authenticity?: ProfileBotEstimate | null;
+    readings?: Map<string, VideoReading>;
+  },
 ): ProfileView {
   const reels = reelsFromPlan(plan);
   const usualViews =
@@ -635,13 +720,14 @@ export function buildProfileView(
     avgLikeShare,
     avgCommentShare,
     opts.own,
+    opts.readings,
   );
 
   const view: ProfileView = {
     handle: plan.handle,
     niche: plain(plan.niche ?? ""),
     nicheVerified: nicheIsVerified(plan.nicheFit?.verdict),
-    vitals: computeVitals(plan, reels),
+    vitals: computeVitals(plan, reels, opts.authenticity),
     dna: {
       summary: buildSummary(plan, reels),
       audienceSignals: buildAudienceSignals(plan),

@@ -91,6 +91,12 @@ export default function Vitals({ view }: { view: ProfileView }) {
         />
       </div>
 
+      {view.comparison ? (
+        <p className="mono mt-3 rounded-lg border border-white/10 bg-card/60 px-3 py-2 text-[10px] leading-relaxed text-muted-zinc">
+          {view.comparison}
+        </p>
+      ) : null}
+
       <p className="mt-3 text-[11px] leading-relaxed text-muted-zinc/70">
         A likes ratio is likes divided by views; a comments ratio is comments
         divided by views. Both are taken only from the reels actually read.

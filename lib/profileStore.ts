@@ -18,7 +18,7 @@ import path from "node:path";
 import { dataPath } from "./dataDir";
 import { hoursFromEnv } from "./env";
 import { normalizeHandle } from "./handle";
-import type { ProfileView } from "./profileView";
+import { assertInstagramOnly, type ProfileView } from "./profileView";
 
 /** How long a stored profile view is served before it is considered stale. */
 const ttlHours = (): number => hoursFromEnv("PROFILE_CACHE_HOURS", 168);
@@ -58,6 +58,7 @@ function isProfileView(value: unknown): value is ProfileView {
     if (!idea || typeof idea !== "object") return false;
     const card = idea as Record<string, unknown>;
     return (
+      card.platform === "instagram" &&
       typeof card.fromHandle === "string" &&
       typeof card.scriptHref === "string" &&
       Array.isArray(card.whyChosen)
@@ -68,7 +69,8 @@ function isProfileView(value: unknown): value is ProfileView {
     typeof view.handle === "string" &&
     typeof view.niche === "string" &&
     typeof view.nicheVerified === "boolean" &&
-    typeof view.own === "boolean" &&
+    view.own === false &&
+    view.nextMove === undefined &&
     Boolean(view.vitals && typeof view.vitals === "object") &&
     Boolean(
       view.dna &&
@@ -100,6 +102,19 @@ export async function saveProfileView(
 ): Promise<void> {
   const clean = normalizeHandle(handle);
   if (!clean) throw new Error("handle is required");
+
+  /**
+   * The shared store is for neutral competitor views only. An own view carries
+   * the owner's next move and must never be published as the public artifact;
+   * and every card/idea must be Instagram before it reaches disk.
+   */
+  if (view.own) {
+    throw new Error("the shared profile store holds competitor views only");
+  }
+  if (view.nextMove) {
+    throw new Error("a stored profile view cannot carry a next move");
+  }
+  assertInstagramOnly(view);
 
   const dir = profileDir();
   await fs.mkdir(dir, { recursive: true });

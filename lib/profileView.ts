@@ -16,16 +16,16 @@
 import { neutralisePerson } from "./competitor";
 import { compact, times } from "./fmt";
 import { languageName } from "./lang";
-import { plain } from "./plain";
+import { plain, sentenceCase } from "./plain";
 import type { GrowthPlan, PlanCompetitor, RawReel } from "./types";
 
 /**
- * Whether the niche label is "verified" — derived from the account's own posts
- * rather than typed by the visitor. `nicheSource` is absent on plans written
- * before provenance existed, which is treated as unverified.
+ * Whether the niche label is "verified" — the cohort check confirmed the room
+ * actually matches the account. A model guess, a hashtag or a shape read is
+ * still a guess; only `nicheFit.verdict === "matches"` earns the word.
  */
-export function nicheIsVerified(source: string | undefined): boolean {
-  return source !== undefined && source !== "user";
+export function nicheIsVerified(verdict: string | undefined): boolean {
+  return verdict === "matches";
 }
 
 export interface ProfileBotEstimate {
@@ -83,6 +83,11 @@ export interface CommentIntel {
 
 export interface ProfileIdea {
   fromHandle: string;
+  /**
+   * Instagram-only by construction. Stored on each idea so the shared store can
+   * reject a legacy or non-Instagram idea rather than serve it.
+   */
+  platform: "instagram";
   /** display-ready: the competitor's views, or "views unknown" */
   theirViews: string;
   /** why that competitor was chosen */
@@ -111,6 +116,12 @@ export interface ProfileView {
   flops: ReelCard[];
   commentIntel: CommentIntel | null;
   ideas: ProfileIdea[];
+  /**
+   * The comparison the numbers rest on, kept out of the creator summary and
+   * shown as a footnote under the vitals: "Compared with N accounts: <basis>."
+   * Absent when there is no cohort or no basis worth stating.
+   */
+  comparison?: string;
   own: boolean;
   /** only for the owner's own plan: the single thing to do this week */
   nextMove?: ProfileNextMove;
@@ -426,43 +437,54 @@ function buildCommentIntel(plan: GrowthPlan): CommentIntel | null {
   return { mood, requests };
 }
 
-function buildSummary(plan: GrowthPlan, own: boolean, reels: PlanReel[]): string {
+/**
+ * The creator-facing summary.
+ *
+ * It describes the creator — their bio, the plan's reading of what they post,
+ * what the audience says and their usual reach — in third person. Cohort
+ * quality, search caveats and benchmark language belong in the vitals footnote
+ * (`buildComparison`), never in the sentence a stranger reads first.
+ */
+function buildSummary(plan: GrowthPlan, reels: PlanReel[]): string {
   const parts: string[] = [];
 
-  /**
-   * The archetype blurb is the plan's generic read of the account ("You post
-   * your own days"). It is useful to the owner, who can judge it against their
-   * own feed, but it is the weakest sentence to put on someone else's page —
-   * especially when the bio says something different. A competitor summary
-   * leads with the bio and the measured positioning instead.
-   */
-  if (own && plan.archetype?.blurb) parts.push(plain(plan.archetype.blurb));
+  if (plan.archetype?.blurb) {
+    parts.push(neutralisePerson(plain(plan.archetype.blurb)));
+  }
 
   const bio = plan.account?.bio?.trim();
   if (bio) {
     const quoted = bio.length > 220 ? `${bio.slice(0, 217)}…` : bio;
-    parts.push(`Bio: “${plain(quoted)}”.`);
-  } else if (!own) {
+    parts.push(`Their bio reads: “${plain(quoted)}”.`);
+  } else if (!parts.length) {
     parts.push(
       `They post ${plain(plan.niche || "Instagram")} content on Instagram.`,
     );
   }
 
-  const positioning = own
-    ? plan.diagnosis
-    : (plan.nicheFit?.reasons ?? []).join(" ");
-  if (positioning?.trim()) parts.push(plain(positioning));
-
-  if (!parts.length) {
-    const niche = plain(plan.niche || "Instagram");
-    parts.push(`This account posts ${niche} content on Instagram.`);
+  const topRequest = (plan.comments?.seeds ?? [])
+    .filter((seed) => seed.kind === "request" && seed.asked > 0)
+    .sort((a, b) => b.asked - a.asked)[0];
+  if (topRequest) {
+    parts.push(
+      `Viewers keep asking for “${plain(topRequest.text)}” (${topRequest.asked} ${
+        topRequest.asked === 1 ? "mention" : "mentions"
+      }).`,
+    );
+  } else if (plan.comments?.language?.length) {
+    parts.push(
+      `The audience keeps repeating: ${plan.comments.language
+        .slice(0, 4)
+        .map((word) => plain(word))
+        .join(", ")}.`,
+    );
   }
 
   if (reels.length) {
     const usual = plan.standing?.medianViews ?? median(reels.map((r) => r.views));
     if (usual > 0) {
       parts.push(
-        `${own ? "Your" : "Their"} usual post reaches about ${compact(usual)} views across the ${reels.length} recent ${
+        `Their usual post reaches about ${compact(usual)} views across the ${reels.length} recent ${
           reels.length === 1 ? "reel" : "reels"
         } read.`,
       );
@@ -470,6 +492,22 @@ function buildSummary(plan: GrowthPlan, own: boolean, reels: PlanReel[]): string
   }
 
   return parts.join(" ").trim();
+}
+
+/**
+ * The cohort footnote for section 01.
+ *
+ * `cohort.basis` is written next to the evidence and already says whether the
+ * comparison is size-matched, a whole room, or too thin to call a cohort. It is
+ * shown only when there is a real cohort and a sentence to show.
+ */
+function buildComparison(plan: GrowthPlan): string | undefined {
+  const accounts = plan.cohort?.accounts ?? 0;
+  const basis = plan.cohort?.basis?.trim();
+  if (!basis || accounts <= 0) return undefined;
+  return `Compared with ${accounts} ${accounts === 1 ? "account" : "accounts"}: ${sentenceCase(
+    basis.replace(/[.]+$/, ""),
+  )}.`;
 }
 
 function buildAudienceSignals(plan: GrowthPlan): string[] {
@@ -509,18 +547,6 @@ function buildAudienceSignals(plan: GrowthPlan): string[] {
   return [...new Set(out)];
 }
 
-/** Views written into a peer metric, e.g. "· 2.4M views" -> 2400000. */
-function viewsFromMetric(metric: string): number {
-  const match = metric.match(/·\s*([\d.]+)\s*([kKmM]?)\s*views/i);
-  if (!match) return 0;
-  const n = Number(match[1]);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  const unit = match[2].toLowerCase();
-  if (unit === "m") return Math.round(n * 1_000_000);
-  if (unit === "k") return Math.round(n * 1_000);
-  return Math.round(n);
-}
-
 /** The multiple written at the start of a peer metric, e.g. "2.4x ..." -> 2.4. */
 function metricMultiple(metric: string): number | null {
   const match = metric.trim().match(/^([\d.]+)x\b/i);
@@ -532,11 +558,11 @@ function metricMultiple(metric: string): number | null {
 /**
  * The competitor ideas.
  *
- * New plans keep a `competitors` array, written where the peer evidence was
- * chosen. Older plans only kept the move list, so the same evidence is read back
- * from it here — never a second vendor pull, and never a competitor we did not
- * actually measure. A reel that did *worse* than its own usual is not an idea
- * worth scripting, so a metric that says so is left out.
+ * Instagram-only. A `PlanCompetitor` must carry `platform: "instagram"`; a
+ * legacy entry with no platform is treated as not-Instagram, because we cannot
+ * prove it was measured on the network this page is about. A reel that did
+ * worse than its own usual is not an idea worth scripting, so a metric that
+ * says so is left out too.
  */
 function buildIdeas(plan: GrowthPlan, ownView: boolean): ProfileIdea[] {
   const raw: PlanCompetitor[] = [];
@@ -544,12 +570,13 @@ function buildIdeas(plan: GrowthPlan, ownView: boolean): ProfileIdea[] {
   const own = plan.handle.replace(/^@/, "").toLowerCase();
 
   const add = (idea: PlanCompetitor) => {
+    if (idea.platform !== "instagram") return;
     const handle = idea.handle.replace(/^@/, "");
     if (!handle || handle.toLowerCase() === own) return;
     if (!idea.url || seen.has(idea.url)) return;
     const multiple = idea.reasons
       .map((reason) => metricMultiple(reason))
-      .find((value): value is number => value !== null);
+      .find((value): value is number => value !== undefined);
     if (multiple !== undefined && multiple < 1) return;
     seen.add(idea.url);
     raw.push({ ...idea, handle });
@@ -557,34 +584,9 @@ function buildIdeas(plan: GrowthPlan, ownView: boolean): ProfileIdea[] {
 
   for (const idea of plan.competitors ?? []) add(idea);
 
-  if (!raw.length) {
-    for (const move of plan.moves ?? []) {
-      for (const evidence of move.evidence ?? []) {
-        add({
-          handle: evidence.handle.replace(/^@/, ""),
-          views: viewsFromMetric(evidence.metric),
-          url: evidence.url ?? "",
-          caption: evidence.caption ?? move.title,
-          reasons: [evidence.metric],
-        });
-      }
-    }
-  }
-
-  if (!raw.length && plan.nextMove) {
-    for (const evidence of plan.nextMove.evidence ?? []) {
-      add({
-        handle: evidence.handle.replace(/^@/, ""),
-        views: viewsFromMetric(evidence.metric),
-        url: evidence.url ?? "",
-        caption: evidence.caption ?? plan.nextMove.title,
-        reasons: [evidence.metric],
-      });
-    }
-  }
-
   return raw.slice(0, 3).map((idea, index) => ({
     fromHandle: plain(idea.handle),
+    platform: "instagram",
     theirViews: idea.views > 0 ? `${compact(idea.views)} views` : "views unknown",
     whyChosen: idea.reasons.map((r) =>
       ownView ? plain(r) : neutralisePerson(plain(r)),
@@ -599,10 +601,9 @@ function buildIdeas(plan: GrowthPlan, ownView: boolean): ProfileIdea[] {
 /**
  * Turn a plan into the six-section profile view.
  *
- * `opts.own` adds the next-move card (the owner's own plan) and reads the
- * plan's diagnosis for the DNA summary; a competitor view reads the niche-fit
- * reasons instead, because the diagnosis and the move list are owner-addressed
- * and were stripped by `toCompetitorView`.
+ * `opts.own` adds the next-move card (the owner's own plan). The DNA summary is
+ * third person for both views; cohort quality lives in `comparison`, under the
+ * vitals, rather than in the creator summary.
  */
 export function buildProfileView(
   plan: GrowthPlan,
@@ -639,16 +640,17 @@ export function buildProfileView(
   const view: ProfileView = {
     handle: plan.handle,
     niche: plain(plan.niche ?? ""),
-    nicheVerified: nicheIsVerified(plan.nicheSource),
+    nicheVerified: nicheIsVerified(plan.nicheFit?.verdict),
     vitals: computeVitals(plan, reels),
     dna: {
-      summary: buildSummary(plan, opts.own, reels),
+      summary: buildSummary(plan, reels),
       audienceSignals: buildAudienceSignals(plan),
     },
     winners,
     flops,
     commentIntel: buildCommentIntel(plan),
     ideas: buildIdeas(plan, opts.own),
+    comparison: buildComparison(plan),
     own: opts.own,
   };
 
@@ -662,4 +664,35 @@ export function buildProfileView(
   }
 
   return view;
+}
+
+function isInstagramUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "instagram.com" || host.endsWith(".instagram.com");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The one Instagram-only guarantee, enforced at the store boundary.
+ *
+ * A profile view must never carry a YouTube/TikTok reel or competitor. The
+ * builder filters competitors by their evidence platform, but a stored view is
+ * a file that can be hand-edited or written by an older build, so `saveProfileView`
+ * calls this before anything reaches disk. Reel links must be instagram.com
+ * URLs; every idea must be marked Instagram.
+ */
+export function assertInstagramOnly(view: ProfileView): void {
+  for (const card of [...view.winners, ...view.flops]) {
+    if (!isInstagramUrl(card.url)) {
+      throw new Error(`profile reel is not an Instagram URL: ${card.url}`);
+    }
+  }
+  for (const idea of view.ideas) {
+    if (idea.platform !== "instagram") {
+      throw new Error(`profile idea is not Instagram: @${idea.fromHandle}`);
+    }
+  }
 }

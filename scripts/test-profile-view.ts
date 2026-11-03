@@ -8,7 +8,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 
-import { buildProfileView } from "../lib/profileView";
+import { buildProfileView, assertInstagramOnly } from "../lib/profileView";
 import {
   readProfileView,
   saveProfileView,
@@ -93,6 +93,7 @@ function plan(overrides: Partial<GrowthPlan> = {}): GrowthPlan {
 
 const competitor = (h: string, views: number): PlanCompetitor => ({
   handle: h,
+  platform: "instagram",
   views,
   url: `https://www.instagram.com/reel/${h}/`,
   caption: "a cover of a song",
@@ -324,6 +325,7 @@ test("ideas are capped at 3 with reasons and a script href", () => {
 
   assert.equal(view.ideas.length, 3);
   assert.equal(view.ideas[0]?.fromHandle, "alpha");
+  assert.equal(view.ideas[0]?.platform, "instagram");
   assert.equal(view.ideas[0]?.theirViews, "2.4M views");
   assert.ok(view.ideas[0]?.whyChosen.length, "reasons present");
   assert.equal(
@@ -332,7 +334,37 @@ test("ideas are capped at 3 with reasons and a script href", () => {
   );
 });
 
-test("older plans read competitor ideas back from the move evidence", () => {
+test("a YouTube competitor is never turned into an idea", () => {
+  const view = buildProfileView(
+    plan({
+      competitors: [
+        {
+          ...competitor("youtube_star", 2400000),
+          platform: "youtube",
+          url: "https://www.youtube.com/watch?v=abc",
+        },
+      ],
+    }),
+    { own: false },
+  );
+  assert.deepEqual(view.ideas, []);
+  assert.equal(view.vitals.reelsRead, 0);
+});
+
+test("a competitor without a platform is treated as not Instagram", () => {
+  const legacy = {
+    ...competitor("legacy", 2400000),
+  } as Partial<PlanCompetitor>;
+  delete legacy.platform;
+
+  const view = buildProfileView(
+    plan({ competitors: [legacy as PlanCompetitor] }),
+    { own: false },
+  );
+  assert.deepEqual(view.ideas, []);
+});
+
+test("legacy move evidence without platforms produces no ideas", () => {
   const view = buildProfileView(
     plan({
       moves: [
@@ -349,18 +381,6 @@ test("older plans read competitor ideas back from the move evidence", () => {
               url: "https://www.instagram.com/reel/alpha/",
               caption: "a cover of a song",
             },
-            {
-              handle: "@fixture",
-              metric: "6.7x your usual views · 635k views",
-              url: "https://www.instagram.com/reel/mine/",
-              caption: "my own cover",
-            },
-            {
-              handle: "@weak",
-              metric: "0.0x the typical post here · 173 views",
-              url: "https://www.instagram.com/reel/weak/",
-              caption: "a reel that did not travel",
-            },
           ],
         },
       ],
@@ -368,10 +388,53 @@ test("older plans read competitor ideas back from the move evidence", () => {
     { own: false },
   );
 
-  assert.equal(view.ideas.length, 1);
-  assert.equal(view.ideas[0]?.fromHandle, "alpha");
-  assert.equal(view.ideas[0]?.theirViews, "2.4M views");
-  assert.equal(view.ideas[0]?.concept, "a cover of a song");
+  assert.deepEqual(view.ideas, []);
+});
+
+test("all-dropped competitors yield the empty state, not a crash", () => {
+  const view = buildProfileView(
+    plan({
+      competitors: [
+        { ...competitor("yt", 100), platform: "youtube" },
+        { ...competitor("missing", 100), platform: undefined as never },
+      ],
+    }),
+    { own: false },
+  );
+  assert.deepEqual(view.ideas, []);
+});
+
+test("assertInstagramOnly accepts Instagram cards and ideas", () => {
+  const view = buildProfileView(
+    plan({ reels: reels(2), competitors: [competitor("alpha", 2400000)] }),
+    { own: false },
+  );
+  assert.doesNotThrow(() => assertInstagramOnly(view));
+});
+
+test("assertInstagramOnly refuses a non-Instagram reel or idea", () => {
+  const view = buildProfileView(
+    plan({ reels: reels(2), competitors: [competitor("alpha", 2400000)] }),
+    { own: false },
+  );
+
+  assert.throws(
+    () =>
+      assertInstagramOnly({
+        ...view,
+        winners: [{ ...view.winners[0], url: "https://www.youtube.com/watch?v=x" }],
+      }),
+    /not an Instagram URL/,
+  );
+
+  assert.throws(
+    () =>
+      assertInstagramOnly({
+        ...view,
+        ideas: [{ ...view.ideas[0], platform: "youtube" as never }],
+      }),
+    /not Instagram/,
+  );
 });
 
 test("the own view carries the next move; the competitor view does not", () => {
@@ -393,26 +456,101 @@ test("the own view carries the next move; the competitor view does not", () => {
   );
 });
 
-test("nicheVerified is true only when the niche was derived from the posts", () => {
+test("summary describes the creator; cohort caveats move to the footnote", () => {
+  const p = plan({
+    account: {
+      followers: 8200,
+      bio: "Covers, every week",
+      category: "Musician",
+    },
+    diagnosis:
+      "You usually get around 8k views a post. The group we compared you with was not your room, so read the numbers below as provisional.",
+    cohort: {
+      accounts: 4,
+      basis:
+        "everyone in this space (4 accounts) — not enough close to your size to call a cohort",
+      nicheMedianViews: 12000,
+      sizeMatched: false,
+    },
+    nicheFit: {
+      searched: "telugu music covers",
+      score: 0.4,
+      agreement: 0.13,
+      verdict: "wrong",
+      ok: false,
+      accounts: [],
+      off: [],
+      creatorShape: "singer",
+      reasons: [
+        "Nothing the search returned looks like this account — 24 of 32 were in a different space.",
+      ],
+    },
+    comments: {
+      read: 3,
+      posts: 1,
+      seeds: [
+        {
+          text: "do the shopkeeper voice",
+          kind: "request",
+          asked: 5,
+          likes: 9,
+          ideas: [],
+        },
+      ],
+      questions: [],
+      objections: [],
+      requests: [],
+      language: ["telugu"],
+    },
+    reels: reels(8),
+  });
+
+  const view = buildProfileView(toCompetitorView(p), { own: false });
+  assert.doesNotMatch(
+    view.dna.summary,
+    /different space|not enough|provisional|Nothing the search returned/i,
+  );
+  assert.match(view.dna.summary, /Covers, every week/);
+  assert.match(view.dna.summary, /Their usual post reaches/);
+  assert.match(view.dna.summary, /Viewers keep asking for/);
+  assert.match(view.comparison ?? "", /Compared with 4 accounts/);
+  assert.match(view.comparison ?? "", /not enough close/);
+  assert.equal(view.nicheVerified, false);
+});
+
+test("nicheVerified is true only when the cohort check matched", () => {
+  const withVerdict = (verdict: "matches" | "mixed" | "wrong" | "unknown") =>
+    plan({
+      nicheFit: {
+        searched: "telugu music covers",
+        score: 0.8,
+        agreement: 0.8,
+        verdict,
+        ok: verdict === "matches",
+        accounts: [],
+        off: [],
+        creatorShape: "singer",
+        reasons: [],
+      },
+    });
+
+  assert.equal(
+    buildProfileView(withVerdict("matches"), { own: false }).nicheVerified,
+    true,
+  );
+  assert.equal(
+    buildProfileView(withVerdict("mixed"), { own: false }).nicheVerified,
+    false,
+  );
+  assert.equal(
+    buildProfileView(withVerdict("wrong"), { own: false }).nicheVerified,
+    false,
+  );
   assert.equal(
     buildProfileView(plan({ nicheSource: "model" }), { own: false })
       .nicheVerified,
-    true,
-  );
-  assert.equal(
-    buildProfileView(plan({ nicheSource: "captions" }), { own: false })
-      .nicheVerified,
-    true,
-  );
-  assert.equal(
-    buildProfileView(plan({ nicheSource: "user" }), { own: false })
-      .nicheVerified,
     false,
-  );
-  assert.equal(
-    buildProfileView(plan({ nicheSource: undefined }), { own: false })
-      .nicheVerified,
-    false,
+    "a model guess alone is not verified",
   );
 });
 
@@ -619,6 +757,81 @@ test("a corrupt stored view reads as absent, never crashes", async () => {
   }
 });
 
+test("the shared store refuses own and next-move views", async () => {
+  setDataDir(TMP);
+  process.env.PROFILE_CACHE_HOURS = "168";
+  try {
+    const own = buildProfileView(
+      plan({
+        reels: reels(2),
+        nextMove: {
+          title: "Post the reaction",
+          why: "Your best post was 5x your usual.",
+          action: "Start on the reaction.",
+          evidence: [],
+          confidence: 0.8,
+          basis: "your own posts",
+          checkOn: "next week",
+        },
+      }),
+      { own: true },
+    );
+
+    await assert.rejects(
+      () => saveProfileView("fixture", own),
+      /competitor views only/,
+    );
+
+    // Even a hand-written file is rejected on read: the shared artifact is a
+    // neutral competitor view, never the owner's next move.
+    const dir = profileDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "fixture.json"),
+      JSON.stringify({
+        handle: "fixture",
+        savedAt: new Date().toISOString(),
+        view: own,
+      }),
+    );
+    assert.equal(await readProfileView("fixture", Date.now()), null);
+
+    const neutral = buildProfileView(plan({ reels: reels(2) }), { own: false });
+    assert.equal(await readProfileView("fixture", Date.now()), null);
+    writeFileSync(
+      path.join(dir, "fixture.json"),
+      JSON.stringify({
+        handle: "fixture",
+        savedAt: new Date().toISOString(),
+        view: { ...neutral, nextMove: own.nextMove },
+      }),
+    );
+    assert.equal(await readProfileView("fixture", Date.now()), null);
+  } finally {
+    restoreDir();
+  }
+});
+
+test("the shared store refuses a non-Instagram idea", async () => {
+  setDataDir(TMP);
+  try {
+    const view = buildProfileView(
+      plan({ reels: reels(2), competitors: [competitor("alpha", 2400000)] }),
+      { own: false },
+    );
+    await assert.rejects(
+      () =>
+        saveProfileView("fixture", {
+          ...view,
+          ideas: [{ ...view.ideas[0], platform: "youtube" as never }],
+        }),
+      /not Instagram/,
+    );
+  } finally {
+    restoreDir();
+  }
+});
+
 test("disk-only enrichment fills reels and comments without a vendor call", () => {
   setDataDir(TMP);
   try {
@@ -669,6 +882,7 @@ test("disk-only enrichment fills reels and comments without a vendor call", () =
 
     const enriched = enrichProfilePlan(
       plan({
+        competitors: [competitor("alpha", 2400000)],
         moves: [
           {
             id: "m",

@@ -28,9 +28,10 @@ export async function generateMetadata({
   return {
     title: handle ? `@${handle} — Shambles audit` : "Shambles audit",
     /**
-     * A profile is someone else's public account. Its page is for the visitor
-     * holding the link, not for a search index, and the stored view is a
-     * seven-day artifact rather than a permanent record.
+     * Every profile is `noindex`: these are pages about someone's public
+     * account, held as a seven-day artifact rather than a permanent record, and
+     * the owner cannot be identified cheaply at metadata time. `nofollow` also
+     * keeps outbound reel links from being treated as endorsements.
      */
     robots: { index: false, follow: false },
   };
@@ -127,6 +128,10 @@ export default async function ProfilePage({
 
   const emptyReels =
     "Fewer than two recent reels were read, so there is no top and bottom to compare. A fresh read adds the rest.";
+  const emptyFlops =
+    view && view.winners.length === 0
+      ? "See section 03 — fewer than two recent reels were read, so there is no bottom three to compare."
+      : emptyReels;
 
   return (
     <div className="pb-24 sm:pb-4">
@@ -161,7 +166,7 @@ export default async function ProfilePage({
             title="04 // BOTTOM 3 PERFORMING REELS (WHY THEY FLOPPED)"
             whyLabel="WHY IT FLOPPED"
             reels={view.flops}
-            emptyReason={emptyReels}
+            emptyReason={emptyFlops}
             tone="bottom"
           />
 

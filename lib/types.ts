@@ -727,6 +727,15 @@ export interface HookVerdict {
  */
 export interface PlanCompetitor {
   handle: string;
+  /**
+   * The network the evidence reel was measured on.
+   *
+   * Required, because a competitor read is Instagram-only: a YouTube reel must
+   * never reach the profile's "next reel ideas" section. Legacy plans have no
+   * platform on their competitor entries, so they are treated as not Instagram
+   * and the section shows its empty state instead.
+   */
+  platform: Platform;
   /** views on their winning reel; 0 when the source did not report a number */
   views: number;
   /** the reel that proved the point */

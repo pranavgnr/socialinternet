@@ -1292,16 +1292,27 @@ export function buildPlan({
   const payloadViews = new Map(
     (research.payload ?? []).map((r) => [r.url, r.views] as const),
   );
+  /**
+   * The network each evidence reel was actually measured on. A competitor
+   * without a platform is not evidence for an Instagram profile, so the entry
+   * is skipped rather than defaulted to Instagram.
+   */
+  const payloadPlatforms = new Map(
+    (research.payload ?? []).map((r) => [r.url, r.platform] as const),
+  );
   const competitors: PlanCompetitor[] = [];
   for (const move of play.moves) {
     for (const e of move.evidence) {
       if (!e.url) continue;
+      const platform = payloadPlatforms.get(e.url);
+      if (!platform) continue;
       const handle = e.handle.replace(/^@/, "");
       if (handle.toLowerCase() === clean.toLowerCase()) continue;
       if (competitors.some((c) => c.url === e.url)) continue;
       const peerReasons = peerRoom?.reasons?.[handle.toLowerCase()];
       competitors.push({
         handle,
+        platform,
         views: payloadViews.get(e.url) ?? 0,
         url: e.url,
         caption: e.caption ?? move.title,

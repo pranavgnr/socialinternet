@@ -71,12 +71,10 @@ export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
               <div className="mt-auto pt-4">
                 <Link
                   href={idea.scriptHref}
+                  aria-label={`Script idea ${index + 1} from @${idea.fromHandle} for one gem in Koko`}
                   className="inline-flex min-h-[36px] w-full items-center justify-center rounded-lg bg-limelight px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
                 >
                   <span aria-hidden="true">Script this (1💎)</span>
-                  <span className="sr-only">
-                    Script this idea for one gem in Koko
-                  </span>
                 </Link>
               </div>
             </li>
@@ -85,8 +83,7 @@ export default function CompetitorIdeas({ ideas }: { ideas: ProfileIdea[] }) {
       ) : (
         <div className="card mt-5 p-5">
           <p className="text-[13px] leading-relaxed text-muted-zinc">
-            No competitor reels were read for this account yet, so there are no
-            ideas to script. A fresh read adds them.
+            No Instagram competitor evidence in this read yet.
           </p>
         </div>
       )}

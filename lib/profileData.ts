@@ -18,7 +18,7 @@ import { cachedCommentsByUrl, mineComments, normaliseUrl } from "./comments";
 import { dataPath } from "./dataDir";
 import { normalizeHandle } from "./handle";
 import { plain } from "./plain";
-import type { GrowthPlan, PlanCompetitor, RawReel } from "./types";
+import type { GrowthPlan, RawReel } from "./types";
 
 interface HandleCache {
   handle?: string;
@@ -39,82 +39,21 @@ function readHandleReels(handle: string): RawReel[] {
   }
 }
 
-/** Views written into a peer metric, e.g. "· 2.4M views" -> 2400000. */
-function viewsFromMetric(metric: string): number {
-  const match = metric.match(/·\s*([\d.]+)\s*([kKmM]?)\s*views/i);
-  if (!match) return 0;
-  const n = Number(match[1]);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  const unit = match[2].toLowerCase();
-  if (unit === "m") return Math.round(n * 1_000_000);
-  if (unit === "k") return Math.round(n * 1_000);
-  return Math.round(n);
-}
-
-/** The multiple written at the start of a peer metric, e.g. "2.4x ..." -> 2.4. */
-function metricMultiple(metric: string): number | null {
-  const match = metric.trim().match(/^([\d.]+)x\b/i);
-  if (!match) return null;
-  const n = Number(match[1]);
-  return Number.isFinite(n) ? n : null;
-}
-
 /**
- * The competitors the plan already cites, wherever the move list still exists.
+ * Keep only the plan's Instagram competitor evidence.
  *
- * New plans carry them on `competitors`. Older plans keep the same evidence on
- * the moves (and on the next move), which is enough to name the account, their
- * reel, its views and why they were chosen without buying anything again.
+ * A competitor without a platform is legacy data we cannot prove was measured
+ * on Instagram, so it is dropped rather than defaulted. The page then shows its
+ * empty state, which is the honest outcome.
  */
-function competitorsFrom(plan: GrowthPlan): PlanCompetitor[] {
-  const out: PlanCompetitor[] = [];
-  const seen = new Set<string>();
-  const own = plan.handle.replace(/^@/, "").toLowerCase();
-
-  const add = (idea: PlanCompetitor) => {
-    const handle = idea.handle.replace(/^@/, "");
-    if (!handle || handle.toLowerCase() === own) return;
-    if (!idea.url || seen.has(idea.url)) return;
-    const multiple = idea.reasons
-      .map((reason) => metricMultiple(reason))
-      .find((value): value is number => value !== null);
-    if (multiple !== undefined && multiple < 1) return;
-    seen.add(idea.url);
-    out.push({ ...idea, handle });
-  };
-
-  for (const idea of plan.competitors ?? []) add(idea);
-
-  if (!out.length) {
-    for (const move of plan.moves ?? []) {
-      for (const evidence of move.evidence ?? []) {
-        add({
-          handle: evidence.handle.replace(/^@/, ""),
-          views: viewsFromMetric(evidence.metric),
-          url: evidence.url ?? "",
-          caption: evidence.caption ?? move.title,
-          reasons: [evidence.metric],
-        });
-      }
-    }
-  }
-
-  if (!out.length && plan.nextMove) {
-    for (const evidence of plan.nextMove.evidence ?? []) {
-      add({
-        handle: evidence.handle.replace(/^@/, ""),
-        views: viewsFromMetric(evidence.metric),
-        url: evidence.url ?? "",
-        caption: evidence.caption ?? plan.nextMove.title,
-        reasons: [evidence.metric],
-      });
-    }
-  }
-
-  return out.slice(0, 3).map((idea) => ({
-    ...idea,
-    reasons: idea.reasons.map((reason) => plain(reason)),
-  }));
+function instagramCompetitors(plan: GrowthPlan) {
+  return (plan.competitors ?? [])
+    .filter((idea) => idea.platform === "instagram")
+    .slice(0, 3)
+    .map((idea) => ({
+      ...idea,
+      reasons: idea.reasons.map((reason) => plain(reason)),
+    }));
 }
 
 /**
@@ -145,9 +84,7 @@ export function enrichProfilePlan(plan: GrowthPlan): GrowthPlan {
     if (mined.read > 0) comments = mined;
   }
 
-  const competitors = withReels.competitors?.length
-    ? withReels.competitors
-    : competitorsFrom(withReels);
+  const competitors = instagramCompetitors(withReels);
 
   return {
     ...withReels,

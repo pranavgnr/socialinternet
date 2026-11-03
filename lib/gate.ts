@@ -107,7 +107,7 @@ export function outOfCreditsMessage(
   const msToReset = nextIstMidnight(now).getTime() - now.getTime();
   const hours = Math.max(1, Math.ceil(msToReset / HOUR));
   return (
-    `A fresh ${label} costs ${cost} credit${cost === 1 ? "" : "s"} and you have ${balance} left today. ` +
+    `A fresh ${label} costs ${cost} gem${cost === 1 ? "" : "s"} and you have ${balance} left today. ` +
     `Your free pool resets tomorrow at 12:00 am IST — about ${hours} hour${hours === 1 ? "" : "s"} from now.`
   );
 }

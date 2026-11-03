@@ -343,7 +343,7 @@ export default function WeeklyView({
 
       {digest.cached ? (
         <p className="text-[11.5px] leading-relaxed text-muted/60">
-          Served from a recent pull — no credits spent on this digest.
+          Served from a recent pull — no gems spent on this digest.
         </p>
       ) : null}
 

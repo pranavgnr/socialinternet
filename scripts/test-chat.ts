@@ -416,7 +416,7 @@ test("a drained pool gets the gate's 402 sentence and never calls the model", as
   });
   const body = (await res.json()) as { error?: string };
   assert.equal(res.status, 402);
-  assert.match(body.error ?? "", /A fresh chat message costs 1 credit and you have 0 left today/);
+  assert.match(body.error ?? "", /A fresh chat message costs 1 gem and you have 0 left today/);
   assert.match(body.error ?? "", /free pool resets tomorrow/);
   assert.equal(calls, 0);
 });

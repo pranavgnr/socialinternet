@@ -13,8 +13,6 @@
  * from `data/niches`, which is what keeps the landing page alive when Postgres
  * is not.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
-
 import { currentDb, withClient } from "./db";
 import {
   cachedNiches,
@@ -359,16 +357,10 @@ export async function listTrending(
 }
 
 /**
- * Compare the cron secret without leaking its length or a matching prefix.
- *
- * Hashing both sides first keeps `timingSafeEqual` on equal-length buffers, so
- * the comparison costs the same whether the guess is one byte or a thousand.
+ * Kept here for the existing importers (`scripts/test-trending.ts`); the one
+ * implementation lives in `lib/cron.ts` alongside the secret gate itself.
  */
-export function cronSecretOk(given: string, secret: string): boolean {
-  const a = createHash("sha256").update(given).digest();
-  const b = createHash("sha256").update(secret).digest();
-  return timingSafeEqual(a, b);
-}
+export { cronSecretOk } from "./cron";
 
 /**
  * Is this failure the budget running out, rather than one room being broken?

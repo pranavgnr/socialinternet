@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 
 import { cachedCommentsByUrl, mineComments, normaliseUrl } from "@/lib/comments";
+import { runCron } from "@/lib/cron";
 import { buildDigest, dataRoot, listAccounts, mondayOf, storeAt, upsertDigest } from "@/lib/weekly";
 
 export const maxDuration = 120;
@@ -26,14 +27,6 @@ export const maxDuration = 120;
  * the cache kept, so the cleaner ranking applies to weeks recorded before it.
  */
 async function run(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const given = req.headers.get("x-cron-secret") ?? "";
-    if (given !== secret) {
-      return NextResponse.json({ ok: false, error: "Bad secret." }, { status: 401 });
-    }
-  }
-
   const url = new URL(req.url);
   const only = url.searchParams.get("account");
   const all = url.searchParams.get("all") === "1";
@@ -107,9 +100,9 @@ async function run(req: Request) {
 }
 
 export async function POST(req: Request) {
-  return run(req);
+  return runCron(req, "weekly rebuild job", () => run(req));
 }
 
 export async function GET(req: Request) {
-  return run(req);
+  return runCron(req, "weekly rebuild job", () => run(req), { dynamic: true });
 }

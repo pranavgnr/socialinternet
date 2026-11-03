@@ -1,7 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
+import { runCron } from "@/lib/cron";
 import { listAccounts, mondayOf, runWeekly, storeAt, dataRoot } from "@/lib/weekly";
 
 export const maxDuration = 800;
@@ -16,27 +15,8 @@ export const maxDuration = 800;
  * A failing account never stops the rest: one dead handle must not cost the
  * other creators their Monday.
  */
-function secretOk(given: string, secret: string): boolean {
-  const a = createHash("sha256").update(given).digest();
-  const b = createHash("sha256").update(secret).digest();
-  return timingSafeEqual(a, b);
-}
-
 async function run(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json(
-      { ok: false, error: "Set CRON_SECRET to enable the weekly job." },
-      { status: 503 },
-    );
-  }
-
   const url = new URL(req.url);
-  const given = req.headers.get("x-cron-secret") ?? "";
-  if (!secretOk(given, secret)) {
-    return NextResponse.json({ ok: false, error: "Bad secret." }, { status: 401 });
-  }
-
   const week = mondayOf();
   const cap = Number(process.env.WEEKLY_MAX ?? 3);
   const forceWeek = url.searchParams.get("force") === "1";
@@ -82,9 +62,9 @@ async function run(req: Request) {
 }
 
 export async function GET(req: Request) {
-  return run(req);
+  return runCron(req, "weekly job", () => run(req), { dynamic: true });
 }
 
 export async function POST(req: Request) {
-  return run(req);
+  return runCron(req, "weekly job", () => run(req));
 }

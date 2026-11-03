@@ -1,8 +1,8 @@
-import { connection, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import { redactSecrets } from "@/lib/canary";
+import { runCron } from "@/lib/cron";
 import {
-  cronSecretOk,
   refreshTrending,
   researchStalest,
 } from "@/lib/trending";
@@ -20,20 +20,7 @@ export const maxDuration = 800;
  * stops at the first budget error instead of asking an empty account five times.
  */
 async function run(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json(
-      { ok: false, error: "Set CRON_SECRET to enable the trending job." },
-      { status: 503 },
-    );
-  }
-
   const url = new URL(req.url);
-  const given = req.headers.get("x-cron-secret") ?? "";
-  if (!cronSecretOk(given, secret)) {
-    return NextResponse.json({ ok: false, error: "Bad secret." }, { status: 401 });
-  }
-
   const refresh = url.searchParams.get("refresh") === "1";
 
   try {
@@ -64,6 +51,5 @@ async function run(req: Request) {
 }
 
 export async function GET(req: Request) {
-  await connection();
-  return run(req);
+  return runCron(req, "trending job", () => run(req), { dynamic: true });
 }

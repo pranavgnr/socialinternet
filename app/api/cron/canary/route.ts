@@ -1,8 +1,7 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-
-import { connection, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 import { redactSecrets, runCanary } from "@/lib/canary";
+import { runCron } from "@/lib/cron";
 
 export const maxDuration = 800;
 
@@ -12,30 +11,11 @@ export const maxDuration = 800;
  * One profile read per usable Instagram vendor, written to `vendor_canary`.
  * Vendors with no key, no balance or a read that would cross `CANARY_MAX_USD`
  * are returned in `skipped` and are not failures. `?vendor=apify` targets a
- * single vendor. The secret is accepted **only** through the header: unlike the
- * trending route, a query-string secret is not honoured, because this endpoint
- * spends real money at every vendor.
+ * single vendor. The secret is accepted **only** through the header: this
+ * endpoint spends real money at every vendor, so a query-string token (which
+ * leaks into logs and history) is never honoured.
  */
-function secretOk(given: string, secret: string): boolean {
-  const a = createHash("sha256").update(given).digest();
-  const b = createHash("sha256").update(secret).digest();
-  return timingSafeEqual(a, b);
-}
-
 async function run(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json(
-      { ok: false, error: "Set CRON_SECRET to enable the canary job." },
-      { status: 503 },
-    );
-  }
-
-  const given = req.headers.get("x-cron-secret") ?? "";
-  if (!secretOk(given, secret)) {
-    return NextResponse.json({ ok: false, error: "Bad secret." }, { status: 401 });
-  }
-
   const url = new URL(req.url);
   const vendor = url.searchParams.get("vendor")?.trim() || undefined;
 
@@ -70,6 +50,5 @@ async function run(req: Request) {
 }
 
 export async function GET(req: Request) {
-  await connection();
-  return run(req);
+  return runCron(req, "canary job", () => run(req), { dynamic: true });
 }

@@ -792,42 +792,6 @@ export async function searchInstagramAccounts(
 }
 
 /**
- * More comments than the post payload carries — 5 credits a page.
- *
- * Only worth it when the free ~15 under a post were too thin to answer "what is
- * my audience actually asking". Capped at two pages by the caller, because this
- * is the most expensive per-useful-fact call on the shelf.
- */
-export async function fetchPostComments(url: string, pages = 1): Promise<RawComment[]> {
-  const out: RawComment[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < Math.min(2, Math.max(1, pages)); page += 1) {
-    const { data } = await onInstagram(() =>
-      socialcrawl(
-        "/instagram/post/comments",
-        cursor ? { url, cursor, platform: "instagram" } : { url, platform: "instagram" },
-        5,
-      ),
-    );
-    const rows = items(data);
-    for (const c of rows) {
-      const text = String(c.text ?? "").trim();
-      if (!text) continue;
-      out.push({
-        text,
-        likes: num(c.likes),
-        username: str(obj(c.author).username) ?? str(c.username),
-        publishedAt: c.published_at ? toIso(c.published_at) : undefined,
-      });
-    }
-    const pg = obj(data.pagination);
-    if (!pg.has_more || typeof pg.next_cursor !== "string") break;
-    cursor = pg.next_cursor;
-  }
-  return out;
-}
-
-/**
  * SocialCrawl's own transcript — 10 credits a reel.
  *
  * Kept as a deliberate fallback, never the default: the local whisper path in
@@ -1119,43 +1083,6 @@ export function estimateFreshPull(profile: Profile): CostEstimate {
     credits: lines.reduce((n, l) => n + l.credits, 0),
     lines,
   };
-}
-
-export interface CacheStatus {
-  /** true when a re-run would be served from disk and cost nothing */
-  warm: boolean;
-  /** true when the cached pull was made for this exact profile */
-  keyMatches: boolean;
-  ageHours: number | null;
-  ttlHours: number;
-  fetchedAt: string | null;
-  reels: number | null;
-}
-
-export function cacheStatus(profile: Profile): CacheStatus {
-  const key = profileKey(profile, process.env.SOCIALCRAWL_API_KEY ? "live" : "demo");
-  try {
-    const raw = JSON.parse(readFileSync(rawCachePath(), "utf8")) as CacheFile;
-    const ageH = (Date.now() - +new Date(raw.fetchedAt)) / 3_600_000;
-    const keyMatches = raw.key === key;
-    return {
-      warm: keyMatches && ageH >= 0 && ageH <= cacheTtlHours(),
-      keyMatches,
-      ageHours: Math.round(ageH * 100) / 100,
-      ttlHours: cacheTtlHours(),
-      fetchedAt: raw.fetchedAt,
-      reels: raw.reels.length,
-    };
-  } catch {
-    return {
-      warm: false,
-      keyMatches: false,
-      ageHours: null,
-      ttlHours: cacheTtlHours(),
-      fetchedAt: null,
-      reels: null,
-    };
-  }
 }
 
 /**

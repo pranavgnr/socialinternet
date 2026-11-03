@@ -204,10 +204,6 @@ export function providersFor(path: string, platform?: string): DataProvider[] {
  * including one the router benched earlier in the process. Deliberately not
  * sorted by price — a health check is not choosing a winner.
  */
-export function configuredProviders(): DataProvider[] {
-  return ALL.filter((p) => p.configured());
-}
-
 /**
  * Every known vendor, configured or not. The canary uses this so a requested
  * vendor with no key can be reported as skipped instead of silently looking

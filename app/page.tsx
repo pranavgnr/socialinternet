@@ -1,5 +1,4 @@
 import { connection } from "next/server";
-import { redirect } from "next/navigation";
 
 import Landing from "@/components/Landing";
 import { currentUser } from "@/lib/auth";
@@ -39,15 +38,11 @@ export default async function Home({
   const plan = stored?.archetype ? stored : null;
 
   /**
-   * A signed-in visitor with a saved plan belongs on their own profile, where
-   * the whole audit lives. `?new=1` deliberately falls through to the landing
-   * page so a plan holder can audit another handle. A plan without a handle has
-   * no profile to open, so it also falls back to the landing page rather than
-   * redirecting to `/profile/undefined`.
+   * No redirect for plan holders. The logo links here, so forcing a signed-in
+   * visitor onto their profile made the homepage unreachable. They see the same
+   * front door as everyone else, plus a link back to their own audit.
    */
-  if (user && plan && !isNew && plan.handle) {
-    redirect(`/profile/${encodeURIComponent(plan.handle)}`);
-  }
+  const ownHandle = user && plan?.handle ? plan.handle : null;
 
-  return <Landing signedIn={Boolean(user)} />;
+  return <Landing signedIn={Boolean(user)} ownHandle={ownHandle} />;
 }

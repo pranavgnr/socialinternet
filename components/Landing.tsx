@@ -26,7 +26,14 @@ const EXAMPLE_METRICS = [
  * `listTrending` falls back to disk and zero niches simply removes the
  * bubbles.
  */
-export default async function Landing({ signedIn = false }: { signedIn?: boolean }) {
+export default async function Landing({
+  signedIn = false,
+  ownHandle = null,
+}: {
+  signedIn?: boolean;
+  /** the signed-in visitor's own audited handle, when they have one */
+  ownHandle?: string | null;
+}) {
   const niches = await listTrending();
 
   return (
@@ -36,6 +43,19 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
           aria-hidden="true"
           className="pointer-events-none absolute -left-24 top-0 h-[420px] w-[420px] rounded-full bg-limelight/[0.045] blur-3xl"
         />
+
+        {ownHandle ? (
+          <Link
+            href={`/profile/${encodeURIComponent(ownHandle)}`}
+            className="mb-5 inline-flex min-h-[44px] items-center gap-2 rounded-full border border-white/10 bg-card px-4 text-[13px] font-semibold text-pure-white transition hover:border-limelight/40"
+          >
+            <span className="mono text-[11px] uppercase tracking-[0.14em] text-limelight">
+              Your audit
+            </span>
+            <span>@{ownHandle}</span>
+            <span aria-hidden="true">→</span>
+          </Link>
+        ) : null}
 
         <HeroTicker />
 

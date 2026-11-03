@@ -31,6 +31,15 @@ Stay, 1-click mini-business, verified rate card, comment-to-DM, IG Wrapped.
   waitlist signup with email or WhatsApp, the creator's handle and the feature
   they want.
 
+## Mobile and installability (founder requirement, 2026-11-03)
+
+Most creators will use Shambles on a phone, so every screen is designed mobile-first
+(360 to 430 px wide first, then tablet and desktop) and the site ships as a
+**Progressive Web App**: a web manifest with icons, standalone display, theme colours
+from the tokens, an offline fallback page, a service worker that never caches
+authenticated or money-moving requests, and an install prompt (a hint on iOS).
+Tap targets are at least 44 px, form inputs at least 16 px, and safe areas are respected.
+
 ## Non-goals (launch)
 
 Communities, collab matching, venues, cashback score, brand deals, invoicing, auto

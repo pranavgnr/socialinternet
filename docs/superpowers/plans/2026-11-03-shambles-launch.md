@@ -24,6 +24,8 @@
 - Read `node_modules/next/dist/docs/` before touching Next APIs. Run `npx tsc --noEmit` and `npm run build` before each commit; commit after every task. Worktree `/Users/pranav/.local/share/opencode/worktree/92fd59/creators-101-v1`, branch `creators-101-v1`.
 - Tests run without the network; component logic is extracted into pure functions and tested (the repo has no browser test runner). Visual verification uses the in-app browser on a locally started production build and is reported with screenshots' file paths.
 
+- **Mobile first and installable (founder requirement, 2026-11-03):** the site is used mainly on phones. Design and verify mobile-first at 360, 390 and 430 px widths, then tablet and desktop. No horizontal scroll at any width, tap targets at least 44x44 px, form inputs at least 16 px font size (iOS must not zoom on focus), safe-area insets respected (`env(safe-area-inset-*)`) for the fixed Koko widget and any bottom UI, `100dvh`-safe layouts (no `100vh` traps), readable line lengths, long unbroken strings wrapped. The site ships as a **Progressive Web App** (Task 9): web manifest, icons (192, 512, maskable), theme/background colours from the tokens, an offline fallback page, a service worker that never caches authenticated or money-moving requests, and an install affordance.
+
 ## Review Focus
 
 1. OmniSearch inputs: `@Name`, `name`, an instagram.com profile URL, a post/reel URL, a phrase with spaces, Hinglish or Devanagari text, 1 character, 300 characters, only punctuation (Task 1).
@@ -33,6 +35,8 @@
 5. Koko reply containing HTML, markdown tables or a very long unbroken string must render safely and not break the layout (Task 5).
 6. Anonymous visitor on `/profile/<uncached handle>` and `/chat`: sign-in prompt, no vendor spend, no cookie minted for refusals (Tasks 4, 5).
 7. Database down: landing, profile (cached), niche (cached) and header still render; waitlist shows a friendly retry message (Tasks 1-6).
+8. Phones: every page at 360/390/430 px wide with a software keyboard open (input not hidden behind the keyboard or the Koko widget), landscape orientation, very long handles/captions, notch/safe areas, slow 3G (skeletons, no layout jumps), and tap targets under 44 px (all tasks; Task 9 audits every route).
+9. PWA: a stale service worker serving an old build after a deploy, a cached response for a POST or for anything with a session cookie, offline navigation to an uncached route, the install prompt shown to someone who dismissed it, iOS "Add to Home Screen" with no `beforeinstallprompt` (Task 9).
 
 ---
 
@@ -137,10 +141,28 @@
 - [ ] **Step 3:** apply migration 003 to the real database (`npm run migrate`), run the whole test suite, `tsc`, `build`, then walk landing -> profile -> niche -> chat -> waitlist in the browser and save screenshots under `docs/screenshots/` (no secrets in frame).
 - [ ] **Step 4: Commit** `chore: retire the old interface and rebrand to Shambles`.
 
+### Task 9: Mobile polish and Progressive Web App
+
+**Files:**
+- Create: `app/manifest.ts`, `public/sw.js`, `public/icons/*` (icon-192.png, icon-512.png, maskable-512.png, apple-touch-icon.png, favicon sizes), `app/offline/page.tsx`, `components/PwaRegister.tsx`, `components/InstallPrompt.tsx`, `lib/pwa.ts`, `scripts/test-pwa.ts`, `scripts/audit-mobile.mjs`
+- Modify: `app/layout.tsx` (viewport, theme colour, apple meta, register the worker), components with tap-target or overflow problems found by the audit
+
+**Interfaces:**
+- Produces: `app/manifest.ts` exporting a Next `MetadataRoute.Manifest` with name "Shambles", short_name "Shambles", description, `start_url: "/"`, `scope: "/"`, `display: "standalone"`, `orientation: "portrait"`, `background_color: "#09090C"`, `theme_color: "#09090C"`, icons 192 and 512 (purpose any) plus a maskable 512, categories, and shortcuts (Search a niche -> `/`, Koko -> `/chat`); `public/sw.js` implementing a **network-first for navigations with an offline fallback to `/offline`**, **stale-while-revalidate for static assets** (`/_next/static/**`, fonts, icons) and **no caching at all** for non-GET requests, anything under `/api/`, any request carrying cookies/Authorization, and any response with `Set-Cookie`, `Cache-Control: no-store` or `private`; a versioned cache name (`shambles-static-v1`) and cleanup of old caches on activate, `skipWaiting` + `clients.claim` guarded so a new worker takes over cleanly; pure helpers in `lib/pwa.ts` (`shouldCache(request: {method: string; url: string; hasCredentials: boolean}): boolean`, `cacheNameFor(version: string)`, `isInstallable(userAgent: string)`) that the worker logic mirrors and that tests exercise; `PwaRegister` (client, registers `/sw.js` only in production, on `load`, with update checks, never throws) and `InstallPrompt` (client: captures `beforeinstallprompt`, shows a small dismissible "Install Shambles" bar on mobile after the second visit or a meaningful action, remembers dismissal for 30 days in localStorage, and on iOS Safari (no event) shows a one-line "Add to Home Screen" hint instead; hidden when already `display-mode: standalone`).
+
+- [ ] **Step 1: Read** `node_modules/next/dist/docs/` for the manifest file convention, `viewport`/`themeColor`, and any PWA guide; follow them (this is not the Next.js you know).
+- [ ] **Step 2: Failing tests** in `scripts/test-pwa.ts`: `shouldCache` is false for POST, for `/api/*`, for requests with credentials, for `/chat`, `/profile/*` navigations that carry cookies; true for `/_next/static/*`, `/icons/*`, `/fonts/*`; `cacheNameFor`; manifest object fields (colours exactly the tokens, icons present, start_url, display standalone, maskable icon); the icon files exist with the right pixel sizes (read PNG headers); `isInstallable` for iOS Safari/Chrome Android/desktop strings.
+- [ ] **Step 3: Icons.** Create the PNGs from the Shambles mark (a lime dot beside the wordmark initial "S" on `#09090C`, rounded for any, full-bleed with safe zone for maskable) using headless Chrome from an SVG (the same Chrome used for screenshots) or the image tool; keep source SVGs under `public/icons/src/`.
+- [ ] **Step 4: Implement** manifest, worker, offline page (on-brand, says what still works offline: nothing live; offers retry), register/install components, layout metadata (`appleWebApp` capable, status bar style, `viewport` with `viewportFit: "cover"`, `themeColor`), and wire `PwaRegister`/`InstallPrompt` into the layout. The service worker must be served with `Cache-Control: no-cache` and scope `/` (add headers in `next.config.ts` for `/sw.js`).
+- [ ] **Step 5: Mobile audit.** Write `scripts/audit-mobile.mjs` (headless Chrome via CDP, like the existing capture scripts) that loads every route (`/`, `/profile/_shravyapawar_`, `/search/niche/kannada%20songs`, `/chat`, `/chat?handle=_shravyapawar_`, `/offline`, plus an uncached niche and an invalid handle) at 360x740, 390x844, 430x932 and 844x390 (landscape) with a mobile user agent, and reports: horizontal overflow (scrollWidth > innerWidth), interactive elements smaller than 44x44 CSS px, inputs with computed font-size below 16 px, elements overlapped by the fixed Koko widget or the install bar, console errors; writes screenshots to `/tmp/shambles-shots/mobile-*.png`. Fix every finding (tap targets via min-height/padding, font-size, overflow wrapping, safe-area padding for the Koko widget and install bar, bottom padding so fixed elements never cover content, `dvh` units).
+- [ ] **Step 6: Lighthouse-style checks** with `tools.browser.lighthouse` if the in-app browser is connected, else the manifest and worker checks by script: manifest valid and linked, worker registered and active in a production build, offline navigation shows `/offline`, HTTPS note (the service worker needs HTTPS except on localhost; document it in `docs/deploy.md`).
+- [ ] **Step 7: Tests, `tsc`, `build`; commit** `feat: mobile polish and installable PWA`.
+
 ---
 
 ## Self-review
 
 - **Spec coverage:** header and search (1), design tokens and widget (1), waitlist and locked cards (2), landing (3), profile sections 01-06 (4, 7), niche page (6), Koko studio and one-tap actions (5), authenticity estimate and video reader (7), redirects, rebrand and demo-data rule (8).
+- **Mobile and PWA (founder requirement):** Global Constraints, Review Focus 8-9, Task 9.
 - **Deferred by the spec:** IG Wrapped, rate card, mini-business, comment-to-DM, communities, payments (locked cards only).
 - **Open inputs:** Gemini key (Task 7 falls back without it), real FAQ copy, final mascot art.

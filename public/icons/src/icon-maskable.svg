@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      @font-face {
+        font-family: "Plus Jakarta Sans";
+        src: url("fonts/PlusJakartaSans-Bold.ttf") format("truetype");
+        font-weight: 700;
+        font-style: normal;
+      }
+      .mark {
+        font-family: "Plus Jakarta Sans", "Helvetica Neue", Arial, sans-serif;
+        font-size: 336px;
+        font-weight: 700;
+        fill: #FAFAFA;
+      }
+    </style>
+  </defs>
+  <!-- Full bleed: the platform supplies the mask. The mark stays inside the
+       central 80% safe zone (51..461 on both axes). -->
+  <rect width="512" height="512" fill="#09090C"/>
+  <text class="mark" x="224" y="362" text-anchor="middle">S</text>
+  <circle cx="396" cy="184" r="34" fill="#CCFF00"/>
+</svg>

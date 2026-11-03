@@ -258,6 +258,47 @@ rotate the per-IP key. The global ceiling `WAITLIST_GLOBAL_PER_HOUR` (default
 300, per hour across all IPs) bounds the table even then, and each normalised
 contact is also capped at 5 requests per hour. Keep the app behind the proxy.
 
+### The service worker, HTTPS and installability
+
+Shambles ships as a Progressive Web App. The manifest, icons and offline shell
+are served over the same origin as the app, and `public/sw.js` registers only in
+a production build.
+
+- **HTTPS is required.** Browsers only allow a service worker on a secure
+  origin. The Caddy block above already terminates TLS, so
+  `https://creators.example.com` works with no extra configuration. The one
+  exception is `http://localhost` (and `127.0.0.1`), which browsers treat as
+  secure for development and for the production build run locally. Testing over
+  a LAN IP such as `http://192.168.1.20:3000` will *not* register the worker;
+  use an HTTPS tunnel, or test the phone flows against the deployed domain.
+- **The worker serves no private data.** It caches only `/_next/static/**`,
+  `/icons/**`, font files and the `/offline` page shell. Non-GET requests,
+  anything under `/api/`, and responses with `Set-Cookie`,
+  `Cache-Control: no-store` or `private` are never stored. Navigations are
+  network-first; on failure they show `/offline`.
+- **A new deploy invalidates the cache by version.** Bump `CACHE_VERSION` in
+  `public/sw.js` (`v1` → `v2`) in the same release that changes the app shell.
+  On `activate`, every older `shambles-*` cache is deleted. The registration
+  code checks for an update on load and when the tab becomes visible again; a
+  waiting worker takes over on the next navigation, never by reloading a form
+  the visitor is filling in. `/sw.js` is served with `Cache-Control: no-cache`
+  and `Service-Worker-Allowed: /` from `next.config.ts`.
+- **Testing an install on a phone.** Deploy over HTTPS, then:
+  - **Chrome on Android:** open the site, wait for the install bar (second
+    visit or after opening a profile), tap **Install**, or use the browser menu
+    → **Add to Home screen**. The app opens standalone with the obsidian theme.
+  - **Safari on iOS:** open the site in Safari, tap **Share** (the square with
+    an arrow), scroll to **Add to Home Screen**, confirm. iOS does not fire
+    `beforeinstallprompt`; the site shows the "Share, then Add to Home Screen"
+    hint instead. If it does not appear, dismiss any previous prompt and
+    revisit after a second day.
+  - To remove it, long-press the home-screen icon and delete it. The site's
+    cache can be cleared from the browser's site-data settings.
+- **Offline check.** After one visit, turn on airplane mode and reload a
+  visited page. The `/offline` shell should appear with a retry button. On the
+  first-ever visit (nothing cached), the browser's own offline page may appear
+  instead.
+
 ---
 
 ## 7. Google sign-in

@@ -29,6 +29,7 @@ import {
   signalsFrom,
   type NicheOpportunity,
 } from "./opportunity";
+import type { RawReel } from "./types";
 
 export interface TrendingNiche {
   slug: string;
@@ -79,9 +80,25 @@ export function rankTrending(
     if (seen.has(row.slug)) continue;
     seen.add(row.slug);
 
-    const payload = row.payload ?? [];
+    /**
+     * A bubble must open the niche dossier, and that page is Instagram-only.
+     * Older cache files still hold rooms read from YouTube; advertising one
+     * sends a visitor to a page that can only say "no reels read". Drop those
+     * rows before the size floors, so the floors describe the Instagram room
+     * the page will actually render rather than a mixed pull.
+     */
+    const payload = (row.payload ?? []).filter(
+      // A corrupt cache row can be null; leave it in place for the scorer's
+      // own try/catch, but never let it count as an Instagram account.
+      (r) => !r || (r.platform ?? "instagram") === "instagram",
+    );
     if (payload.length < MIN_TRENDING_REELS) continue;
-    if (row.accounts < MIN_TRENDING_ACCOUNTS) continue;
+    const accounts = new Set(
+      payload
+        .filter((r): r is RawReel => Boolean(r))
+        .map((r) => r.account.toLowerCase()),
+    ).size;
+    if (accounts < MIN_TRENDING_ACCOUNTS) continue;
 
     try {
       const research = researchFromCache(row.query, payload, {

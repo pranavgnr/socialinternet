@@ -242,6 +242,37 @@ test("rankTrending skips rooms too thin to score", async () => {
   assert.deepEqual(rankTrending([oneAccount, twoAccounts, fewReels]), []);
 });
 
+test("rankTrending skips rooms with no Instagram reels", async () => {
+  const { rankTrending } = await lib();
+  const good = cachedFixture("good", "home workout", { base: 2_500 });
+  const youtubeOnly = {
+    ...cachedFixture("youtube-only", "bread baking", { base: 9_000 }),
+    payload: room("bread baking", { base: 9_000 }).map((r) => ({
+      ...r,
+      platform: "youtube" as const,
+      url: r.url.replace("instagram.com", "youtube.com"),
+    })),
+  };
+
+  const out = rankTrending([youtubeOnly, good]);
+
+  assert.deepEqual(out.map((n) => n.slug), ["good"]);
+});
+
+test("rankTrending applies the size floors to Instagram rows, not the raw pull", async () => {
+  const { rankTrending } = await lib();
+  // Ten rows and three accounts in total, but only two are Instagram.
+  const mixed = {
+    ...cachedFixture("mixed", "home workout", { accounts: 3, per: 4 }),
+    payload: room("home workout", { accounts: 3, per: 4 }).map((r, i) => ({
+      ...r,
+      platform: i < 2 ? ("instagram" as const) : ("youtube" as const),
+    })),
+  };
+
+  assert.deepEqual(rankTrending([mixed]), []);
+});
+
 test("rankTrending skips a poisoned room instead of aborting the ranking", async () => {
   const { rankTrending } = await lib();
   const good = cachedFixture("good", "home workout", { base: 2_500 });

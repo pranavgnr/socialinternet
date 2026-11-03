@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { kokoHref } from "@/lib/omni";
+import KokoAvatar from "./koko/KokoAvatar";
 
 /**
  * The floating concierge. On phones it is a 48 px icon-only circle so it does
@@ -38,25 +39,7 @@ export default function KokoConcierge({
       className={`koko-aura group fixed bottom-4 right-4 z-50 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-card/95 p-0 backdrop-blur transition hover:border-white/20 sm:bottom-6 sm:right-6 sm:h-auto sm:w-auto sm:justify-start sm:gap-3 sm:px-3 sm:py-2 ${className}`}
       style={style}
     >
-      <svg
-        viewBox="0 0 32 32"
-        className="h-9 w-9 shrink-0"
-        aria-hidden="true"
-      >
-        <rect
-          x="2.5"
-          y="2.5"
-          width="27"
-          height="27"
-          rx="10"
-          fill="#131318"
-          stroke={accent}
-          strokeOpacity="0.55"
-        />
-        <rect x="9" y="11" width="4.5" height="5.5" rx="1.2" fill={accent} />
-        <rect x="18.5" y="11" width="4.5" height="5.5" rx="1.2" fill={accent} />
-        <rect x="11.5" y="21" width="9" height="2.6" rx="1.3" fill="#FAFAFA" />
-      </svg>
+      <KokoAvatar tone={tone} className="h-9 w-9" />
       <span className="hidden flex-col pr-1 leading-tight sm:flex">
         <span className="text-[13px] font-semibold text-pure-white">Koko</span>
         <span className="mono text-[10px] tracking-[0.06em] text-muted-zinc">

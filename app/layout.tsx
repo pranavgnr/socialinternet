@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Plus_Jakarta_Sans, Space_Mono } from "next/font/google";
 
 import KokoConcierge from "@/components/KokoConcierge";
+import LegacyNav from "@/components/LegacyNav";
 import SiteHeader from "@/components/SiteHeader";
+import { currentAccount } from "@/lib/session";
 
 import "./globals.css";
 
@@ -38,6 +41,18 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/** Plan state for the temporary secondary nav. Mirrors the old NavLinks read. */
+async function LegacyNavAccount() {
+  let hasPlan = false;
+  try {
+    const account = await currentAccount();
+    hasPlan = Boolean(account ? await account.store.getPlan() : null);
+  } catch {
+    // No cookie store, or the database is down: a plain nav is fine.
+  }
+  return <LegacyNav hasPlan={hasPlan} />;
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -50,6 +65,11 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col bg-bg text-text">
         <SiteHeader />
+
+        {/* TODO(task-8): remove with the legacy routes. */}
+        <Suspense fallback={null}>
+          <LegacyNavAccount />
+        </Suspense>
 
         <main className="mx-auto w-full max-w-2xl flex-1 px-5 py-5">
           {children}

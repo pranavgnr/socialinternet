@@ -133,6 +133,83 @@ test("a bare reserved word is still a legal niche phrase", () => {
   });
 });
 
+test("an uppercase Instagram host and handle normalise", () => {
+  assert.deepEqual(routeFor("HTTPS://WWW.INSTAGRAM.COM/Priya/"), {
+    href: "/profile/priya",
+    kind: "profile",
+  });
+});
+
+test("a scheme-less instagram.com profile URL is a profile", () => {
+  assert.deepEqual(routeFor("instagram.com/priya"), {
+    href: "/profile/priya",
+    kind: "profile",
+  });
+});
+
+test("a handle ending in a dot is refused", () => {
+  assert.deepEqual(routeFor("@priya."), { error: HANDLE_ERROR });
+});
+
+test("a 30-character handle is accepted", () => {
+  const handle = "a".repeat(30);
+  assert.deepEqual(routeFor(`@${handle}`), {
+    href: `/profile/${handle}`,
+    kind: "profile",
+  });
+});
+
+test("a 31-character handle is refused", () => {
+  assert.deepEqual(routeFor(`@${"a".repeat(31)}`), { error: HANDLE_ERROR });
+});
+
+test("a lone @ is refused", () => {
+  assert.deepEqual(routeFor("@"), { error: HANDLE_ERROR });
+});
+
+test("emoji-only input is not a niche", () => {
+  assert.deepEqual(routeFor("🔥🔥"), { error: "Enter a niche or an @handle" });
+});
+
+test("whitespace-only input is refused", () => {
+  assert.deepEqual(routeFor(" \t\n "), { error: "Enter a niche or an @handle" });
+});
+
+test("exactly 120 characters is a niche", () => {
+  const text = "a".repeat(120);
+  assert.deepEqual(routeFor(text), {
+    href: `/search/niche/${text}`,
+    kind: "niche",
+  });
+});
+
+test("121 characters is refused", () => {
+  assert.deepEqual(routeFor("a".repeat(121)), {
+    error: "Keep it under 120 characters",
+  });
+});
+
+test("niche punctuation is percent-encoded", () => {
+  const text = "music / covers ? # 100%";
+  assert.deepEqual(routeFor(text), {
+    href: `/search/niche/${encodeURIComponent(text)}`,
+    kind: "niche",
+  });
+});
+
+test("a javascript: URL is encoded as a niche, never a redirect", () => {
+  const result = routeFor("javascript:alert(1)");
+  assert.equal("kind" in result, true);
+  if ("kind" in result) {
+    assert.equal(result.kind, "niche");
+    assert.equal(
+      result.href,
+      `/search/niche/${encodeURIComponent("javascript:alert(1)")}`,
+    );
+    assert.ok(result.href.startsWith("/search/niche/"));
+  }
+});
+
 test("Koko carries a profile handle into the chat", () => {
   assert.equal(kokoHref("/profile/Priya.Sharma"), "/chat?handle=Priya.Sharma");
 });

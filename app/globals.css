@@ -19,7 +19,11 @@
   --accent: var(--limelight);
   --warn: var(--luxury-gold);
   --bad: #ff6b6b;
-  --good: var(--limelight);
+  /**
+   * Legacy: the room's "good" verdict sits next to "ok" (accent), so it needs
+   * a green distinct from limelight. Retired with the old pages in Task 8.
+   */
+  --good: #4ade80;
 }
 
 @theme inline {

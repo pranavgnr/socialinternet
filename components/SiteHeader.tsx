@@ -27,6 +27,15 @@ function LockIcon() {
   );
 }
 
+function AccountSkeleton() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-8 min-w-[92px] items-center rounded-full border border-white/10 bg-white/[0.04]"
+    />
+  );
+}
+
 /**
  * The half of the header that depends on who is asking. The static shell keeps
  * its shape; this streams in behind Suspense. A database outage must not take
@@ -58,7 +67,7 @@ function AccountArea({
   const initial = name.slice(0, 1).toUpperCase();
 
   return (
-    <div className="flex items-center gap-2" aria-label="Your account">
+    <div role="group" aria-label="Your account" className="flex items-center gap-2">
       {credits !== null ? (
         <Gems
           value={credits}
@@ -122,7 +131,7 @@ export default function SiteHeader() {
             <span>IG WRAPPED</span>
           </Link>
 
-          <Suspense fallback={<AccountArea user={null} credits={null} />}>
+          <Suspense fallback={<AccountSkeleton />}>
             <HeaderAccount />
           </Suspense>
 

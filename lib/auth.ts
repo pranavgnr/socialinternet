@@ -286,7 +286,8 @@ export function decodeIdToken(idToken: string): {
 export function verifiedGoogleClaims(claims: {
   sub?: string;
   email?: string;
+  name?: string;
   emailVerified?: boolean;
-}): claims is { sub: string; email: string; emailVerified: true } {
+}): claims is { sub: string; email: string; name?: string; emailVerified: true } {
   return Boolean(claims.sub && claims.email && claims.emailVerified === true);
 }

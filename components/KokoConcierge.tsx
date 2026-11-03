@@ -32,6 +32,7 @@ export default function KokoConcierge({
   return (
     <Link
       href={kokoHref(pathname)}
+      prefetch={false}
       aria-label="Chat with Koko, your AI director"
       className={`koko-aura group fixed bottom-6 right-6 z-50 inline-flex items-center gap-3 rounded-full border border-white/10 bg-card/95 px-3 py-2 backdrop-blur transition hover:border-white/20 ${className}`}
       style={style}

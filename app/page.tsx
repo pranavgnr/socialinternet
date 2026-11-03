@@ -14,7 +14,7 @@ export default async function Home({
   searchParams: Promise<{ new?: string; niche?: string }>;
 }) {
   await connection();
-  const [{ new: isNew, niche }, user] = await Promise.all([
+  const [{ new: isNew }, user] = await Promise.all([
     searchParams,
     /**
      * A database outage must not take the front door down: the landing page is
@@ -40,10 +40,12 @@ export default async function Home({
   const plan = stored?.archetype ? stored : null;
 
   /**
-   * The dashboard is for a signed-in creator with a plan to look at. Every
-   * other visitor — including someone who wants to check another handle — gets
-   * the landing page, whose handle box and niche search both work without an
-   * account. The chat panel is mounted under this dashboard by Task 7.
+   * TODO(task-4): once `/profile/[handle]` exists, a signed-in visitor with a
+   * saved plan goes there (`/profile/${plan.handle}`) instead of seeing the old
+   * dashboard. The route does not exist on this branch yet, so the dashboard
+   * stays as the working fallback until Task 4 lands. `?new=1` deliberately
+   * falls through to the landing page so a plan holder can audit another
+   * handle.
    */
   if (user && plan && !isNew) {
     return (
@@ -54,5 +56,5 @@ export default async function Home({
     );
   }
 
-  return <Landing initialNiche={niche?.trim() || undefined} />;
+  return <Landing signedIn={Boolean(user)} />;
 }

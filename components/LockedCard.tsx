@@ -35,25 +35,39 @@ export default function LockedCard({
   blurb,
   source = "vault",
   className = "",
+  selected,
+  ctaLabel,
+  onSelect,
 }: {
   feature: WaitlistFeature;
   title: string;
   blurb: string;
   source?: string;
   className?: string;
+  /**
+   * When `onSelect` is supplied the card no longer owns a form: it picks the
+   * feature for one shared form elsewhere on the page. `selected` then marks
+   * the card the form is currently requesting.
+   */
+  selected?: boolean;
+  ctaLabel?: string;
+  onSelect?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const formId = useId();
 
   return (
     <article
-      className={`card flex h-full flex-col p-5 ${className}`}
+      className={`card flex h-full flex-col p-5 transition ${
+        selected ? "ring-1 ring-luxury-gold/60" : ""
+      } ${className}`}
       data-feature={feature}
+      data-selected={selected ? "true" : undefined}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="mono text-[10px] font-bold uppercase tracking-[0.18em] text-luxury-gold">
-            Locked
+            {selected ? "Selected" : "Locked"}
           </p>
           <h3 className="mt-2 text-[17px] font-semibold leading-tight text-pure-white">
             {title}
@@ -71,16 +85,27 @@ export default function LockedCard({
       <div className="mt-auto pt-5">
         <button
           type="button"
-          aria-expanded={open}
-          aria-controls={formId}
-          onClick={() => setOpen((value) => !value)}
-          className="inline-flex min-h-[34px] items-center gap-2 rounded-full border border-luxury-gold/35 bg-luxury-gold/10 px-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-luxury-gold transition hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+          aria-expanded={onSelect ? undefined : open}
+          aria-controls={onSelect ? undefined : formId}
+          aria-pressed={onSelect ? Boolean(selected) : undefined}
+          onClick={onSelect ?? (() => setOpen((value) => !value))}
+          className={`inline-flex min-h-[34px] items-center gap-2 rounded-full border px-3.5 text-[10px] font-bold uppercase tracking-[0.12em] transition ${
+            selected
+              ? "border-luxury-gold/70 bg-luxury-gold text-obsidian"
+              : "border-luxury-gold/35 bg-luxury-gold/10 text-luxury-gold hover:border-luxury-gold/60 hover:bg-luxury-gold/15"
+          }`}
         >
-          {open ? "Close" : "Join the waitlist"}
+          {onSelect
+            ? selected
+              ? "Selected"
+              : (ctaLabel ?? "Request access")
+            : open
+              ? "Close"
+              : "Join the waitlist"}
         </button>
       </div>
 
-      {open ? (
+      {!onSelect && open ? (
         <div id={formId} className="mt-4 border-t border-white/10 pt-4">
           <WaitlistForm feature={feature} source={source} />
         </div>

@@ -124,3 +124,35 @@ body {
     animation: koko-aura-pulse 4s ease-in-out infinite;
   }
 }
+
+/* The hero ticker's flip: a short fade and lift, restarted by React's key. */
+@keyframes ticker-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ticker-line {
+  animation: ticker-in 340ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-line {
+    animation: none;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

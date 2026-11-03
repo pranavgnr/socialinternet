@@ -77,11 +77,11 @@ export default function RootLayout({
           <HeaderChrome />
         </Suspense>
 
-        <main className="mx-auto w-full max-w-2xl flex-1 px-5 py-5">
+        <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-5">
           {children}
         </main>
 
-        <footer className="mx-auto w-full max-w-2xl px-5 pb-10 pt-4">
+        <footer className="mx-auto w-full max-w-6xl px-5 pb-10 pt-4">
           <p className="text-[11px] leading-relaxed text-muted/60">
             Shambles reads public posts only. Nothing is posted for you. Not
             affiliated with Instagram.

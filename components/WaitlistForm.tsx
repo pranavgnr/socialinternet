@@ -30,10 +30,17 @@ export default function WaitlistForm({
   feature,
   source,
   className = "",
+  submitLabel = "Join the waitlist",
+  contactPlaceholder = "you@example.com or 98765 43210",
+  handlePlaceholder = "@yourhandle",
 }: {
   feature: WaitlistFeature;
   source?: string;
   className?: string;
+  /** wording for the one action; the vault uses the founder's REQUEST arrow */
+  submitLabel?: string;
+  contactPlaceholder?: string;
+  handlePlaceholder?: string;
 }) {
   const contactId = useId();
   const handleId = useId();
@@ -142,7 +149,7 @@ export default function WaitlistForm({
               setContact(event.target.value);
               if (status.kind === "error") setStatus({ kind: "idle" });
             }}
-            placeholder="you@example.com or 98765 43210"
+            placeholder={contactPlaceholder}
             autoComplete="email"
             inputMode="text"
             spellCheck={false}
@@ -167,7 +174,7 @@ export default function WaitlistForm({
             type="text"
             value={handle}
             onChange={(event) => setHandle(event.target.value)}
-            placeholder="@yourhandle"
+            placeholder={handlePlaceholder}
             autoComplete="off"
             spellCheck={false}
             className="mt-1.5 w-full rounded-lg border border-white/10 bg-obsidian/60 px-3 py-2 text-[13px] text-pure-white outline-none transition placeholder:text-muted-zinc/70 focus:border-limelight/60 focus:ring-1 focus:ring-limelight/20"
@@ -185,7 +192,7 @@ export default function WaitlistForm({
           disabled={sending}
           className="inline-flex min-h-[36px] items-center rounded-full bg-luxury-gold px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-luxury-gold/85 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {sending ? "Sending…" : "Join the waitlist"}
+          {sending ? "Sending…" : submitLabel}
         </button>
         <p
           id={statusId}

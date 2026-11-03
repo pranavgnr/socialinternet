@@ -546,6 +546,45 @@ export async function nicheCacheStatus(query: string, handle?: string) {
 }
 
 /**
+ * The cached niche dossier, rebuilt for chat.
+ *
+ * Disk only: this is the reader behind a niche conversation, and a niche chat
+ * must never trigger a vendor search. A missing, expired or wrong-handle cache
+ * reads as absent, exactly like `nicheCacheStatus().cached === false`; the chat
+ * route then says the niche is not loaded and charges nothing.
+ *
+ * The phrase is taken from the stored file when it has one, so a hostile query
+ * string cannot smuggle itself into a prompt by slug-matching a real cache.
+ */
+export async function cachedNicheResearch(
+  query: string,
+  handle?: string,
+): Promise<NicheResearch | null> {
+  const phrase = typeof query === "string" ? query.trim() : "";
+  if (!phrase) return null;
+
+  const slug = slugify(phrase);
+  const stored = await readStored(slug);
+  if (!stored?.payload?.length) return null;
+
+  const h = handle ? cleanHandle(handle) : undefined;
+  if ((stored.handle ?? undefined) !== h) return null;
+
+  const ageHours = (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5;
+  if (!(ageHours >= 0) || ageHours >= cacheTtlHours()) return null;
+
+  return researchFromCache(
+    stored.query?.trim() || slug.replace(/-/g, " "),
+    stored.payload,
+    {
+      handle: h,
+      fetchedAt: stored.fetchedAt,
+      errors: stored.errors ?? [],
+    },
+  );
+}
+
+/**
  * Turn a flat pile of reels into "who in this niche is actually doing well".
  * Median rather than mean, because one 4M-view fluke would otherwise make a
  * mid-size account look like a benchmark.

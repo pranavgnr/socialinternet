@@ -94,7 +94,7 @@ export interface ProfileIdea {
   whyChosen: string[];
   /** the concept to script (the competitor's caption) */
   concept: string;
-  /** /chat?action=script&idea=<index>&handle=<handle> */
+  /** /chat?action=script&idea=<1-based index>&handle=<handle> */
   scriptHref: string;
 }
 
@@ -592,7 +592,7 @@ function buildIdeas(plan: GrowthPlan, ownView: boolean): ProfileIdea[] {
       ownView ? plain(r) : neutralisePerson(plain(r)),
     ),
     concept: plain(idea.caption),
-    scriptHref: `/chat?action=script&idea=${index}&handle=${encodeURIComponent(
+    scriptHref: `/chat?action=script&idea=${index + 1}&handle=${encodeURIComponent(
       plan.handle,
     )}`,
   }));

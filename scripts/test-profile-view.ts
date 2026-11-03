@@ -329,8 +329,12 @@ test("ideas are capped at 3 with reasons and a script href", () => {
   assert.equal(view.ideas[0]?.theirViews, "2.4M views");
   assert.ok(view.ideas[0]?.whyChosen.length, "reasons present");
   assert.equal(
-    view.ideas[1]?.scriptHref,
+    view.ideas[0]?.scriptHref,
     `/chat?action=script&idea=1&handle=${encodeURIComponent("fixture")}`,
+  );
+  assert.equal(
+    view.ideas[1]?.scriptHref,
+    `/chat?action=script&idea=2&handle=${encodeURIComponent("fixture")}`,
   );
 });
 

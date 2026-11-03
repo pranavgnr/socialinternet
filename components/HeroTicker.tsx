@@ -18,6 +18,8 @@ const FLIP_MS = 3500;
  */
 export default function HeroTicker() {
   const [index, setIndex] = useState(0);
+  // SSR always renders the rotating markup: the media query is only known after
+  // hydration, and the first effect immediately swaps to the static line.
   const [reducedMotion, setReducedMotion] = useState(false);
   const [hidden, setHidden] = useState(false);
 

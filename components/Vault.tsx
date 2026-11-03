@@ -64,6 +64,11 @@ export default function Vault() {
       behavior: reduced ? "auto" : "smooth",
       block: "center",
     });
+    // Move keyboard and screen-reader users straight to the request they just
+    // chose, without letting focus cancel the smooth scroll.
+    requestRef.current
+      ?.querySelector<HTMLInputElement>("input")
+      ?.focus({ preventScroll: true });
   }
 
   return (

@@ -139,7 +139,7 @@ export default function HandleAudit({ signedIn = false }: { signedIn?: boolean }
   }
 
   return (
-    <div className="card relative mt-8 overflow-hidden p-5 sm:p-6">
+    <div className="card relative mt-8 overflow-hidden p-5 pr-14 sm:p-6">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-limelight/60 to-transparent"

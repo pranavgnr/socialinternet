@@ -30,7 +30,7 @@ export default async function Landing({ signedIn = false }: { signedIn?: boolean
   const niches = await listTrending();
 
   return (
-    <div className="pb-4">
+    <div className="pb-24 sm:pb-4">
       <section className="relative pb-16 pt-8 sm:pb-24 sm:pt-14">
         <div
           aria-hidden="true"

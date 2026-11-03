@@ -111,13 +111,38 @@ export function rankTrending(
 
   if (!scored.length) return [];
 
+  /**
+   * Two cache files can name the same room ("kannada songs" and "Kannada
+   * Songs"). A bubble is a phrase a visitor reads, so the phrase — not a slug
+   * built by a different job — is what must be unique. Keep the highest-scored
+   * room; on a tie keep the lexicographically first slug so the result does not
+   * depend on the order the cache directory was read in.
+   */
+  const byLabel = new Map<
+    string,
+    { niche: TrendingNiche; opportunity: NicheOpportunity }
+  >();
+  for (const entry of scored) {
+    const key = labelKey(entry.niche.label);
+    const existing = byLabel.get(key);
+    if (
+      !existing ||
+      entry.opportunity.score > existing.opportunity.score ||
+      (entry.opportunity.score === existing.opportunity.score &&
+        entry.niche.slug.localeCompare(existing.niche.slug) < 0)
+    ) {
+      byLabel.set(key, entry);
+    }
+  }
+
   // Slug order before the stable score sort, so equal scores get one repeatable
   // order regardless of the order the cache directory happened to be read in.
-  scored.sort((a, b) => a.niche.slug.localeCompare(b.niche.slug));
-  const ordered = rankNiches(scored.map((s) => s.opportunity));
+  const kept = [...byLabel.values()];
+  kept.sort((a, b) => a.niche.slug.localeCompare(b.niche.slug));
+  const ordered = rankNiches(kept.map((s) => s.opportunity));
 
   const byOpportunity = new Map(
-    scored.map((s) => [s.opportunity, s.niche] as const),
+    kept.map((s) => [s.opportunity, s.niche] as const),
   );
   const out: TrendingNiche[] = [];
   for (const opportunity of ordered) {
@@ -127,6 +152,11 @@ export function rankTrending(
     if (out.length >= cap) break;
   }
   return out;
+}
+
+/** One spelling of a label for duplicate detection: case and spacing only. */
+function labelKey(label: string): string {
+  return label.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 /** Rank straight from the pulls on disk. Costs nothing and needs no database. */

@@ -181,9 +181,8 @@ test.beforeEach(async () => {
 
 test("rankTrending caps at 30, sorts by score, ranks 1..n and dedupes slugs", async () => {
   const { rankTrending } = await lib();
-  const money = ["personal finance", "home workout", "music covers"];
   const many: CachedNiche[] = Array.from({ length: 35 }, (_, i) =>
-    cachedFixture(`niche-${i}`, money[i % money.length]!, { base: 1_000 + i * 137 }),
+    cachedFixture(`niche-${i}`, `topic number ${i}`, { base: 1_000 + i * 137 }),
   );
   // A duplicate slug must not appear twice in the output.
   many.push(cachedFixture("niche-0", "personal finance", { base: 9_000 }));
@@ -203,6 +202,21 @@ test("rankTrending caps at 30, sorts by score, ranks 1..n and dedupes slugs", as
   }
   assert.equal(new Set(out.map((n) => n.slug)).size, out.length);
   assert.ok(out.every((n) => n.label && n.query && Number.isFinite(n.score)));
+});
+
+test("rankTrending dedupes niches whose labels normalise to the same phrase", async () => {
+  const { rankTrending } = await lib();
+  const lower = cachedFixture("kannada-lower", "kannada songs", { base: 2_000 });
+  const title = cachedFixture("kannada-title", "Kannada  Songs", { base: 6_000 });
+
+  const aloneLower = rankTrending([lower])[0]!;
+  const aloneTitle = rankTrending([title])[0]!;
+  const best = Math.max(aloneLower.score, aloneTitle.score);
+  const out = rankTrending([lower, title]);
+
+  assert.equal(out.length, 1, "one normalised label is one bubble");
+  assert.equal(out[0]!.score, best, "the highest-scored room survives");
+  assert.equal(out[0]!.label.toLowerCase().replace(/\s+/g, " "), "kannada songs");
 });
 
 test("rankTrending returns [] for an empty cache", async () => {

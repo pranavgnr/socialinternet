@@ -206,7 +206,8 @@ export function buildContext(
 ): string {
   const facts: string[] = [];
 
-  if (plan.handle) facts.push(`Account: @${plan.handle}`);
+  const planHandle = plan.handle ? normalizeHandle(plan.handle) : null;
+  if (planHandle) facts.push(`Account: @${planHandle}`);
   if (plan.niche) facts.push(`Space: ${plan.niche}`);
   if (plan.archetype?.label) {
     const language = plan.archetype.language
@@ -344,7 +345,10 @@ export function buildProfileContext(
   token: string = newContextToken(),
   extraUntrusted: string[] = [],
 ): string {
-  const facts: string[] = [`Account: @${view.handle}`];
+  const profileHandle = normalizeHandle(view.handle);
+  const facts: string[] = [
+    profileHandle ? `Account: @${profileHandle}` : "Account: unknown",
+  ];
   if (view.niche) facts.push(`Space: ${view.niche}`);
   facts.push(`Reels read: ${view.vitals.reelsRead}`);
   if (view.dna.summary) {
@@ -381,7 +385,7 @@ export function buildNicheContext(
   token: string = newContextToken(),
   extraUntrusted: string[] = [],
 ): string {
-  const facts: string[] = [`Space: ${clip(research.query, 120)}`];
+  const facts: string[] = ["Space: the loaded niche dossier (named in the block below)."];
   if (research.nicheMedianViews > 0) {
     facts.push(
       `Typical reel in this space: about ${fmtViews(research.nicheMedianViews)} views.`,
@@ -394,34 +398,57 @@ export function buildNicheContext(
 
   const top = research.accounts.slice(0, 3);
   if (top.length) {
-    facts.push("Top accounts in this space:");
+    const rows: string[] = [];
     for (const account of top) {
+      const handle = normalizeHandle(account.handle);
+      if (!handle) continue;
       const viewLabel = views(account.medianViews);
       const followers =
         typeof account.followers === "number" && account.followers > 0
           ? `, ${fmtViews(account.followers)} followers`
           : "";
       if (viewLabel) {
-        facts.push(`- @${plain(account.handle)}: ${viewLabel} views${followers}`);
+        rows.push(`- @${handle}: ${viewLabel} views${followers}`);
       }
+    }
+    if (rows.length) {
+      facts.push("Top accounts in this space:");
+      facts.push(...rows);
     }
   }
 
-  const untrusted: string[] = [];
+  /**
+   * The niche phrase is typed by a person, so it is stranger text too: it goes
+   * inside the delimiter, through the same tag/token sanitiser as a caption.
+   * Only a fixed label stays in the trusted facts above.
+   */
+  const untrusted: string[] = [
+    `Loaded niche query (typed by the creator): "${clipUntrusted(
+      research.query,
+      120,
+      token,
+    )}"`,
+  ];
   const reels = [...(research.payload ?? [])]
     .filter((reel) => reel.caption?.trim())
     .sort((a, b) => b.views - a.views)
     .slice(0, 5);
   if (reels.length) {
-    untrusted.push("Top reels in this space:");
+    const rows: string[] = [];
     for (const reel of reels) {
-      untrusted.push(
-        `- @${plain(reel.account)} (${fmtViews(reel.views)} views): "${clipUntrusted(
+      const account = normalizeHandle(reel.account);
+      if (!account) continue;
+      rows.push(
+        `- @${account} (${fmtViews(reel.views)} views): "${clipUntrusted(
           reel.caption,
           MAX_CAPTION,
           token,
         )}"`,
       );
+    }
+    if (rows.length) {
+      untrusted.push("Top reels in this space:");
+      untrusted.push(...rows);
     }
   }
   for (const item of extraUntrusted) {
@@ -655,13 +682,29 @@ export function nicheThreadKey(query: string): string {
 }
 
 /**
+ * One in-flight chat per user, per process.
+ *
+ * A double click (or a retried request) must not spend twice while the first
+ * model call is still running. The set is memory only, so this is a per-process
+ * guard: two app instances behind a load balancer can still each accept one
+ * request for the same user. The ledger remains the source of truth; this just
+ * closes the accidental double-tap window.
+ */
+const inFlightUsers = new Set<string>();
+
+/** Test hook: clear the guard between cases. */
+export function resetChatInFlightForTests(): void {
+  inFlightUsers.clear();
+}
+
+/**
  * POST /api/chat logic, with every side effect injectable.
  *
  * Order matters and is deliberate: validate (free), sign-in (free), model
- * availability (free), context (free), then charge, then call. A refusal or any
- * failure after the charge refunds exactly once. Only a non-refused reply is
- * written to the thread. Actions build their instruction server-side and never
- * read the client's message text.
+ * availability (free), in-flight guard (free), context (free), then charge, then
+ * call. A refusal or any failure after the charge refunds exactly once. Only a
+ * non-refused reply is written to the thread. Actions build their instruction
+ * server-side and never read the client's message text.
  */
 export async function runChat(
   rawRequest: unknown,
@@ -686,6 +729,25 @@ export async function runChat(
     return json({ ok: false, error: "Chat is not set up yet" }, 503);
   }
 
+  if (inFlightUsers.has(user.id)) {
+    return json(
+      { ok: false, error: "One moment, Koko is still answering." },
+      429,
+    );
+  }
+  inFlightUsers.add(user.id);
+  try {
+    return await runChatOnce(request, user, deps);
+  } finally {
+    inFlightUsers.delete(user.id);
+  }
+}
+
+async function runChatOnce(
+  request: ParsedRequest,
+  user: ChatUser,
+  deps: ChatDeps,
+): Promise<Response> {
   const startBalance = await deps.balance(user.id);
   const plan = await deps.loadPlan(user.id);
 

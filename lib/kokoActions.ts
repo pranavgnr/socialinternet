@@ -173,6 +173,8 @@ export function actionPrompt(
     return { kind: "link", reply: RATE_CARD_LOCKED_REPLY, href: "/#vault" };
   }
 
+  // The client uses a free link for Deep-Spy; this branch exists for API
+  // callers and never calls the model.
   if (action === "deep-spy") {
     const competitor = ctx.competitor ? normalizeHandle(ctx.competitor) : null;
     if (!competitor) return { kind: "free", reply: DEEP_SPY_NEEDS_HANDLE_REPLY };
@@ -227,24 +229,27 @@ export function actionPrompt(
     const idea = index >= 0 ? ctx.profile?.ideas[index] : undefined;
     if (!idea) return { kind: "free", reply: SCRIPT_MISSING_REPLY };
 
+    // A stored handle must still be a handle. If it is not, the idea is not
+    // usable and the creator is not charged.
+    const fromHandle = normalizeHandle(idea.fromHandle);
+    if (!fromHandle) return { kind: "free", reply: SCRIPT_MISSING_REPLY };
+
     const ownNiche = ctx.plan?.niche?.trim();
     const profileNiche = ctx.profile?.niche?.trim();
     const spaces = [
-      profileNiche ? `The profile is in ${profileNiche}.` : "",
+      profileNiche ? `Profile niche: "${profileNiche}"` : "",
       ownNiche && ownNiche !== profileNiche
-        ? `The creator's own space is ${ownNiche}.`
+        ? `Creator's own niche: "${ownNiche}"`
         : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
+    ].filter(Boolean);
 
     return {
       kind: "prompt",
       label: `Script idea ${index + 1}`,
       maxTokens: 900,
       prompt: [
-        `Write a shot-by-shot Instagram Reel script for idea ${index + 1}, from @${idea.fromHandle}.`,
-        spaces,
+        `Write a shot-by-shot Instagram Reel script for idea ${index + 1}, from @${fromHandle}.`,
+        "The profile's space and the creator's own space, when known, are in the context.",
         "Use the competitor concept and the reasons it was chosen, both in the account context.",
         "Give the opening line for the first two seconds, every shot with what is on screen and what is said, the on-screen text, and the loop.",
         "Do not invent numbers or claim anything the context does not support.",
@@ -252,9 +257,10 @@ export function actionPrompt(
         .filter(Boolean)
         .join(" "),
       extraUntrusted: [
-        `Competitor idea from @${idea.fromHandle}: "${idea.concept}"`,
+        ...spaces,
+        `Competitor idea from @${fromHandle}: "${idea.concept}"`,
         ...idea.whyChosen.map(
-          (reason) => `Why @${idea.fromHandle} was chosen: ${reason}`,
+          (reason) => `Why @${fromHandle} was chosen: ${reason}`,
         ),
       ],
     };

@@ -169,6 +169,13 @@ export function renderCards(markdown: string): CardBlock[] {
 
     const heading = HEADING.exec(line);
     if (heading) {
+      const headingText = (heading[2] ?? "").trim();
+      // A marker with nothing after it is inert text, not an empty heading.
+      if (!headingText) {
+        flushList();
+        paragraph.push(line);
+        continue;
+      }
       flushAll();
       blocks.push({
         type: "heading",

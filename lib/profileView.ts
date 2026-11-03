@@ -79,6 +79,16 @@ export interface ReelCard {
   basis: "video" | "captions";
 }
 
+/**
+ * The sentence under a reel card. One function so the card and its tests agree
+ * on exactly what each basis claims.
+ */
+export function reelBasisLine(basis: ReelCard["basis"]): string {
+  return basis === "video"
+    ? "From the video and its numbers."
+    : "From captions and numbers; video not watched.";
+}
+
 export interface CommentIntel {
   /** the audience mood split, by share of what was read */
   mood: { label: string; pct: number }[];

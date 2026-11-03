@@ -10,7 +10,10 @@
  * Two optional extras run after the plan exists, and neither can fail the read:
  *
  *   - a follower sample produces the bot-to-real estimate for a public account
- *     with at least 1,000 followers (cached seven days);
+ *     with at least 1,000 followers (cached seven days). Sampling is **dormant
+ *     unless `AUTH_SAMPLE_PAGES` is explicitly positive**, because one page
+ *     holds ~25 rows — below the 40-row floor — so the default buys an estimate
+ *     that can never render;
  *   - the configured video reader watches the same top-3/bottom-3 reels the
  *     page will show (captions only unless `GEMINI_API_KEY` is set).
  *
@@ -18,6 +21,7 @@
  * shared ledger, so the route's measured settle sees the money they spent.
  */
 import {
+  authSamplePages,
   resolveAuthenticity,
   type AuthenticityEstimate,
   type AuthenticityOptions,
@@ -81,16 +85,24 @@ export async function runProfileRead(
   const { plan, spent } = await deps.runPlan(input.handle);
 
   let authenticity: AuthenticityEstimate | null = null;
-  try {
-    authenticity = await resolveAuthenticity(
-      plan.handle,
-      {
-        followers: plan.account?.followers ?? plan.standing?.followers,
-      },
-      deps.authenticity,
-    );
-  } catch {
-    authenticity = null;
+  /**
+   * Sampling is dormant unless a page cap is explicitly positive. With the
+   * default 0 the read must not make even the account lookup: no request, no
+   * spend, and `vitals.botToReal` stays null so the slab says "Estimate coming".
+   */
+  const samplePages = deps.authenticity?.pages ?? authSamplePages();
+  if (samplePages > 0) {
+    try {
+      authenticity = await resolveAuthenticity(
+        plan.handle,
+        {
+          followers: plan.account?.followers ?? plan.standing?.followers,
+        },
+        deps.authenticity,
+      );
+    } catch {
+      authenticity = null;
+    }
   }
 
   let readings = new Map<string, VideoReading>();

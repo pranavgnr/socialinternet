@@ -1,5 +1,5 @@
 import { compact } from "@/lib/fmt";
-import type { ReelCard } from "@/lib/profileView";
+import { reelBasisLine, type ReelCard } from "@/lib/profileView";
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -114,9 +114,7 @@ export default function ReelTrio({
               </div>
 
               <p className="mt-auto pt-4 text-[10.5px] leading-relaxed text-muted-zinc/70">
-                {reel.basis === "video"
-                  ? "From the video and its numbers."
-                  : "From captions and numbers; video not watched."}
+                {reelBasisLine(reel.basis)}
               </p>
             </li>
           ))}

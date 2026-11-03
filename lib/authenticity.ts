@@ -11,18 +11,21 @@
  *   - private accounts are not evidence of anything and are never penalised;
  *   - a field the payload did not carry never counts against anyone.
  *
- * The sample is a paid HikerAPI call, so it runs at most `AUTH_SAMPLE_PAGES`
- * requests (default 4) and a successful estimate is cached for seven days in
- * `<dataRoot()>/authenticity.json`. A failed sample, an unreadable account or a
- * sample too small to estimate all return `null`; none of them throws, because
- * the estimate is an extra on a page that must still render.
+ * The sample is a paid HikerAPI call, so it is **dormant by default**
+ * (`AUTH_SAMPLE_PAGES=0`): one page holds ~25 rows, below the 40-row floor, so
+ * a default-on sample would buy an estimate that never renders. With an explicit
+ * positive cap it runs at most that many requests and caches a successful
+ * estimate for seven days in `<dataRoot()>/authenticity.json`. A failed sample,
+ * an unreadable account or a sample too small to estimate all return `null`;
+ * none of them throws, because the estimate is an extra on a page that must
+ * still render. See `docs/authenticity.md` for enabling it.
  */
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { dataRoot } from "./dataDir";
-import { hoursFromEnv, intFromEnv } from "./env";
+import { hoursFromEnv } from "./env";
 import { normalizeHandle } from "./handle";
 import { request } from "./providers";
 
@@ -134,9 +137,25 @@ export function estimateAuthenticity(
 
 /* ------------------------------------------------------------------- caps */
 
-/** How many follower pages a profile read may buy; 4 by default. */
+/** How many follower pages a profile read may buy; **0 by default (dormant)**. */
 export function authSamplePages(): number {
-  return intFromEnv("AUTH_SAMPLE_PAGES", 4, 20);
+  /**
+   * Zero is a real setting here, not "unset": the follower endpoint's second
+   * page cannot be reached without a cursor we have not verified, and one page
+   * holds ~25 rows — below the 40-row floor. Sampling therefore spends money
+   * for an estimate that can never render, so it is off until a captured cursor
+   * proves paging works. See `docs/authenticity.md`.
+   *
+   * A blank, non-numeric or negative value also reads as 0 (dormant), never as
+   * "sample a large number of pages".
+   */
+  const raw = process.env.AUTH_SAMPLE_PAGES;
+  if (raw === undefined) return 0;
+  const trimmed = raw.trim();
+  if (!trimmed) return 0;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return Math.min(Math.floor(value), 20);
 }
 
 /** How long an estimate is trusted; seven days. */
@@ -346,10 +365,12 @@ async function sampleFollowers(
 /**
  * Resolve the estimate for a handle, buying at most one sample.
  *
- * The cache is consulted first and costs nothing. An account that is private or
- * below 1,000 followers is skipped entirely — the page shows its follower count
- * and says the estimate is unavailable rather than sampling a tiny audience.
- * Any failure returns `null`; this function never throws.
+ * The cache is consulted first and costs nothing. Sampling is dormant unless
+ * `AUTH_SAMPLE_PAGES` is explicitly positive: with the default 0 this returns
+ * `null` without touching the cache or buying anything. An account that is
+ * private or below 1,000 followers is skipped entirely — the page shows its
+ * follower count and says the estimate is unavailable rather than sampling a
+ * tiny audience. Any failure returns `null`; this function never throws.
  */
 export async function resolveAuthenticity(
   handle: string,
@@ -361,7 +382,10 @@ export async function resolveAuthenticity(
   const save = opts.save ?? saveAuthenticity;
   const sample = opts.sample ?? sampleFollowers;
   const account = opts.account ?? readAccount;
-  const pages = Math.max(1, Math.floor(opts.pages ?? authSamplePages()));
+  const pages = Math.max(0, Math.floor(opts.pages ?? authSamplePages()));
+
+  /** Dormant: no vendor call, no sample, no number on the page. */
+  if (pages === 0) return null;
 
   try {
     const cached = await read(handle, now());

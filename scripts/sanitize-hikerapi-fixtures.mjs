@@ -10,9 +10,11 @@
  * and a manual re-run go through.
  *
  * What it removes:
- *   - keys matching /(^|_)token$/i or /_token_/i, plus client_cache_key,
- *     next_min_id, next_page_id, next_max_id, reels_max_id,
- *     cached_comments_cursor and any key ending in `_cursor`;
+ *   - keys matching /(^|_)token$/i or /_token_/i, plus client_cache_key;
+ *   - cursor *values* (next_min_id, next_page_id, next_max_id, reels_max_id,
+ *     cached_comments_cursor, any key ending in `_cursor`) are replaced with
+ *     `"[redacted-cursor]"` so the pagination shape stays visible while the
+ *     live signed token does not;
  *   - string values that are long base64-ish blobs (≥120 chars of
  *     [A-Za-z0-9+/=_-]) and not URLs;
  *   - the bulk fields the adapter never reads (DASH manifests, reaction data,
@@ -43,6 +45,19 @@ const DROP_KEYS = new Set([
   "reels_max_id",
   "cached_comments_cursor",
 ]);
+
+/**
+ * Cursor keys are pagination *shape*, not session state.
+ *
+ * The value must never be committed (it is a live, signed continuation token),
+ * but dropping the key itself hid the shape of `/v1/user/followers/chunk`'s
+ * second element — which is exactly what a future reader needs to page it. So
+ * the key survives with a fixed placeholder value: the shape is visible, the
+ * token is not.
+ */
+const CURSOR_KEY =
+  /(_cursor$|^next_(?:min|max)_id$|^next_page_id$|^reels_max_id$|^cached_comments_cursor$)/i;
+const REDACTED_CURSOR = "[redacted-cursor]";
 
 /** Fields that are pure payload bulk; none is read by the adapter or tests. */
 const DROP_BULK_KEYS = new Set([
@@ -85,7 +100,7 @@ function isBlob(value) {
   );
 }
 
-/** Generic pass: remove tracking keys, cursor keys and opaque blobs. */
+/** Generic pass: remove tracking keys, redact cursor values and opaque blobs. */
 export function stripTracking(value) {
   if (Array.isArray(value)) {
     return value.map(stripTracking);
@@ -93,6 +108,14 @@ export function stripTracking(value) {
   if (value && typeof value === "object") {
     const out = {};
     for (const [k, v] of Object.entries(value)) {
+      if (CURSOR_KEY.test(k)) {
+        /**
+         * A null cursor is information ("there is no next page"), so keep it.
+         * Only a real token is replaced.
+         */
+        out[k] = v === null || v === undefined || v === "" ? v : REDACTED_CURSOR;
+        continue;
+      }
       if (shouldDropKey(k)) continue;
       if (isBlob(v)) continue;
       out[k] = stripTracking(v);
@@ -283,8 +306,15 @@ export function pruneFixture(name, value) {
     }
     case "followers_chunk": {
       if (!Array.isArray(value)) return value;
-      return value.map((chunk) =>
-        (Array.isArray(chunk) ? chunk : []).map((f) => {
+      return value.map((chunk) => {
+        /**
+         * The second element is pagination state, not followers. Keeping the
+         * wrapper (instead of flattening it to `[]`) lets `stripTracking` show
+         * its cursor key names with redacted values, which is the only record
+         * of the shape we have.
+         */
+        if (!Array.isArray(chunk)) return chunk;
+        return chunk.map((f) => {
           const pick = [
             "pk",
             "id",
@@ -295,8 +325,8 @@ export function pruneFixture(name, value) {
             "is_verified",
           ];
           return Object.fromEntries(pick.filter((k) => k in f).map((k) => [k, f[k]]));
-        }),
-      );
+        });
+      });
     }
     case "search_accounts": {
       /**

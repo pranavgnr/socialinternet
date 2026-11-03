@@ -8,13 +8,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 
-import { buildProfileView, assertInstagramOnly, reelsToRead, type ProfileView } from "../lib/profileView";
+import { buildProfileView, assertInstagramOnly, reelsToRead, reelBasisLine, type ProfileView } from "../lib/profileView";
 import {
   readAuthenticity,
   type FollowerSampleRow,
 } from "../lib/authenticity";
 import { creditLedger, resetCreditLedger } from "../lib/providers";
-import type { VideoReading } from "../lib/videoReader";
+import { CaptionReader, configuredReader, type VideoReading } from "../lib/videoReader";
 import {
   readProfileView,
   saveProfileView,
@@ -1154,6 +1154,7 @@ test("runProfileRead stores the estimate and the video readings", async () => {
           stored.push(v);
         },
         authenticity: {
+          pages: 4,
           read: async () => null,
           save: async () => undefined,
           account: async () => ({ pk: "42", isPrivate: false }),
@@ -1200,6 +1201,7 @@ test("a bought estimate is cached for the next read", async () => {
       {
         ...deps,
         authenticity: {
+          pages: 4,
           account: async () => ({ pk: "42", isPrivate: false }),
           sample: async () => {
             sampled += 1;
@@ -1220,6 +1222,7 @@ test("a bought estimate is cached for the next read", async () => {
           stored = v;
         },
         authenticity: {
+          pages: 4,
           account: async () => {
             throw new Error("should not be asked: the cache answers");
           },
@@ -1248,6 +1251,7 @@ test("a failing sample or reader never fails the read", async () => {
         stored.push(v);
       },
       authenticity: {
+        pages: 4,
         read: async () => null,
         save: async () => undefined,
         account: async () => ({ pk: "42", isPrivate: false }),
@@ -1343,7 +1347,7 @@ test("the sample and account calls are inside the measured vendor spend", async 
       {
         runPlan: async () => ({ plan: p, spent: 6 }),
         saveView: async () => undefined,
-        authenticity: { read: async () => null },
+        authenticity: { pages: 4, read: async () => null },
       },
     );
 
@@ -1361,7 +1365,93 @@ test("the sample and account calls are inside the measured vendor spend", async 
   }
 });
 
-test("a thrown run refunds the charge in full", async () => {  await withFreshDb(async (_q, userId) => {
+test("follower sampling is dormant by default: no vendor call and no estimate", async () => {
+  setDataDir(TMP);
+  const savedCap = process.env.AUTH_SAMPLE_PAGES;
+  delete process.env.AUTH_SAMPLE_PAGES;
+  const realFetch = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    seen.push(String(input));
+    throw new Error("dormant sampling must not reach the network");
+  }) as typeof fetch;
+
+  try {
+    const stored: ProfileView[] = [];
+    const p = plan({
+      handle: "dormant_fixture",
+      account: { followers: 5000 },
+      reels: reels(4),
+    });
+
+    await runProfileRead(
+      { handle: "dormant_fixture" },
+      {
+        runPlan: async () => ({ plan: p, spent: 6 }),
+        saveView: async (_h, v) => {
+          stored.push(v);
+        },
+      },
+    );
+
+    assert.equal(seen.length, 0, "the default cap of 0 makes zero vendor calls");
+    assert.equal(stored[0]?.vitals.botToReal, null);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (savedCap === undefined) delete process.env.AUTH_SAMPLE_PAGES;
+    else process.env.AUTH_SAMPLE_PAGES = savedCap;
+    restoreDir();
+  }
+});
+
+test("with no Gemini key the video model is never used and cards stay captions", async () => {
+  const savedKey = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  const realFetch = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    seen.push(String(input));
+    throw new Error("captions-only reads must not reach the network");
+  }) as typeof fetch;
+
+  try {
+    assert.equal(
+      configuredReader(),
+      CaptionReader,
+      "without a key the configured reader is the caption reader itself",
+    );
+
+    const stored: ProfileView[] = [];
+    const p = plan({ handle: "captions_only_fixture", reels: reels(4) });
+    await runProfileRead(
+      { handle: "captions_only_fixture" },
+      {
+        runPlan: async () => ({ plan: p, spent: 6 }),
+        saveView: async (_h, v) => {
+          stored.push(v);
+        },
+      },
+    );
+
+    assert.equal(seen.length, 0, "no MP4 download and no model call");
+    const cards = [...(stored[0]?.winners ?? []), ...(stored[0]?.flops ?? [])];
+    assert.equal(cards.length, 4);
+    for (const card of cards) {
+      assert.equal(card.basis, "captions");
+      assert.equal(
+        reelBasisLine(card.basis),
+        "From captions and numbers; video not watched.",
+      );
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+    if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = savedKey;
+  }
+});
+
+test("a thrown run refunds the charge in full", async () => {
+  await withFreshDb(async (_q, userId) => {
     const verdict = await gate("handle", {
       key: "competitor_handle",
       getUser: async () => sessionUser(userId),

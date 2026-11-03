@@ -64,11 +64,12 @@ export default function Vitals({ view }: { view: ProfileView }) {
         <StatSlab
           label="Bot-to-real ratio"
           tag="Estimate"
-          value={bot ? `${bot.realPct}%` : "Not estimated"}
+          locked={!bot}
+          value={bot ? `${bot.realPct}%` : "Estimate coming"}
           detail={
             bot
               ? `Estimated from a sample of ${bot.sample} followers · ${bot.confidence} confidence. A sample of the audience, not all of it.`
-              : "An estimate needs a public account with 1,000+ followers and at least 40 sampled followers."
+              : "Built from a sampled follower list in a later release. No percentage is shown until it is measured."
           }
         />
 

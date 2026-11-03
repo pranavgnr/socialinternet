@@ -318,20 +318,47 @@ test("a non-numeric user id is refused before any call is made", async () => {
 
 test("pages reads the cap from the environment and sanitises it", async () => {
   await withEnv({ AUTH_SAMPLE_PAGES: undefined }, async () => {
-    assert.equal(authSamplePages(), 4);
+    assert.equal(authSamplePages(), 0, "dormant by default");
   });
   await withEnv({ AUTH_SAMPLE_PAGES: "2" }, async () => {
     assert.equal(authSamplePages(), 2);
   });
   await withEnv({ AUTH_SAMPLE_PAGES: "0" }, async () => {
-    assert.equal(authSamplePages(), 4);
+    assert.equal(authSamplePages(), 0);
   });
   await withEnv({ AUTH_SAMPLE_PAGES: "banana" }, async () => {
-    assert.equal(authSamplePages(), 4);
+    assert.equal(authSamplePages(), 0);
+  });
+  await withEnv({ AUTH_SAMPLE_PAGES: "-3" }, async () => {
+    assert.equal(authSamplePages(), 0);
   });
   await withEnv({ AUTH_SAMPLE_PAGES: "1000" }, async () => {
     assert.ok(authSamplePages() <= 20, "the cap is bounded");
   });
+});
+
+test("the default cap of 0 buys nothing, even with a cached estimate", async () => {
+  const now = Date.parse("2026-11-03T00:00:00Z");
+  await saveAuthenticity(
+    "dormant_account",
+    { realPct: 88, sample: 60, confidence: "low" },
+    now,
+  );
+  let sampled = 0;
+  const estimate = await resolveAuthenticity(
+    "dormant_account",
+    { followers: 5000 },
+    {
+      now: () => now,
+      account: async () => ({ pk: "42", isPrivate: false }),
+      sample: async () => {
+        sampled += 1;
+        return rows(60, cleanRow);
+      },
+    },
+  );
+  assert.equal(estimate, null);
+  assert.equal(sampled, 0, "dormant means no vendor call at all");
 });
 
 test("the sample is a router capability: HikerAPI serves it, nothing else pretends to", async () => {
@@ -452,6 +479,7 @@ test("a corrupt cache reads as empty, never as a crash", async () => {
 test("the estimate is not bought for a small or private account", async () => {
   let sampled = 0;
   const deps = {
+    pages: 4,
     sample: async () => {
       sampled += 1;
       return rows(60, cleanRow);
@@ -487,6 +515,7 @@ test("a cached estimate costs no sample", async () => {
     "cached_account",
     { followers: 5000 },
     {
+      pages: 4,
       now: () => now + 864e5,
       account: async () => ({ pk: "42", isPrivate: false }),
       sample: async () => {
@@ -526,6 +555,7 @@ test("a sample too small to estimate is not cached as a result", async () => {
     "only_25",
     { followers: 5000 },
     {
+      pages: 4,
       now: () => now,
       account: async () => ({ pk: "42", isPrivate: false }),
       sample: async () => rows(25, cleanRow),
@@ -540,6 +570,7 @@ test("a failed sample or an unknown id never fails the caller", async () => {
     "vendor_down",
     { followers: 5000 },
     {
+      pages: 4,
       account: async () => ({ pk: "42", isPrivate: false }),
       sample: async () => {
         throw new Error("vendor died");
@@ -552,6 +583,7 @@ test("a failed sample or an unknown id never fails the caller", async () => {
     "no_pk",
     { followers: 5000 },
     {
+      pages: 4,
       account: async () => ({}),
       sample: async () => rows(60, cleanRow),
     },
@@ -562,6 +594,7 @@ test("a failed sample or an unknown id never fails the caller", async () => {
     "account_unreadable",
     { followers: 5000 },
     {
+      pages: 4,
       account: async () => {
         throw new Error("404");
       },
@@ -577,6 +610,7 @@ test("a known pk and a known public flag skip the account lookup", async () => {
     "pk_known",
     { followers: 5000, pk: "99", isPrivate: false },
     {
+      pages: 4,
       account: async () => {
         lookups += 1;
         return {};

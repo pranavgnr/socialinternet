@@ -11,9 +11,9 @@ export type FeatureStatus = "live" | "soon" | "planned";
 export type PillarKey = "audit" | "competitor-intel" | "lifestyle-vip";
 
 export const FEATURE_STATUS: Record<PillarKey, FeatureStatus> = {
-  // Live from Task 7: the profile page samples followers for the bot-to-real
-  // estimate and watches reels through the video reader when a key is set.
-  audit: "live",
+  // TODO(task-7-followup): the sample is dormant until follower paging is
+  // verified; the slab says "Estimate coming" rather than showing a number.
+  audit: "soon",
 
   // Live from Task 4: /profile/[handle] shows the competitor profile view.
   "competitor-intel": "live",

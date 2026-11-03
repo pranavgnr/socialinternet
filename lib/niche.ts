@@ -1421,9 +1421,29 @@ export function profileFromNiche(
 }
 
 /**
+ * The reel-level row the niche dossier ranks.
+ *
+ * Deliberately small: the dossier needs the owner, the link, the caption
+ * excerpt, the view count and the owner's size, and nothing else. It is built
+ * only when `nicheView` is asked for a dossier, so the API's normal view stays
+ * the lightweight account summary it was.
+ */
+export interface NicheReelRow {
+  account: string;
+  platform?: Platform;
+  url: string;
+  caption: string;
+  views: number;
+  followers?: number;
+}
+
+/**
  * What the browser is allowed to see of a niche pull. Deliberately not the raw
  * payload: that is every caption of every reel, hundreds of kilobytes the page
  * has no use for. The numbers and the handful of accounts are the whole point.
+ *
+ * `reelRows` is the one exception, and only when `nicheView` is asked for a
+ * dossier: it is still a cut-down row, never the raw payload.
  */
 export interface NicheView {
   query: string;
@@ -1476,9 +1496,29 @@ export interface NicheView {
     judged: { scored: number; of: number };
     reason?: string;
   };
+  /**
+   * The room's reels, for the dossier page only.
+   *
+   * Absent from the API's view on purpose: the account summary above is the
+   * public shape, while the dossier needs one row per reel to rank breakouts by
+   * views per follower. Captions are cut to an excerpt-sized string.
+   */
+  reelRows?: NicheReelRow[];
 }
 
-export function nicheView(research: NicheResearch, limit = 8): NicheView {
+export interface NicheViewOptions {
+  /**
+   * Include the reel-level rows a dossier ranks. Off by default so the API
+   * response does not grow back into the raw payload it was built to avoid.
+   */
+  dossier?: boolean;
+}
+
+export function nicheView(
+  research: NicheResearch,
+  limit = 8,
+  opts: NicheViewOptions = {},
+): NicheView {
   /**
    * Which rooms were left out, in words.
    *
@@ -1532,6 +1572,20 @@ export function nicheView(research: NicheResearch, limit = 8): NicheView {
       judged: research.subject?.judged ?? { scored: 0, of: 0 },
       reason: research.subject?.reason,
     },
+    ...(opts.dossier
+      ? {
+          reelRows: (research.payload ?? []).map((reel) => ({
+            account: reel.account,
+            platform: reel.platform,
+            url: reel.url,
+            caption: (reel.caption ?? "").slice(0, 200),
+            views: reel.views,
+            ...(typeof reel.followers === "number" && reel.followers > 0
+              ? { followers: reel.followers }
+              : {}),
+          })),
+        }
+      : {}),
   };
 }
 
@@ -1589,4 +1643,48 @@ export async function cachedNiches(
   }
 
   return out.sort((a, b) => b.reels - a.reels);
+}
+
+export interface CachedNichePull {
+  slug: string;
+  /** the phrase as it was stored, falling back to the slug in words */
+  query: string;
+  fetchedAt: string;
+  ageHours: number;
+  /** older than NICHE_CACHE_HOURS; still free to read, labelled "as of" */
+  stale: boolean;
+  payload: RawReel[];
+  errors: string[];
+}
+
+/**
+ * One cached room by phrase, payload included.
+ *
+ * The niche page needs the reels behind a room, not a list of every room on
+ * disk, so this reads exactly the file the shared `slugify` names. Unlike
+ * `cachedNicheResearch` it deliberately ignores the TTL: an old-but-paid-for
+ * room stays readable for free and the page says how old it is. The lookup uses
+ * the same slug function as the writer, so a hostile phrase can never name a
+ * path.
+ */
+export async function cachedNichePull(
+  query: string,
+): Promise<CachedNichePull | null> {
+  const phrase = typeof query === "string" ? query.trim() : "";
+  if (!phrase) return null;
+
+  const slug = slugify(phrase);
+  const stored = await readStored(slug);
+  if (!stored?.payload?.length) return null;
+
+  const ageHours = (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5;
+  return {
+    slug,
+    query: stored.query?.trim() || slug.replace(/-/g, " "),
+    fetchedAt: stored.fetchedAt,
+    ageHours: Number.isFinite(ageHours) ? Math.max(0, ageHours) : 0,
+    stale: !(ageHours < cacheTtlHours()),
+    payload: stored.payload,
+    errors: stored.errors ?? [],
+  };
 }

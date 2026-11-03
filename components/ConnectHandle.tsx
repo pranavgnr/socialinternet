@@ -93,6 +93,15 @@ export default function ConnectHandle({
             setNiche(pending.niche.trim());
           }
           if (signedIn) setResumed(savedHandle);
+        } else if (typeof pending.niche === "string" && pending.niche.trim()) {
+          /**
+           * A niche read asks for sign-in before any handle is known, so the
+           * pending entry carries only the phrase. Bring the space back as the
+           * chosen niche chip: the trip through Google must not lose what the
+           * visitor was reading. Nothing is submitted; the form still needs a
+           * handle.
+           */
+          setNiche(pending.niche.trim());
         }
       }
     } catch {

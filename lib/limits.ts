@@ -42,6 +42,11 @@ export function refund(key: string): void {
   if (entry && entry.used > 0) entry.used -= 1;
 }
 
+/** Test hook: clear every window so a suite starts from a known state. */
+export function resetLimitsForTests(): void {
+  windows.clear();
+}
+
 function sweep(now: number) {
   for (const [key, entry] of windows) {
     if (now >= entry.resetAt) windows.delete(key);

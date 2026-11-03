@@ -2,6 +2,7 @@
 // and one insert that turns a repeat signup into `duplicate` rather than an
 // error. No email or phone number is ever logged here.
 import { currentDb } from "./db";
+import { intFromEnv } from "./env";
 import { normalizeHandle } from "./handle";
 
 export const WAITLIST_FEATURES = [
@@ -14,6 +15,28 @@ export const WAITLIST_FEATURES = [
 ] as const;
 
 export type WaitlistFeature = (typeof WAITLIST_FEATURES)[number];
+
+/** Global ceiling per hour; the per-IP cap cannot stop spoofed IPs. */
+export const WAITLIST_GLOBAL_DEFAULT = 300;
+export const WAITLIST_GLOBAL_MAX = 100_000;
+
+/**
+ * Read at request time so tests (and an operator without a restart) can set a
+ * small ceiling. `intFromEnv` ignores blank, non-numeric and non-positive
+ * values and caps a typo at a sane maximum.
+ */
+export function waitlistGlobalPerHour(): number {
+  return intFromEnv(
+    "WAITLIST_GLOBAL_PER_HOUR",
+    WAITLIST_GLOBAL_DEFAULT,
+    WAITLIST_GLOBAL_MAX,
+  );
+}
+
+/** The same coalesced contact the unique index uses, never logged. */
+export function waitlistContactKey(contact: WaitlistContact): string {
+  return contact.email ?? contact.whatsapp ?? "";
+}
 
 export function isWaitlistFeature(value: unknown): value is WaitlistFeature {
   return (
@@ -144,10 +167,12 @@ export interface WaitlistSignup {
 }
 
 /**
- * Writes one signup. `ON CONFLICT DO NOTHING` with `RETURNING` is the whole
- * duplicate check: the expression unique index decides, and an empty result
- * means this contact had already joined this feature. That is a success for
- * the visitor, not an error.
+ * Writes one signup. The conflict target names the expression unique index, so
+ * only a repeat of the same contact + feature is ignored; the empty `RETURNING`
+ * means this contact had already joined this feature. That is a success for the
+ * visitor, not an error. `((coalesce(email, whatsapp)), feature)` matches the
+ * index definition exactly (the extra parentheses are Postgres's syntax for an
+ * expression key).
  */
 export async function saveWaitlistSignup(
   input: WaitlistSignup,
@@ -162,7 +187,7 @@ export async function saveWaitlistSignup(
   const { rows } = await currentDb().query<{ id: string | number }>(
     `INSERT INTO waitlist_signups (email, whatsapp, handle, feature, source)
      VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT DO NOTHING
+     ON CONFLICT ((coalesce(email, whatsapp)), feature) DO NOTHING
      RETURNING id`,
     [
       contact.email ?? null,

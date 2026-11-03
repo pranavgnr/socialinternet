@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import type { WaitlistFeature } from "@/lib/waitlist";
 
@@ -39,6 +39,7 @@ export default function WaitlistForm({
   const handleId = useId();
   const hintId = useId();
   const statusId = useId();
+  const statusRef = useRef<HTMLParagraphElement>(null);
 
   const [contact, setContact] = useState("");
   const [handle, setHandle] = useState("");
@@ -46,6 +47,17 @@ export default function WaitlistForm({
 
   const sending = status.kind === "sending";
   const message = messageFor(status);
+
+  /**
+   * The success sentence is the result of the action, so keyboard and
+   * screen-reader users are moved to it instead of being left on a disabled
+   * button with the confirmation elsewhere.
+   */
+  useEffect(() => {
+    if (status.kind === "done" || status.kind === "duplicate") {
+      statusRef.current?.focus();
+    }
+  }, [status.kind]);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,9 +110,11 @@ export default function WaitlistForm({
         return;
       }
       if (res.status === 429) {
+        // Retry-after is deliberately ignored: the visitor gets one stable
+        // sentence, not a countdown the server may not honour.
         setStatus({
           kind: "error",
-          message: "That is a lot of requests. Please try again in a minute.",
+          message: "Too many requests right now. Please try again later.",
         });
         return;
       }
@@ -175,6 +189,8 @@ export default function WaitlistForm({
         </button>
         <p
           id={statusId}
+          ref={statusRef}
+          tabIndex={-1}
           role="status"
           aria-live={status.kind === "error" ? "assertive" : "polite"}
           className={`min-h-[1rem] text-[12px] leading-snug ${

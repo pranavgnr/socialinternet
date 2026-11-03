@@ -122,6 +122,7 @@ a screenshot. If one leaks, rotate it at the provider (see the last section).
 | `HIKERAPI_USD_PER_CALL` | No (default `0.02`) | No | What HikerAPI actually charges your account tier. |
 | `CREDIT_BUDGET` | No (default `12`) | No | Vendor units allowed in one run. |
 | `CREDIT_BUDGET_USD` | No (default `1.00`) | No | Real-money ceiling for one run. |
+| `WAITLIST_GLOBAL_PER_HOUR` | No (default `300`) | No | Global waitlist signup ceiling per hour across all IPs. The per-IP cap is 10/hour and one contact is capped at 5/hour; this is the backstop when an untrusted client can rotate or spoof `x-forwarded-for`. |
 | `HARVEST_CACHE_HOURS` | No (default `12`) | No | How long a pulled sample stays fresh. |
 | `NICHE_CACHE_HOURS` | No (default `12`) | No | How long a niche pull is served from disk. Set `168` for a week of free reopens after a paid verification run. |
 | `HANDLE_CACHE_HOURS` | No (default `12`) | No | How long an account's own feed is reused before it is read again. `168` keeps a warmed handle open for a week. |
@@ -246,6 +247,16 @@ sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw enable
 ```
+
+### Proxy headers and the waitlist limit
+
+The waitlist route takes the caller's IP from `x-forwarded-for`. That header is
+only trustworthy behind a proxy that overwrites it on every request; the Caddy
+example above does (Caddy replaces the header with the address it sees). If you
+expose `next start` directly to the internet, a client can spoof the header and
+rotate the per-IP key. The global ceiling `WAITLIST_GLOBAL_PER_HOUR` (default
+300, per hour across all IPs) bounds the table even then, and each normalised
+contact is also capped at 5 requests per hour. Keep the app behind the proxy.
 
 ---
 

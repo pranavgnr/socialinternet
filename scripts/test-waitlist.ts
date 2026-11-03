@@ -1,13 +1,14 @@
 // Waitlist tests: contact validation, the signup table and the public route,
 // all on in-memory PGlite with no network.
 //   npm run test:file -- test-waitlist
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 
 import { migrate } from "../lib/migrate";
 import { resetDbForTests, setDbForTests } from "../lib/db";
 import type { Queryable } from "../lib/db";
+import { resetLimitsForTests } from "../lib/limits";
 import {
   WAITLIST_FEATURES,
   isWaitlistFeature,
@@ -16,6 +17,10 @@ import {
   saveWaitlistSignup,
 } from "../lib/waitlist";
 import { POST } from "../app/api/waitlist/route";
+
+// Every test starts with clean limiter windows; the global key is shared by
+// design, so one test's burst must not spend the next test's budget.
+beforeEach(() => resetLimitsForTests());
 
 // PGlite's own query type is close to but not exactly Queryable; adapt it.
 function asQueryable(pg: PGlite): Queryable {
@@ -62,6 +67,30 @@ function post(
     },
     body: text,
   });
+}
+
+/** A chunked body with no Content-Length, as an attacker would send it. */
+function streamedPost(
+  chunks: Uint8Array[],
+  opts: { headers?: Record<string, string>; url?: string } = {},
+): Request {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  const init = {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-forwarded-for": freshIp(),
+      ...opts.headers,
+    },
+    body: stream,
+    duplex: "half",
+  } as RequestInit & { duplex: "half" };
+  return new Request(opts.url ?? "http://localhost/api/waitlist", init);
 }
 
 async function json(res: Response): Promise<{ ok: boolean; duplicate?: boolean; error?: string }> {
@@ -324,8 +353,42 @@ test("POST refuses a body over 4 KB", async () => {
       post({ email: "creator@example.com", feature: "vip", handle: "x".repeat(5000) }),
     );
     assert.equal(res.status, 413);
-    assert.equal((await json(res)).ok, false);
+    assert.deepEqual(await json(res), {
+      ok: false,
+      error: "That request is too large.",
+    });
     assert.equal((await rows(q)).length, 0);
+  });
+});
+
+test("POST refuses a chunked body over 4 KB with no Content-Length", async () => {
+  await withFreshDb(async (q) => {
+    const chunk = new TextEncoder().encode("x".repeat(2048));
+    const request = streamedPost([chunk, chunk, chunk]);
+    assert.equal(request.headers.get("content-length"), null);
+
+    const res = await POST(request);
+    assert.equal(res.status, 413);
+    assert.deepEqual(await json(res), {
+      ok: false,
+      error: "That request is too large.",
+    });
+    assert.equal((await rows(q)).length, 0);
+  });
+});
+
+test("a chunked body under the cap is still read and saved", async () => {
+  await withFreshDb(async (q) => {
+    const body = new TextEncoder().encode(
+      JSON.stringify({ email: "chunked@example.com", feature: "vip" }),
+    );
+    const split = Math.floor(body.length / 2);
+    const res = await POST(
+      streamedPost([body.slice(0, split), body.slice(split)]),
+    );
+    assert.equal(res.status, 200);
+    assert.deepEqual(await json(res), { ok: true, duplicate: false });
+    assert.equal((await rows(q)).length, 1);
   });
 });
 
@@ -374,6 +437,52 @@ test("1,000 signups from one IP write only the allowed ten rows", async () => {
     }
     assert.equal(allowed, 10);
     assert.equal((await rows(q)).length, 10);
+  });
+});
+
+test("rotating spoofed x-forwarded-for values cannot exceed the global ceiling", async () => {
+  const previous = process.env.WAITLIST_GLOBAL_PER_HOUR;
+  process.env.WAITLIST_GLOBAL_PER_HOUR = "3";
+  try {
+    await withFreshDb(async (q) => {
+      // Each request claims a different IP, so the per-IP cap never fires.
+      for (let i = 0; i < 3; i++) {
+        const res = await POST(
+          post({ email: `global${i}@example.com`, feature: "vip" }),
+        );
+        assert.equal(res.status, 200, `request ${i + 1} was not allowed`);
+      }
+
+      const blocked = await POST(
+        post({ email: "global3@example.com", feature: "vip" }),
+      );
+      assert.equal(blocked.status, 429);
+      assert.match((await json(blocked)).error ?? "", /try again/i);
+      assert.equal((await rows(q)).length, 3);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.WAITLIST_GLOBAL_PER_HOUR;
+    else process.env.WAITLIST_GLOBAL_PER_HOUR = previous;
+  }
+});
+
+test("one contact is capped at 5 requests per hour regardless of IP", async () => {
+  await withFreshDb(async (q) => {
+    for (let i = 0; i < 5; i++) {
+      const res = await POST(
+        post({ email: "Repeat@Example.com", feature: "vip" }),
+      );
+      assert.equal(res.status, 200, `request ${i + 1} was not allowed`);
+      const out = await json(res);
+      assert.equal(out.duplicate, i > 0);
+    }
+
+    const blocked = await POST(
+      post({ email: "repeat@example.com", feature: "vip" }),
+    );
+    assert.equal(blocked.status, 429);
+    assert.match((await json(blocked)).error ?? "", /contact/i);
+    assert.equal((await rows(q)).length, 1);
   });
 });
 

@@ -119,11 +119,23 @@ export async function runProfileRead(
     readings = new Map();
   }
 
-  const view = buildProfileView(plan, {
-    own: false,
-    authenticity,
-    readings,
-  });
+  let view: ProfileView;
+  try {
+    view = buildProfileView(plan, {
+      own: false,
+      authenticity,
+      readings,
+    });
+  } catch {
+    /**
+     * Optional enrichment must never cost the creator a paid read. A reading or
+     * estimate that turns out to be unusable (an older shape, a hand-edited
+     * entry, a field the view cannot print) is dropped and the page is built
+     * from the plan alone. Only the plan itself can fail the read now, and that
+     * failure is a genuine one the route should refund.
+     */
+    view = buildProfileView(plan, { own: false });
+  }
   await deps.saveView(input.handle, view);
   return { handle: input.handle, spent };
 }

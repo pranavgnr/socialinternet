@@ -14,7 +14,7 @@ import {
   type FollowerSampleRow,
 } from "../lib/authenticity";
 import { creditLedger, resetCreditLedger } from "../lib/providers";
-import { CaptionReader, configuredReader, type VideoReading } from "../lib/videoReader";
+import { CaptionReader, GeminiReader, configuredReader, videoReadingsPath, type VideoReading } from "../lib/videoReader";
 import {
   readProfileView,
   saveProfileView,
@@ -1447,6 +1447,119 @@ test("with no Gemini key the video model is never used and cards stay captions",
     globalThis.fetch = realFetch;
     if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = savedKey;
+  }
+});
+
+test("a corrupt video cache never breaks the profile read", async () => {
+  setDataDir(TMP);
+  const savedKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = "test-key";
+  const realFetch = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    seen.push(String(input));
+    throw new Error("a corrupt cache must not force a download here");
+  }) as typeof fetch;
+
+  try {
+    const p = plan({ handle: "corrupt_cache_fixture", reels: reels(2) });
+    const targets = reelsToRead(p);
+    const savedAt = new Date().toISOString();
+    writeFileSync(
+      videoReadingsPath(),
+      JSON.stringify(
+        {
+          [targets[0]?.shortcode ?? ""]: {
+            savedAt,
+            reading: {
+              basis: "video",
+              hookSeconds: "x",
+              hookType: "spoken",
+              loop: true,
+              why: [123],
+            },
+          },
+          [targets[1]?.shortcode ?? ""]: {
+            savedAt,
+            reading: {
+              basis: "video",
+              hookSeconds: 0.5,
+              hookType: "dance",
+              loop: true,
+              why: ["not a real hook type"],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const stored: ProfileView[] = [];
+    await runProfileRead(
+      { handle: "corrupt_cache_fixture" },
+      {
+        runPlan: async () => ({ plan: p, spent: 6 }),
+        saveView: async (_h, v) => {
+          stored.push(v);
+        },
+        authenticity: { pages: 0 },
+        reader: GeminiReader({ apiKey: "test-key" }),
+      },
+    );
+
+    assert.equal(seen.length, 0, "no reading was used and no media URL existed");
+    const cards = [...(stored[0]?.winners ?? []), ...(stored[0]?.flops ?? [])];
+    assert.equal(cards.length, 2);
+    for (const card of cards) {
+      assert.equal(card.basis, "captions");
+      assert.equal(
+        reelBasisLine(card.basis),
+        "From captions and numbers; video not watched.",
+      );
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+    if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = savedKey;
+    restoreDir();
+  }
+});
+
+test("an unusable injected reading falls back to the plan, never the paid read", async () => {
+  const stored: ProfileView[] = [];
+  const p = plan({ handle: "bad_reading_fixture", reels: reels(6) });
+
+  const result = await runProfileRead(
+    { handle: "bad_reading_fixture" },
+    {
+      runPlan: async () => ({ plan: p, spent: 6 }),
+      saveView: async (_h, v) => {
+        stored.push(v);
+      },
+      authenticity: { pages: 0 },
+      reader: {
+        async read() {
+          // A hostile/older reading shape: `plain()` would throw on this.
+          return {
+            basis: "video",
+            hookSeconds: 0.5,
+            hookType: "visual",
+            loop: false,
+            why: [42] as unknown as string[],
+          };
+        },
+      },
+    },
+  );
+
+  assert.equal(result.spent, 6);
+  assert.equal(stored.length, 1);
+  const cards = [...(stored[0]?.winners ?? []), ...(stored[0]?.flops ?? [])];
+  assert.equal(cards.length, 6);
+  for (const card of cards) {
+    assert.equal(card.basis, "captions");
+    assert.ok(card.why.length > 0, "the caption/number bullets are intact");
   }
 });
 

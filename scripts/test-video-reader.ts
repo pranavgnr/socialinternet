@@ -14,7 +14,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -427,6 +427,39 @@ test("a reading is cached by shortcode for seven days", async () => {
       GeminiReader({ apiKey: KEY, now: () => now + 8 * 864e5 }).read(target),
     );
     assert.ok(expired.seen.length > 0, "an expired reading is re-read");
+  });
+});
+
+test("a semantically corrupt cached reading is a miss, never a view input", async () => {
+  await withEnv({ GEMINI_API_KEY: KEY }, async () => {
+    const now = Date.parse("2026-11-03T00:00:00Z");
+    const target = reel(1);
+    writeFileSync(
+      videoReadingsPath(),
+      JSON.stringify(
+        {
+          [target.shortcode ?? ""]: {
+            savedAt: new Date(now).toISOString(),
+            reading: {
+              basis: "video",
+              hookSeconds: "x",
+              hookType: "spoken",
+              loop: true,
+              why: [123],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const { result, seen } = await withFetch(route, () =>
+      GeminiReader({ apiKey: KEY, now: () => now }).read(target),
+    );
+    assert.equal(seen.length, 2, "the corrupt entry forced a real read");
+    assert.equal(result.basis, "video");
+    for (const line of result.why) assert.equal(typeof line, "string");
   });
 });
 

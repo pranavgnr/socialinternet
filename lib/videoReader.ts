@@ -21,6 +21,17 @@
  * `<dataRoot()>/video_readings.json`, and a profile reads at most
  * `VIDEO_READ_MAX` (default 6) reels, one at a time, inside a 90-second budget.
  *
+ * The host allowlist is hostname-based: it stops a URL for any host that is not
+ * Instagram's CDN, but it does not defend against DNS rebinding against those
+ * fixed Instagram hostnames. That is an accepted limit: they are Instagram's
+ * own CDN names, the request carries no cookies or credentials, and the
+ * downloaded bytes only ever go to the model.
+ *
+ * `VIDEO_READ_MAX=0` does **not** disable video reading — `intFromEnv` treats 0
+ * as unset, so the cap falls back to 6. To disable it, leave `GEMINI_API_KEY`
+ * unset; `configuredReader()` then returns the caption reader and no MP4 is ever
+ * downloaded.
+ *
  * Gemini is billed by Google per token; it is not paid for in gems. See
  * `docs/deploy.md` — the price is not hard-coded here because it is Google's to
  * change and should be checked on the current pricing page.
@@ -326,15 +337,68 @@ export function videoReadingsPath(): string {
   return path.join(dataRoot(), "video_readings.json");
 }
 
-/** How many reels one profile may watch; 6 by default. */
+/**
+ * How many reels one profile may watch; 6 by default, bounded at 12.
+ *
+ * `VIDEO_READ_MAX=0` is treated as unset (6), not as "off" — the switch for the
+ * whole feature is leaving `GEMINI_API_KEY` unset.
+ */
 export function videoReadMax(): number {
   return intFromEnv("VIDEO_READ_MAX", 6, 12);
 }
 
 function isReading(value: unknown): value is VideoReading {
-  if (!value || typeof value !== "object") return false;
-  const reading = value as Partial<VideoReading>;
-  return reading.basis === "video" && Array.isArray(reading.why);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const reading = value as Record<string, unknown>;
+
+  /**
+   * Mirrors `parseReading`: a cache file is a file on disk, so a hand-edited or
+   * older entry is data, not a promise. Every field the view reads is checked
+   * and every string is capped at the same length `parseReading` enforces. A
+   * `why` of `[123]` is a miss, never a crash inside `plain()`.
+   */
+  if (reading.basis !== "video") return false;
+
+  const hookType = reading.hookType;
+  if (typeof hookType !== "string" || !HOOK_TYPES.has(hookType as HookType)) {
+    return false;
+  }
+
+  const hookSeconds = reading.hookSeconds;
+  if (
+    typeof hookSeconds !== "number" ||
+    !Number.isFinite(hookSeconds) ||
+    hookSeconds < 0 ||
+    hookSeconds > 60
+  ) {
+    return false;
+  }
+
+  if (typeof reading.loop !== "boolean") return false;
+
+  const why = reading.why;
+  if (!Array.isArray(why) || why.length > 4) return false;
+  if (why.some((line) => typeof line !== "string" || line.length > 160)) {
+    return false;
+  }
+
+  const onScreenText = reading.onScreenText;
+  if (
+    onScreenText !== undefined &&
+    (typeof onScreenText !== "string" || onScreenText.length > 300)
+  ) {
+    return false;
+  }
+
+  const pacing = reading.pacing;
+  if (
+    pacing !== undefined &&
+    (typeof pacing !== "string" || pacing.length > 200)
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function isFresh(entry: CachedReading, nowMs: number): boolean {

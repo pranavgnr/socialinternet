@@ -303,33 +303,32 @@ export interface ListTrendingOptions {
 }
 
 /**
- * What the landing page shows. Reads the ranked rows; when the table is empty
- * or the database cannot be reached, falls back to ranking the cache on disk.
+ * What the landing page shows. Reads the ranked rows; when the table is empty,
+ * the database cannot be reached, or no table row is on disk, falls back to
+ * ranking the cache on disk.
  *
- * The catch is deliberate and narrow: a database outage must not take the free
- * half of the product down with it. Bubbles are a cache view, so the honest
- * answer is the same rows computed a different way, not an error page. The disk
- * result is reused for DISK_RANK_TTL_MS so that outage path is not paid for on
- * every request.
+ * The disk ranking is the authority on what a bubble may open. A table written
+ * before the Instagram-only filter could still name a YouTube room, and that
+ * bubble would open a dossier with nothing in it. So the table's rows are
+ * intersected with the (already cached for DISK_RANK_TTL_MS) disk ranking; a
+ * row whose slug is not an Instagram room on disk is never shown. The catch is
+ * deliberate and narrow: a database outage must not take the free half of the
+ * product down with it. Bubbles are a cache view, so the honest answer is the
+ * same rows computed a different way, not an error page.
  */
 export async function listTrending(
   opts: ListTrendingOptions = {},
 ): Promise<TrendingNiche[]> {
+  const read = opts.rankFromDisk ?? (() => rankFromDisk());
+  const now = opts.now ?? Date.now;
+
+  let tableRows: TrendingRow[] | null = null;
   try {
     const { rows } = await currentDb().query<TrendingRow>(
       "SELECT slug, label, query, score, rank FROM trending_niches" +
         " ORDER BY rank ASC NULLS LAST, slug ASC",
     );
-    const niches = rows
-      .filter((row): row is TrendingRow & { query: string } => Boolean(row.query))
-      .map((row, i) => ({
-        slug: row.slug,
-        label: row.label || nicheLabel(row.query) || row.query,
-        query: row.query,
-        score: Number.isFinite(Number(row.score)) ? Number(row.score) : 0,
-        rank: Number.isFinite(Number(row.rank)) ? Number(row.rank) : i + 1,
-      }));
-    if (niches.length) return niches;
+    tableRows = rows;
   } catch (err) {
     console.warn(
       `[trending] could not read trending_niches, ranking from disk: ${
@@ -338,9 +337,25 @@ export async function listTrending(
     );
   }
 
-  const read = opts.rankFromDisk ?? (() => rankFromDisk());
-  const now = opts.now ?? Date.now;
-  return rankFromDiskCached(read, now);
+  const onDisk = await rankFromDiskCached(read, now);
+
+  if (tableRows) {
+    const allowed = new Set(onDisk.map((niche) => niche.slug));
+    const niches = tableRows
+      .filter((row): row is TrendingRow & { query: string } => Boolean(row.query))
+      .map((row, i) => ({
+        slug: row.slug,
+        label: row.label || nicheLabel(row.query) || row.query,
+        query: row.query,
+        score: Number.isFinite(Number(row.score)) ? Number(row.score) : 0,
+        rank: Number.isFinite(Number(row.rank)) ? Number(row.rank) : i + 1,
+      }))
+      .filter((niche) => allowed.has(niche.slug));
+
+    if (niches.length) return niches;
+  }
+
+  return onDisk;
 }
 
 /**

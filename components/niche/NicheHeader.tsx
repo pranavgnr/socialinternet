@@ -3,9 +3,11 @@ import { ageLabel } from "@/lib/nicheDossier";
 function Count({
   label,
   value,
+  hint,
 }: {
   label: string;
   value: number;
+  hint?: string;
 }) {
   return (
     <div>
@@ -15,6 +17,11 @@ function Count({
       <dd className="mono mt-1.5 text-[24px] font-bold leading-none text-limelight sm:text-[28px]">
         {value}
       </dd>
+      {hint ? (
+        <p className="mt-1.5 max-w-[9rem] text-[8.5px] leading-snug text-muted-zinc/70">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -65,7 +72,11 @@ export default function NicheHeader({
         <dl className="grid shrink-0 grid-cols-3 gap-x-6 gap-y-2 sm:gap-x-8">
           <Count label="Reels read" value={counts.reels} />
           <Count label="Accounts" value={counts.accounts} />
-          <Count label="Breakouts" value={counts.breakouts} />
+          <Count
+            label="Breakouts"
+            value={counts.breakouts}
+            hint="accounts with a reel above twice the usual"
+          />
         </dl>
       </div>
     </header>

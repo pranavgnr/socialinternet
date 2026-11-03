@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { compact, times } from "@/lib/fmt";
+import { normalizeHandle } from "@/lib/handle";
 import type { DossierOutlier } from "@/lib/nicheDossier";
 import { plain } from "@/lib/plain";
 
@@ -36,7 +37,7 @@ export default function OutlierList({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="mono text-[9.5px] font-bold uppercase tracking-[0.18em] text-limelight">
-            Breakout reels
+            Ranked reels
           </p>
           <h2
             id="breakouts-title"
@@ -54,6 +55,7 @@ export default function OutlierList({
         {outliers.map((outlier, index) => {
           const rank = index + 1;
           const multiple = outlier.multiple;
+          const profileHandle = normalizeHandle(outlier.handle);
           return (
             <li
               key={outlier.url}
@@ -68,13 +70,24 @@ export default function OutlierList({
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <Link
-                    href={`/profile/${encodeURIComponent(outlier.handle)}`}
-                    aria-label={`Read the profile for @${outlier.handle}`}
-                    className="min-w-0 truncate text-[15px] font-semibold text-pure-white underline decoration-white/20 underline-offset-4 transition hover:text-limelight hover:decoration-limelight/50"
-                  >
-                    @{outlier.handle}
-                  </Link>
+                  {profileHandle ? (
+                    <Link
+                      href={`/profile/${profileHandle}`}
+                      aria-label={`Read the profile for @${outlier.handle}, reel ${rank}`}
+                      className="min-w-0 truncate text-[15px] font-semibold text-pure-white underline decoration-white/20 underline-offset-4 transition hover:text-limelight hover:decoration-limelight/50"
+                    >
+                      @{outlier.handle}
+                    </Link>
+                  ) : (
+                    /**
+                     * A stored row can carry a vendor artefact as its account.
+                     * Without a legal Instagram handle there is no profile to
+                     * open, so the handle stays plain text, not a dead link.
+                     */
+                    <span className="min-w-0 truncate text-[15px] font-semibold text-pure-white">
+                      @{outlier.handle}
+                    </span>
+                  )}
                   <p className="mono shrink-0 text-[14px] font-bold text-pure-white">
                     {compact(outlier.views)}{" "}
                     <span className="text-[10px] font-normal uppercase tracking-[0.1em] text-muted-zinc">

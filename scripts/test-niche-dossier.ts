@@ -431,6 +431,33 @@ test("counts measure the room, not just the twelve listed", () => {
   assert.equal(dossier.bar?.views, 1_000);
 });
 
+test("breakouts never exceed the accounts the briefing names", () => {
+  /**
+   * The account summary can be thinner than the reel rows: a sighting with one
+   * viral reel may not reach the summary's account list. Both counts must come
+   * from the same set, or the sentence reads "2 of the 1 accounts read".
+   */
+  const rows = [
+    row({ account: "viral_one", views: 50_000, followers: 1_000 }),
+    row({ account: "viral_two", views: 40_000, followers: 1_000 }),
+    row({ account: "steady", views: 1_000, followers: 1_000 }),
+  ];
+  const dossier = buildDossier(
+    view(rows, { reels: 3, accountCount: 1, nicheMedianViews: 1_000 }),
+  );
+
+  assert.equal(dossier.counts.accounts, 3);
+  assert.ok(dossier.counts.breakouts <= dossier.counts.accounts);
+
+  const sentence = dossier.briefing.find((line) =>
+    /accounts read have/.test(line),
+  );
+  assert.ok(sentence, "the breakout sentence is still stated when it is true");
+  const match = sentence.match(/^(\d+) of the (\d+) accounts read/);
+  assert.ok(match, sentence);
+  assert.ok(Number(match[1]) <= Number(match[2]), sentence);
+});
+
 test("the dossier falls back to the account rows when reel rows are absent", () => {
   const dossier = buildDossier(
     view([], {
@@ -558,6 +585,22 @@ test(
           (dossier.briefing.length >= 3 && dossier.briefing.length <= 5),
         `${entry.slug}: briefing length ${dossier.briefing.length}`,
       );
+      assert.ok(
+        dossier.counts.breakouts <= dossier.counts.accounts,
+        `${entry.slug}: ${dossier.counts.breakouts} breakouts of ${dossier.counts.accounts} accounts`,
+      );
+
+      const breakoutLine = dossier.briefing.find((line) =>
+        /accounts read have/.test(line),
+      );
+      if (breakoutLine) {
+        const match = breakoutLine.match(/^(\d+) of the (\d+) accounts read/);
+        assert.ok(match, `${entry.slug}: ${breakoutLine}`);
+        assert.ok(
+          Number(match[1]) <= Number(match[2]),
+          `${entry.slug}: ${breakoutLine}`,
+        );
+      }
     }
   },
 );
@@ -569,40 +612,47 @@ test(
     /**
      * The bubbles are supposed to come from the disk ranking when the table is
      * empty or Postgres is down. Delete the URL so this test exercises that
-     * documented path and never depends on a developer's database.
+     * documented path and never depends on a developer's database; restore it
+     * in a finally so a later test (or an interactive run) keeps its setting.
      */
+    const previousDb = process.env.DATABASE_URL;
     delete process.env.DATABASE_URL;
 
-    const bubbles = await listTrending();
-    assert.ok(bubbles.length > 0, "expected at least one landing bubble");
+    try {
+      const bubbles = await listTrending();
+      assert.ok(bubbles.length > 0, "expected at least one landing bubble");
 
-    const failures: string[] = [];
-    for (const bubble of bubbles) {
-      const pull = await cachedNichePull(bubble.query);
-      if (!pull) {
-        failures.push(`"${bubble.query}" (${bubble.slug}): not on disk`);
-        continue;
+      const failures: string[] = [];
+      for (const bubble of bubbles) {
+        const pull = await cachedNichePull(bubble.query);
+        if (!pull) {
+          failures.push(`"${bubble.query}" (${bubble.slug}): not on disk`);
+          continue;
+        }
+
+        const dossier = buildDossier(
+          nicheView(
+            researchFromCache(pull.query, pull.payload, {
+              fetchedAt: pull.fetchedAt,
+              errors: pull.errors,
+            }),
+            OUTLIER_LIMIT,
+            { dossier: true },
+          ),
+        );
+        if (!dossier.outliers.length) {
+          failures.push(`"${bubble.query}" (${bubble.slug}): empty dossier`);
+        }
       }
 
-      const dossier = buildDossier(
-        nicheView(
-          researchFromCache(pull.query, pull.payload, {
-            fetchedAt: pull.fetchedAt,
-            errors: pull.errors,
-          }),
-          OUTLIER_LIMIT,
-          { dossier: true },
-        ),
+      assert.deepEqual(
+        failures,
+        [],
+        `bubbles without a dossier: ${failures.join("; ")}`,
       );
-      if (!dossier.outliers.length) {
-        failures.push(`"${bubble.query}" (${bubble.slug}): empty dossier`);
-      }
+    } finally {
+      if (previousDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDb;
     }
-
-    assert.deepEqual(
-      failures,
-      [],
-      `bubbles without a dossier: ${failures.join("; ")}`,
-    );
   },
 );

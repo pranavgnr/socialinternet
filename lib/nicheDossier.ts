@@ -287,7 +287,11 @@ function brief(
     `The ${outliers.length} ${sentence("reel", "reels", outliers.length)} below ${outliers.length === 1 ? "comes" : "come"} from ${listedAccounts} ${sentence("account", "accounts", listedAccounts)}.`,
   );
 
-  if (bar && counts.accounts > 0) {
+  if (
+    bar &&
+    counts.accounts > 0 &&
+    counts.breakouts <= counts.accounts
+  ) {
     sentences.push(
       `${counts.breakouts} of the ${counts.accounts} ${sentence("account", "accounts", counts.accounts)} read ${sentence("has", "have", counts.breakouts)} at least one reel above twice that.`,
     );
@@ -394,6 +398,16 @@ export function buildDossier(view: NicheView): NicheDossier {
       ? { views: median, basis: "the usual reel in this niche" }
       : undefined;
 
+  /**
+   * One account set for both counts.
+   *
+   * `view.accountCount` is the engine's account summary, which can be thinner
+   * than the reel rows (a single viral sighting may not reach it). Counting
+   * breakouts over the rows but accounts over the summary produced “2 of the 1
+   * accounts read”. The rows are the room the page actually shows, so both
+   * figures come from that set and `breakouts <= accounts` by construction.
+   */
+  const roomAccounts = new Set(rows.map((row) => accountKey(row.account)));
   const breakoutAccounts = new Set<string>();
   if (bar) {
     for (const row of rows) {
@@ -403,11 +417,9 @@ export function buildDossier(view: NicheView): NicheDossier {
 
   const counts = {
     reels: view.reels > 0 ? view.reels : rows.length,
-    accounts:
-      view.accountCount > 0
-        ? view.accountCount
-        : new Set(rows.map((row) => accountKey(row.account))).size,
-    breakouts: breakoutAccounts.size,
+    accounts: roomAccounts.size,
+    breakouts: [...breakoutAccounts].filter((handle) => roomAccounts.has(handle))
+      .length,
   };
 
   return {

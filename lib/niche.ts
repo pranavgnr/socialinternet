@@ -385,6 +385,15 @@ const PILLAR_NOISE = new Set(
   ).split(/\s+/),
 );
 
+/**
+ * The cache filename for a phrase.
+ *
+ * TODO(task-8): this drops every non-Latin character, so a Devanagari phrase
+ * ("कन्नड़") collapses to the fallback "niche". Such a query can never match a
+ * stored room and the dossier always reads "not read yet" even after a fresh
+ * pull. Replace this with a script-aware slug (transliterate or percent-encode
+ * the phrase) before the spec's Indic-language launch.
+ */
 function slugify(q: string): string {
   return q
     .toLowerCase()

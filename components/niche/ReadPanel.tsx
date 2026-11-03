@@ -49,13 +49,6 @@ export default function ReadPanel({
     }
   }
 
-  /** Keep the niche for the return from Google, exactly as the other flows do. */
-  useEffect(() => {
-    if (signedIn) return;
-    remember();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, signedIn]);
-
   useEffect(() => {
     return () => {
       if (timer.current) clearInterval(timer.current);
@@ -91,7 +84,10 @@ export default function ReadPanel({
       };
 
       if (res.status === 401) {
-        remember();
+        /**
+         * Do not write the pending phrase here: the prompt below is a new,
+         * explicit sign-in action, and that click is what remembers it.
+         */
         setNeedsSignIn(true);
         return;
       }
@@ -173,10 +169,17 @@ export default function ReadPanel({
             Reads are tied to an account so the gems and the daily allowance
             cannot be spent anonymously. Niches already read stay free.
           </p>
-          <SignInButton
-            label="Continue with Google"
-            className="mt-3 inline-flex min-h-[36px] items-center rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
-          />
+          {/**
+           * Remember the phrase only when the visitor actually presses the
+           * sign-in action. A page load must not leave a pending entry behind:
+           * a later visit to the landing form would inherit an unrelated niche.
+           */}
+          <span onClick={remember} className="mt-3 inline-flex">
+            <SignInButton
+              label="Continue with Google"
+              className="inline-flex min-h-[36px] items-center rounded-lg bg-limelight px-4 text-[11px] font-bold uppercase tracking-[0.1em] text-obsidian transition hover:bg-limelight/85"
+            />
+          </span>
         </div>
       ) : (
         <div className="mt-5 flex flex-wrap items-center gap-3">

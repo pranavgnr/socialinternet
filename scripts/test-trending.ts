@@ -135,6 +135,28 @@ writeNiche("aiautomation", "aiautomation", {
   fetchedAt: new Date(Date.now() - 48 * 3_600_000).toISOString(),
 });
 
+/** A legacy room read from YouTube: ranked on disk, never a valid bubble. */
+function writeYoutubeNiche(slug: string, query: string): void {
+  const payload = room(query, { accounts: 4, per: 4 }).map((r) => ({
+    ...r,
+    platform: "youtube" as const,
+    url: r.url.replace("instagram.com", "youtube.com"),
+  }));
+  writeFileSync(
+    path.join(NICHE_DIR, `${slug}.json`),
+    JSON.stringify({
+      v: 2,
+      fetchedAt: new Date().toISOString(),
+      query,
+      payload,
+      errors: [],
+    }),
+    "utf8",
+  );
+}
+
+writeYoutubeNiche("youtube-only", "youtube only");
+
 // lib/trending is imported after CREATORS_DATA_DIR is set.
 let modulePromise: Promise<typeof import("../lib/trending")> | null = null;
 function lib(): Promise<typeof import("../lib/trending")> {
@@ -316,6 +338,49 @@ test("listTrending with an empty table and 3 fixture niches on disk returns 3", 
     assert.deepEqual(
       out.map((n) => n.rank),
       [1, 2, 3],
+    );
+  });
+});
+
+test("listTrending drops DB rows with no Instagram room on disk", async () => {
+  const { listTrending } = await lib();
+  await withFreshDb(async (q) => {
+    await q.query(
+      "INSERT INTO trending_niches (slug, label, query, score, rank, refreshed_at)" +
+        " VALUES ($1, $2, $3, $4, $5, now())",
+      ["youtube-only", "YouTube only", "youtube only", 99, 1],
+    );
+    await q.query(
+      "INSERT INTO trending_niches (slug, label, query, score, rank, refreshed_at)" +
+        " VALUES ($1, $2, $3, $4, $5, now())",
+      ["home-workout", "Home workout", "home workout", 70, 2],
+    );
+
+    const out = await listTrending();
+
+    assert.deepEqual(
+      out.map((n) => n.slug),
+      ["home-workout"],
+      "a table row for a YouTube-only room must not become a bubble",
+    );
+  });
+});
+
+test("listTrending falls back to the disk ranking when no DB row is on disk", async () => {
+  const { listTrending } = await lib();
+  await withFreshDb(async (q) => {
+    await q.query(
+      "INSERT INTO trending_niches (slug, label, query, score, rank, refreshed_at)" +
+        " VALUES ($1, $2, $3, $4, $5, now())",
+      ["ghost-room", "Ghost room", "ghost room", 99, 1],
+    );
+
+    const out = await listTrending();
+
+    assert.deepEqual(
+      out.map((n) => n.slug).sort(),
+      ["aiautomation", "home-workout", "personal-finance-for-young-adults"],
+      "an intersection with nothing on disk must not hide the disk ranking",
     );
   });
 });

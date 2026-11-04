@@ -35,10 +35,12 @@ Today `lib/harvest.ts` does (1) and (2) through SocialCrawl at 1 credit per page
 ## Option C — Apify (best recurring free tier)
 
 - Free plan: $5 of usage every month, recurring, no card. Unused credit does not roll over.
-- `apify/instagram-scraper`: $1.50 per 1,000 results on paid plans, $2.70 per 1,000 on
-  the free plan. One result = one post, reel, comment, profile or hashtag.
+- `apify/instagram-scraper`: $2.70 per 1,000 results on the free plan, $2.30 on
+  the $19/month Starter plan. One result = one post, reel, comment, profile or hashtag.
 - A niche (~120 results) ≈ $0.032 at free-plan rates → about 15 niches/month free, forever.
-- Starter $19/month includes $19 credit and the cheaper rate.
+- Starter $19/month includes $19 credit and the cheaper $2.30 per 1,000 rate.
+- The adapter bills the free-plan rate ($0.0027/result) by default; override it with
+  `APIFY_ITEM_USD` if the account moves to a paid plan.
 - Strength: proxies and blocking handled; you buy results, not promises.
 - Weakness: per-result pricing is the most expensive of the three for deep dives.
 

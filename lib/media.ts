@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { dataPath } from "./dataDir";
 import { fetchTranscript } from "./harvest";
 import { normaliseLang } from "./lang";
 import type { HookMode, HookReading, RawReel } from "./types";
@@ -40,8 +41,13 @@ function canPayForTranscript(): boolean {
  * whisper model and the reader still answers, for ten credits, once.
  */
 
-const MEDIA_DIR = path.join(process.cwd(), "data", "_media");
-const CACHE_PATH = path.join(process.cwd(), "data", "_hook_cache.json");
+export function mediaDir(): string {
+  return dataPath("_media");
+}
+
+export function hookCachePath(): string {
+  return dataPath("_hook_cache.json");
+}
 
 const WHISPER_MODELS = [
   process.env.WHISPER_MODEL,
@@ -57,27 +63,66 @@ const WHISPER_MODELS = [
   "/opt/homebrew/share/whisper.cpp/ggml-base.en.bin",
 ].filter(Boolean) as string[];
 
+/** The ffmpeg installs this project has run on; the first hit is used. */
+export const FFMPEG_CANDIDATES = [
+  "/opt/homebrew/bin/ffmpeg",
+  "/usr/local/bin/ffmpeg",
+  "/usr/bin/ffmpeg",
+];
+
 export interface MediaTools {
   ffmpeg: boolean;
+  /** the binary that was found — the deep pass runs this, not a fixed path */
+  ffmpegPath: string | null;
   whisperModel: string | null;
   ocr: boolean;
 }
 
+/** Platform and filesystem answers, injectable so Linux can be tested on a Mac. */
+export interface MediaProbe {
+  platform?: NodeJS.Platform;
+  exists?: (candidate: string) => boolean;
+}
+
+/**
+ * What this machine can do, without caching and without assuming a platform.
+ *
+ * OCR is macOS Vision (scripts/ocr.swift is a Swift program). A copy of that
+ * file on a Linux host is only a file: the deep pass may still hear the words
+ * with whisper, but it cannot read the text on screen, so it must not claim to
+ * have watched the video. The container therefore degrades to captions.
+ */
+export function detectMediaTools(probe: MediaProbe = {}): MediaTools {
+  const platform = probe.platform ?? process.platform;
+  const exists = probe.exists ?? existsSync;
+  const ffmpegPath = FFMPEG_CANDIDATES.find((candidate) => exists(candidate)) ?? null;
+  return {
+    ffmpeg: Boolean(ffmpegPath),
+    ffmpegPath,
+    whisperModel: WHISPER_MODELS.find((m) => exists(m)) ?? null,
+    ocr: platform === "darwin" && exists(path.join(process.cwd(), "scripts", "ocr.swift")),
+  };
+}
+
 let toolsCache: MediaTools | null = null;
 
-export function mediaTools(): MediaTools {
+/**
+ * Pass a probe to ask about a hypothetical machine (tests, probes). Without
+ * one the real machine is detected once and remembered.
+ */
+export function mediaTools(probe?: MediaProbe): MediaTools {
+  if (probe) return detectMediaTools(probe);
   if (toolsCache) return toolsCache;
-  toolsCache = {
-    ffmpeg: existsSync("/opt/homebrew/bin/ffmpeg") || existsSync("/usr/local/bin/ffmpeg") || existsSync("/usr/bin/ffmpeg"),
-    whisperModel: WHISPER_MODELS.find((m) => existsSync(m)) ?? null,
-    ocr: existsSync(path.join(process.cwd(), "scripts", "ocr.swift")),
-  };
+  toolsCache = detectMediaTools();
   return toolsCache;
 }
 
-export function mediaReady(): boolean {
-  const t = mediaTools();
-  return t.ffmpeg && Boolean(t.whisperModel) && t.ocr;
+export function mediaReadyFor(tools: MediaTools): boolean {
+  return tools.ffmpeg && Boolean(tools.whisperModel) && tools.ocr;
+}
+
+export function mediaReady(probe?: MediaProbe): boolean {
+  return mediaReadyFor(mediaTools(probe));
 }
 
 /* ------------------------------ download ------------------------------ */
@@ -107,7 +152,7 @@ type HookCache = Record<string, HookReading>;
 
 function readCache(): HookCache {
   try {
-    return JSON.parse(readFileSync(CACHE_PATH, "utf8")) as HookCache;
+    return JSON.parse(readFileSync(hookCachePath(), "utf8")) as HookCache;
   } catch {
     return {};
   }
@@ -115,7 +160,7 @@ function readCache(): HookCache {
 
 function writeCache(cache: HookCache): void {
   try {
-    writeFileSync(CACHE_PATH, JSON.stringify(cache), "utf8");
+    writeFileSync(hookCachePath(), JSON.stringify(cache), "utf8");
   } catch {
     /* cache misses only cost a re-read */
   }
@@ -152,11 +197,14 @@ interface Hearing {
 const NO_HEARING: Hearing = { segments: [], lang: null, prob: 0 };
 
 /** First N seconds of speech, with the ms each phrase starts at. */
-async function transcribe(file: string, seconds = 10): Promise<Hearing> {
-  const tools = mediaTools();
-  if (!tools.ffmpeg || !tools.whisperModel) return NO_HEARING;
+async function transcribe(
+  file: string,
+  seconds = 10,
+  tools = mediaTools(),
+): Promise<Hearing> {
+  if (!tools.ffmpegPath || !tools.whisperModel) return NO_HEARING;
   const wav = file.replace(/\.mp4$/, ".wav");
-  await run("/opt/homebrew/bin/ffmpeg", [
+  await run(tools.ffmpegPath, [
     "-v", "error", "-y", "-i", file, "-t", String(seconds),
     "-ac", "1", "-ar", "16000", wav,
   ]);
@@ -342,6 +390,8 @@ export interface HookReadInput {
   reel: RawReel;
   /** signed MP4 URL from the post payload; expanded at read time */
   mediaUrl?: string;
+  /** the machine probe to use; defaults to the real one (tests inject here) */
+  tools?: MediaTools;
 }
 
 /**
@@ -363,7 +413,7 @@ export async function readHook(
   const stale = hit?.basis === "measured" && hit.heardLang === undefined;
   if (hit && !stale) return hit;
 
-  const tools = mediaTools();
+  const tools = input.tools ?? mediaTools();
   if (!tools.whisperModel && canPayForTranscript()) {
     const paid = await paidTranscriptHook(reel);
     if (paid) {
@@ -372,14 +422,16 @@ export async function readHook(
       return paid;
     }
   }
-  if (!tools.ffmpeg) return captionHook(reel, "ffmpeg is not installed, so the video was not watched");
+  if (!tools.ffmpegPath) return captionHook(reel, "ffmpeg is not installed, so the video was not watched");
+  const ffmpeg = tools.ffmpegPath;
   if (!tools.ocr && !tools.whisperModel) {
     return captionHook(reel, "no local transcriber or screen reader, so the video was not watched");
   }
   if (!mediaUrl) return captionHook(reel, "no video URL was returned for this post");
 
-  mkdirSync(MEDIA_DIR, { recursive: true });
-  const stem = path.join(MEDIA_DIR, reel.id.replace(/[^a-z0-9_]/gi, "_").slice(0, 60));
+  const dir = mediaDir();
+  mkdirSync(dir, { recursive: true });
+  const stem = path.join(dir, reel.id.replace(/[^a-z0-9_]/gi, "_").slice(0, 60));
   const mp4 = `${stem}.mp4`;
   const frames: string[] = [];
 
@@ -393,7 +445,7 @@ export async function readHook(
       if (!existsSync(mp4) || statSync(mp4).size < 10_000) throw new Error("video download was empty");
     }
 
-    const heard = await transcribe(mp4).catch(() => NO_HEARING);
+    const heard = await transcribe(mp4, 10, tools).catch(() => NO_HEARING);
     const segments = heard.segments;
     const spokenAll = segments.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim();
     const firstVoice = segments.find((s) => s.startMs <= 3_000)?.text ?? "";
@@ -402,12 +454,12 @@ export async function readHook(
     let onScreen: string[] = [];
     let textAtStart = false;
     if (tools.ocr) {
-      await run("/opt/homebrew/bin/ffmpeg", [
+      await run(ffmpeg, [
         "-v", "error", "-y", "-i", mp4, "-t", "3", "-vf", "fps=3,scale=720:-2",
-        path.join(MEDIA_DIR, `${path.basename(stem)}_f%02d.jpg`),
+        path.join(dir, `${path.basename(stem)}_f%02d.jpg`),
       ]).catch(() => ({}));
       for (let i = 1; i <= 10; i += 1) {
-        const f = path.join(MEDIA_DIR, `${path.basename(stem)}_f${String(i).padStart(2, "0")}.jpg`);
+        const f = path.join(dir, `${path.basename(stem)}_f${String(i).padStart(2, "0")}.jpg`);
         if (!existsSync(f)) break;
         frames.push(f);
       }

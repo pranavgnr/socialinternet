@@ -32,8 +32,8 @@
  * newcomer get in" — never depends on one.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
+import { dataPath } from "../dataDir";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -46,7 +46,9 @@ const UA =
   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 /** Where subscriber lookups are cached between runs. */
-const CACHE_FILE = path.join(process.cwd(), "data", "_yt_subs.json");
+export function subCachePath(): string {
+  return dataPath("_yt_subs.json");
+}
 
 /** How long a subscriber count is trusted. Follower counts move slowly. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -63,7 +65,7 @@ let cache: Record<string, SubCacheEntry> | null = null;
 function loadCache(): Record<string, SubCacheEntry> {
   if (cache) return cache;
   try {
-    cache = JSON.parse(readFileSync(CACHE_FILE, "utf8")) as Record<string, SubCacheEntry>;
+    cache = JSON.parse(readFileSync(subCachePath(), "utf8")) as Record<string, SubCacheEntry>;
   } catch {
     cache = {};
   }
@@ -72,7 +74,7 @@ function loadCache(): Record<string, SubCacheEntry> {
 
 function saveCache(): void {
   try {
-    writeFileSync(CACHE_FILE, JSON.stringify(cache ?? {}), "utf8");
+    writeFileSync(subCachePath(), JSON.stringify(cache ?? {}), "utf8");
   } catch {
     // A read-only data dir must not fail a pull; the cache is an optimisation.
   }
@@ -555,16 +557,16 @@ export const youtubeweb: DataProvider = {
   configured: () => process.env.YOUTUBE_WEB !== "0",
 
   /**
-   * How early this vendor is tried. Free first for *discovery*, last for
-   * anything that promises an Instagram account — a YouTube channel is not that
-   * account, and serving one would merge two different creators into a single
-   * baseline.
+   * Last for *every* path, including keyword search.
+   *
+   * This vendor used to be first for search because it is free. That is how an
+   * Instagram creator's niche evidence became a YouTube room: the search was
+   * answered by a network the creator is not on. Free is only a reason to try a
+   * vendor when it can answer the question; a YouTube search cannot answer an
+   * Instagram niche. The platform filter already removes it from Instagram
+   * calls — this makes the order honest even if a caller forgets to name one.
    */
-  preference: (p: string) => {
-    if (/search/i.test(p)) return -2;
-    if (/instagram/i.test(p)) return 50;
-    return 0;
-  },
+  preference: () => 99,
 
   async searchReels(query: string): Promise<PullResult> {
     if (!query.trim()) {

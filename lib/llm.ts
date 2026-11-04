@@ -1,5 +1,6 @@
 import { appendFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+
+import { dataPath, dataRoot } from "./dataDir";
 
 const cfg = () => ({
   baseUrl: (process.env.LLM_BASE_URL || "https://api.deepseek.com/v1").replace(
@@ -38,9 +39,9 @@ function extractJson(text: string): unknown {
  */
 async function logUsage(row: Record<string, unknown>) {
   try {
-    await mkdir("data", { recursive: true });
+    await mkdir(dataRoot(), { recursive: true });
     await appendFile(
-      join("data", "llm-usage.jsonl"),
+      dataPath("llm-usage.jsonl"),
       `${JSON.stringify({ at: new Date().toISOString(), ...row })}\n`,
     );
   } catch {

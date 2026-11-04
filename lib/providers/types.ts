@@ -36,6 +36,16 @@ export interface ProviderCost {
   usdPerCall: number;
   /** Human label for the pricing line, e.g. "$1.00 / 1,000 calls". */
   label: string;
+  /**
+   * What the *next* call actually costs right now, when that differs from list
+   * price (an unspent monthly allowance, a volume tier, a free quota).
+   *
+   * The router sorts on this rather than `usdPerCall`: a vendor with $5 of free
+   * usage left is genuinely cheaper than one charging $0.02 a call, even though
+   * its list price is higher. Without it the cheapest *headline* vendor wins and
+   * the free allowance is never used.
+   */
+  effectiveUsdPerCall?: () => number;
 }
 
 /** A single billable call's result. */
@@ -118,6 +128,33 @@ export interface DataProvider {
    * filters them out rather than retrying them.
    */
   searchAccounts?(query: string): Promise<PullResult>;
+  /**
+   * Instagram's own "similar accounts" for one handle.
+   *
+   * Optional for the same reason as `searchAccounts`: it is a distinct
+   * capability, not a flavour of the profile read. Apify returns the list free
+   * inside its details payload; HikerAPI's `/gql/user/related/profiles` is
+   * currently answering HTTP 500 ("Instagram did not respond") on every probe,
+   * so its adapter refuses with `unsupported: true` instead of spending a call
+   * on a broken endpoint. The router filters on this method, so a vendor that
+   * cannot answer is skipped rather than tried.
+   *
+   * The result is vendor-neutral: `data.related` is a list of public handles,
+   * or `data.users` when the vendor also returns account objects.
+   */
+  relatedProfiles?(handle: string): Promise<PullResult>;
+  /**
+   * A sample of an account's followers, for the bot-to-real estimate.
+   *
+   * Its own capability rather than a flavour of the profile read: it is the
+   * only call that inspects followers as rows, it costs money per page, and
+   * only one vendor (HikerAPI) has a working endpoint for it. Vendors without
+   * it are skipped by the router instead of being asked and failing.
+   *
+   * `pages` is a ceiling, not a promise: a vendor that cannot prove a cursor
+   * must make one honest request rather than invent one.
+   */
+  followersSample?(userId: string, pages: number): Promise<PullResult>;
   /** one post in full (caption, metrics, comments, MP4 link) */
   post(url: string): Promise<PullResult>;
   /**
@@ -154,6 +191,28 @@ export class ProviderUnavailable extends Error {
     message: string,
     /** true when the account is empty, so retrying the same vendor is pointless */
     readonly exhausted = false,
+    /**
+     * true when the vendor *cannot* serve this kind of call at all, not just
+     * this one request.
+     *
+     * The difference matters to the router's final answer. "Every attempted
+     * vendor is out of credit or lacks the capability" means there is no data
+     * source for the call, which the Instagram product paths translate into one
+     * honest sentence. A 404 for a missing handle is also a `ProviderUnavailable`
+     * but is *not* a capability miss: it names the real problem and must keep its
+     * own message instead of being masked by that sentence.
+     */
+    readonly unsupported = false,
+    /**
+     * Real money the vendor charged for this failed call, in USD.
+     *
+     * Survives the error precisely because the failed call is not free. The
+     * router cannot see the response once an adapter has thrown, so without this
+     * field a billed 404 would vanish from the ledger, and a measured settle
+     * (`lifetimeUsd` delta) would refund a plan that really cost money. Undefined
+     * means the failure was not billed (a 5xx, a timeout, a local guard).
+     */
+    readonly billedUsd?: number,
   ) {
     super(message);
     this.name = "ProviderUnavailable";

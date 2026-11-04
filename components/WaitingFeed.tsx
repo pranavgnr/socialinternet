@@ -33,7 +33,7 @@ export default function WaitingFeed() {
       <p className="text-[14px] font-medium">
         {givenUp ? "Still writing them." : "Writing your posts…"}
       </p>
-      <p className="mx-auto mt-1 max-w-xs text-[12.5px] leading-relaxed text-muted">
+      <p className="mx-auto mt-1 max-w-xs text-[15px] leading-relaxed text-muted">
         {givenUp
           ? "This is taking longer than usual. Reload in a minute — your plan is already saved, so nothing is lost."
           : "Your plan is ready. These are built from the posts it already read, so keep this page open for a moment."}

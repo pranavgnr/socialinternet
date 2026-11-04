@@ -23,7 +23,7 @@ const FORMAT_WORD: Record<FormatContainer, string> = {
 };
 
 const LABEL =
-  "text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted";
+  "text-[11px] font-medium uppercase tracking-[0.14em] text-muted";
 
 function Copy({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -38,7 +38,7 @@ function Copy({ text }: { text: string }) {
           setDone(false);
         }
       }}
-      className="inline-flex min-h-[32px] items-center rounded-md border border-line px-2.5 text-[11.5px] text-muted transition hover:text-text"
+      className="inline-flex min-h-[44px] items-center rounded-md border border-line px-2.5 text-[11.5px] text-muted transition hover:text-text"
     >
       {done ? "copied" : "copy"}
     </button>
@@ -101,7 +101,7 @@ export default function IdeaCard({
             {plain(idea.title)}
           </h2>
           {STATUS_WORD[status] ? (
-            <span className="shrink-0 rounded-md border border-accent/40 px-1.5 py-0.5 text-[10.5px] text-accent">
+            <span className="shrink-0 rounded-md border border-accent/40 px-1.5 py-0.5 text-[11px] text-accent">
               {STATUS_WORD[status]}
             </span>
           ) : null}
@@ -127,7 +127,7 @@ export default function IdeaCard({
         {songLed && idea.sound ? (
           <div className="mb-3 flex items-baseline justify-between gap-3 rounded-lg border border-accent/25 bg-accent/5 px-3 py-2">
             <div className="min-w-0">
-              <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted">The song</div>
+              <div className="text-[11px] uppercase tracking-[0.14em] text-muted">The song</div>
               <p className="mt-0.5 truncate text-[14.5px] font-medium leading-snug">
                 {plain(idea.sound)}
               </p>
@@ -146,7 +146,7 @@ export default function IdeaCard({
             <button
               key={i}
               onClick={() => setActive(i)}
-              className={`inline-flex min-h-[32px] min-w-[32px] items-center justify-center rounded-lg border px-2 text-[12px] transition ${
+              className={`inline-flex min-h-[44px] min-w-[32px] items-center justify-center rounded-lg border px-2 text-[12px] transition ${
                 i === active
                   ? "border-accent/50 bg-accent/10 text-text"
                   : "border-line text-muted hover:text-text"
@@ -159,7 +159,7 @@ export default function IdeaCard({
           <Copy text={plain(idea.hookVariants[active])} />
         </div>
 
-        <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
+        <p className="mt-3 text-[15px] leading-relaxed text-muted">
           Borrowed from a {FORMAT_WORD[idea.format]?.toLowerCase() ?? "simple"}{" "}
           reel that did <span className="text-accent">{times(idea.receipt.ratio)}</span>{" "}
           @{idea.receipt.account}&rsquo;s usual views
@@ -181,7 +181,7 @@ export default function IdeaCard({
 
         <button
           onClick={() => setOpen((o) => !o)}
-          className="mt-3 inline-flex min-h-[32px] items-center text-[12.5px] text-muted underline decoration-line underline-offset-2 transition hover:text-text"
+          className="mt-3 inline-flex min-h-[44px] items-center text-[12.5px] text-muted underline decoration-line underline-offset-2 transition hover:text-text"
         >
           {open ? "hide the script" : "full script, shots and caption"}
         </button>
@@ -254,19 +254,19 @@ export default function IdeaCard({
       <div className="flex flex-wrap items-center gap-1.5 border-t border-line/60 px-4 py-2.5">
         <button
           onClick={() => patch({ status: "filmed" })}
-          className="inline-flex min-h-[34px] items-center rounded-lg border border-line px-3 text-[12.5px] text-muted transition hover:text-text"
+          className="inline-flex min-h-[44px] items-center rounded-lg border border-line px-3 text-[12.5px] text-muted transition hover:text-text"
         >
           I made this
         </button>
         <button
           onClick={() => patch({ status: "posted" })}
-          className="inline-flex min-h-[34px] items-center rounded-lg border border-line px-3 text-[12.5px] text-muted transition hover:text-text"
+          className="inline-flex min-h-[44px] items-center rounded-lg border border-line px-3 text-[12.5px] text-muted transition hover:text-text"
         >
           Posted it
         </button>
         <button
           onClick={() => patch({ status: "skipped" })}
-          className="inline-flex min-h-[34px] items-center rounded-lg border border-line px-3 text-[12.5px] text-muted transition hover:text-text"
+          className="inline-flex min-h-[44px] items-center rounded-lg border border-line px-3 text-[12.5px] text-muted transition hover:text-text"
         >
           Not for me
         </button>
@@ -283,7 +283,7 @@ export default function IdeaCard({
             placeholder="views it got"
             inputMode="numeric"
             aria-label="Views after a week"
-            className="w-32 rounded-lg border border-line bg-panel2 px-2.5 py-2 text-[12px] tabular-nums outline-none placeholder:text-muted/50 focus:border-accent/50"
+            className="min-h-[44px] w-32 rounded-lg border border-line bg-panel2 px-2.5 py-2 text-[16px] tabular-nums outline-none placeholder:text-muted/50 focus:border-accent/50"
           />
           {saved ? <span className="text-[11px] text-accent">saved</span> : null}
         </div>

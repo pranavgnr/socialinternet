@@ -9,6 +9,13 @@ import type { Recommendation } from "@/lib/types";
 
 export const instant = false;
 
+export const metadata = {
+  title: "This week's ideas",
+  description:
+    "The posts Shambles built for your account this week, each one traced to a public reel that beat its own account's usual views.",
+  robots: { index: false, follow: false },
+};
+
 /**
  * "Singer · Kannada" — the way a person would describe the account.
  *
@@ -24,7 +31,11 @@ function shape(archetype: { label: string; language?: string }): string {
 
 export default async function IdeasPage() {
   await connection();
-  const account = await currentAccount();
+  /** A DB blip shows the empty state, not a 500 for a signed-in visitor. */
+  const account = await currentAccount().catch((err) => {
+    console.error("[ideas] session read failed:", (err as Error).message);
+    return null;
+  });
 
   const [plan, ideas, runs] = account
     ? await Promise.all([
@@ -60,6 +71,13 @@ export default async function IdeasPage() {
 
   return (
     <div className="space-y-4">
+      <Link
+        href={plan?.handle ? `/profile/${encodeURIComponent(plan.handle)}` : "/"}
+        className="mono inline-flex min-h-[44px] items-center text-[11px] font-bold uppercase tracking-[0.12em] text-muted-zinc transition hover:text-limelight"
+      >
+        &larr; Back to your profile
+      </Link>
+
       <header>
         <h1 className="text-[23px] font-semibold leading-tight tracking-tight">
           {songLed
@@ -68,7 +86,7 @@ export default async function IdeasPage() {
               ? "Your videos for this week"
               : "Your posts for this week"}
         </h1>
-        <p className="mt-1.5 max-w-lg text-[13px] leading-relaxed text-muted">
+        <p className="mt-1.5 max-w-lg text-[16px] leading-relaxed text-muted">
           {plan?.archetype ? `${shape(plan.archetype)}. ` : ""}
           {songLed
             ? "Each one names a song that broke out for accounts your size, and the line to start on."
@@ -91,7 +109,7 @@ export default async function IdeasPage() {
           <p className="text-[14px] font-medium">
             {ideas.length ? "You have skipped everything on the list." : "Nothing cleared the bar this week."}
           </p>
-          <p className="mx-auto mt-1 max-w-xs text-[12.5px] leading-relaxed text-muted">
+          <p className="mx-auto mt-1 max-w-xs text-[15px] leading-relaxed text-muted">
             {ideas.length ? (
               "That is fine — last week's list stays here until you pick one back up."
             ) : pulled ? (
@@ -112,20 +130,20 @@ export default async function IdeasPage() {
             )}
           </p>
           {ideas.length ? null : (
-            <p className="mx-auto mt-3 max-w-xs text-[12.5px] leading-relaxed text-muted">
+            <p className="mx-auto mt-3 max-w-xs text-[15px] leading-relaxed text-muted">
               A neighbouring room with a thinner field is usually the way in.
             </p>
           )}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <Link
-              href="/start"
-              className="rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-black"
+              href="/?new=1"
+              className="inline-flex min-h-[44px] items-center rounded-xl bg-limelight px-4 text-[13px] font-semibold text-obsidian"
             >
               {ideas.length ? "See this week" : "Find a thinner room"}
             </Link>
             <Link
-              href="/discover"
-              className="rounded-xl border border-line px-4 py-2.5 text-[13px] font-semibold"
+              href="/?new=1"
+              className="inline-flex min-h-[44px] items-center rounded-xl border border-white/10 px-4 text-[13px] font-semibold"
             >
               Explore a niche
             </Link>
@@ -138,7 +156,7 @@ export default async function IdeasPage() {
       ) : (
         <div className="card px-4 py-10 text-center">
           <p className="text-[14px] font-medium">Nothing here yet.</p>
-          <p className="mx-auto mt-1 max-w-xs text-[12.5px] leading-relaxed text-muted">
+          <p className="mx-auto mt-1 max-w-xs text-[15px] leading-relaxed text-muted">
             Put in your handle and this week’s posts appear here, ready to film.
           </p>
           <Link

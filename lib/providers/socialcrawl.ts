@@ -89,6 +89,14 @@ export const socialcrawl: DataProvider = {
   cost: { usdPerCall: USD_PER_CALL, label: "$7.60 / 1,000 calls" },
   configured: () => Boolean(key()),
 
+  /**
+   * Third for Instagram paths: after HikerAPI and Apify, before ScrapeCreators.
+   *
+   * SocialCrawl is the broad backup (transcripts, comments) rather than the
+   * first reader for reels now that HikerAPI is funded.
+   */
+  preference: (p: string) => (/instagram/i.test(p) ? -1 : 0),
+
   profileReels: (handle) => call("/instagram/profile/reels", { handle }),
 
   searchReels: (query, opts) =>

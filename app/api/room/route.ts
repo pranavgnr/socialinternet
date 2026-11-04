@@ -1,9 +1,11 @@
 import { NextResponse, after } from "next/server";
 
+import { currentUser } from "@/lib/auth";
 import { take, tooMany, refund } from "@/lib/limits";
 import { buildRoomPlan, roomProfile } from "@/lib/newcomer";
 import { researchNiche } from "@/lib/niche";
 import { runPipeline } from "@/lib/pipeline";
+import { runRoomRequest } from "@/lib/roomRequest";
 import { attachCookie, currentAccount, ensureAccount } from "@/lib/session";
 import { friendly } from "@/lib/userError";
 
@@ -29,6 +31,10 @@ export async function GET() {
  * No handle anywhere in this path, because a new creator does not have one —
  * that was the dead end the site used to end at, and it was the one question
  * this audience cannot answer.
+ *
+ * A room is a niche pull, so it follows `/api/niche`'s rule: cached is free for
+ * anyone, a fresh read is signed-in and charged up front. The gate and settle
+ * live in `runRoomRequest` so they can be tested without Next.
  */
 export async function POST(req: Request) {
   try {
@@ -47,38 +53,38 @@ export async function POST(req: Request) {
       return tooMany(budget.retryAfter, "You have planned a few rooms today.");
     }
 
-    const research = await researchNiche({ query, force: Boolean(body.force) });
+    const user = await currentUser();
+    const outcome = await runRoomRequest(
+      { query, force: Boolean(body.force) },
+      {
+        store: account.store,
+        user,
+        researchNiche,
+        buildRoomPlan,
+        roomProfile,
+        runPipeline,
+        scheduleAfter: (fn) => after(fn),
+        logError: (err) =>
+          console.error("[room] idea feed failed:", (err as Error).message),
+      },
+    );
+
+    if (outcome.status !== 200) {
+      /** Nothing was pulled, so the rate-limit slot is handed straight back. */
+      refund(limitKey);
+      return NextResponse.json(
+        { ok: false, error: outcome.error },
+        { status: outcome.status },
+      );
+    }
 
     /** A room already on disk was not bought again, so it must not cost a slot. */
-    if (research.credits.spent === 0) refund(limitKey);
+    if (outcome.free) refund(limitKey);
 
-    const room = buildRoomPlan(research);
-    const profile = roomProfile(research, await account.store.getProfile());
-
-    await account.store.saveRoom(room);
-    await account.store.saveProfile(profile);
-
-    /**
-     * The idea feed is written after the response, exactly as on the handle
-     * path: the plan is the answer the visitor is waiting for, and holding the
-     * request open for ten model calls is how a phone request gets dropped. The
-     * feed is rebuilt from the reels this search already paid for, so it adds no
-     * cost.
-     */
-    after(async () => {
-      try {
-        await runPipeline({
-          profile,
-          seedReels: research.payload,
-          seedCredits: research.credits,
-          db: account.store,
-        });
-      } catch (err) {
-        console.error("[room] idea feed failed:", (err as Error).message);
-      }
-    });
-
-    return await attachCookie(NextResponse.json({ ok: true, room }), account);
+    return await attachCookie(
+      NextResponse.json({ ok: true, room: outcome.room }),
+      account,
+    );
   } catch (err) {
     return NextResponse.json(
       {

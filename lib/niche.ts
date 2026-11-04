@@ -7,6 +7,7 @@ import {
   harvestAccountReels,
   harvestInstagramAccount,
   harvestInstagramSearch,
+  NO_INSTAGRAM_DATA_SOURCE,
   resetCreditLedger,
 } from "./harvest";
 import {
@@ -18,8 +19,11 @@ import {
   languageName,
   roomLanguage,
 } from "./lang";
+import { dataPath } from "./dataDir";
 import { platformOn } from "./platform";
-import { availableProviders, readiness } from "./providers";
+import { providersFor, readiness } from "./providers";
+import { hoursFromEnv } from "./env";
+import { normaliseOwnerHandle, ownerProfileMax, resolveOwnerFollowers } from "./ownerProfiles";
 import { keepOnSubject } from "./subject";
 import { isStopword } from "./text";
 import { watchToVerify, type WatchStats } from "./verifyLang";
@@ -83,9 +87,29 @@ const VERIFY_MAX = Number(process.env.LANG_VERIFY_MAX ?? 8);
 const COMMENT_MAX = Number(process.env.LANG_COMMENT_MAX ?? 4);
 /** Hard ceiling on the credits that step may spend, whatever COMMENT_MAX says. */
 const COMMENT_CREDITS = Number(process.env.LANG_COMMENT_CREDITS ?? 4);
-const MAX_CREDITS_PER_SEARCH = 1 + ENRICH_MAX + COMMENT_CREDITS;
-const CACHE_TTL_HOURS = 12;
-const NICHE_DIR = path.join(process.cwd(), "data", "niches");
+/**
+ * The ceiling for one search now includes the owner profile reads that make
+ * `views / followers` possible. They are capped separately (see
+ * `ownerProfileMax`) and cached for a week, so a warm search buys none of them,
+ * but a cold one can.
+ */
+const MAX_CREDITS_PER_SEARCH =
+  1 + ENRICH_MAX + ownerProfileMax() + COMMENT_CREDITS;
+/**
+ * How long a niche pull is served from disk. Read per call rather than captured
+ * at import, so the deployment (or a test) can widen it with
+ * `NICHE_CACHE_HOURS=168` without a code change. Empty, invalid, zero and
+ * negative values fall back to twelve hours.
+ */
+const cacheTtlHours = (): number => hoursFromEnv("NICHE_CACHE_HOURS", 12);
+/**
+ * Where cached pulls live. Resolved per call through the shared data root, so
+ * `CREATORS_DATA_DIR` points the niche cache and every other cache at the same
+ * directory.
+ */
+export function nicheDir(): string {
+  return dataPath("niches");
+}
 
 /**
  * Verdicts that rest on evidence about the reel itself rather than on the
@@ -361,6 +385,15 @@ const PILLAR_NOISE = new Set(
   ).split(/\s+/),
 );
 
+/**
+ * The cache filename for a phrase.
+ *
+ * TODO(task-8): this drops every non-Latin character, so a Devanagari phrase
+ * ("कन्नड़") collapses to the fallback "niche". Such a query can never match a
+ * stored room and the dossier always reads "not read yet" even after a fresh
+ * pull. Replace this with a script-aware slug (transliterate or percent-encode
+ * the phrase) before the spec's Indic-language launch.
+ */
 function slugify(q: string): string {
   return q
     .toLowerCase()
@@ -431,9 +464,50 @@ function cleanHandle(h: string): string {
   return h.trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
 }
 
+/**
+ * Which owners a search still needs a size for, biggest reel first.
+ *
+ * One handle appears once, however many rows it owns, and an account whose rows
+ * already carry a follower count (the profile pulls do, the keyword search does
+ * not) is left out: buying that profile again would spend a credit to learn a
+ * number we already have. Ordering by the account's best reel is what makes the
+ * cap buy the accounts that set the room's top end, and ties break on the
+ * handle so two runs with the same payload spend the same calls.
+ */
+function ownerHandlesByReach(reels: RawReel[], known: Map<string, number>): string[] {
+  const best = new Map<string, number>();
+  for (const reel of reels) {
+    const handle = normaliseOwnerHandle(reel.account ?? "");
+    if (!handle || handle === "unknown" || known.has(handle)) continue;
+    const views = Number.isFinite(reel.views) ? reel.views : 0;
+    best.set(handle, Math.max(best.get(handle) ?? 0, views));
+  }
+  return [...best.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([handle]) => handle);
+}
+
+/**
+ * Counts already carried by a row, keyed like the resolver's Map.
+ *
+ * A profile pull stamps its follower count on every row it returns while a
+ * keyword row beside it has none, so the same account can look sized in one reel
+ * and unknown in the next. Spreading the known number across the account's rows
+ * is free and keeps the downstream `sizeKnown` question honest.
+ */
+function knownFollowerCounts(reels: RawReel[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const reel of reels) {
+    if (typeof reel.followers !== "number" || !(reel.followers > 0)) continue;
+    const handle = normaliseOwnerHandle(reel.account ?? "");
+    if (handle && !counts.has(handle)) counts.set(handle, reel.followers);
+  }
+  return counts;
+}
+
 async function readStored(slug: string): Promise<StoredNiche | null> {
   try {
-    const raw = await fs.readFile(path.join(NICHE_DIR, `${slug}.json`), "utf8");
+    const raw = await fs.readFile(path.join(nicheDir(), `${slug}.json`), "utf8");
     const parsed = JSON.parse(raw) as StoredNiche;
     /**
      * Two ways a cache entry is rejected, both silent to the caller because the
@@ -451,8 +525,9 @@ async function readStored(slug: string): Promise<StoredNiche | null> {
 }
 
 async function writeStored(slug: string, value: StoredNiche): Promise<void> {
-  await fs.mkdir(NICHE_DIR, { recursive: true });
-  const target = path.join(NICHE_DIR, `${slug}.json`);
+  const dir = nicheDir();
+  await fs.mkdir(dir, { recursive: true });
+  const target = path.join(dir, `${slug}.json`);
   const tmp = `${target}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(value), "utf8");
   await fs.rename(tmp, target);
@@ -469,14 +544,53 @@ export async function nicheCacheStatus(query: string, handle?: string) {
     : null;
   return {
     slug,
-    cached: Boolean(stored) && matches && (ageHours ?? 1e9) < CACHE_TTL_HOURS,
+    cached: Boolean(stored) && matches && (ageHours ?? 1e9) < cacheTtlHours(),
     ageHours,
-    ttlHours: CACHE_TTL_HOURS,
+    ttlHours: cacheTtlHours(),
     // The search plus however many accounts are topped up for a baseline. The
     // real number comes back on the ledger; this is the planning figure.
     credits: 1 + ENRICH_MAX,
     maxCredits: MAX_CREDITS_PER_SEARCH,
   };
+}
+
+/**
+ * The cached niche dossier, rebuilt for chat.
+ *
+ * Disk only: this is the reader behind a niche conversation, and a niche chat
+ * must never trigger a vendor search. A missing, expired or wrong-handle cache
+ * reads as absent, exactly like `nicheCacheStatus().cached === false`; the chat
+ * route then says the niche is not loaded and charges nothing.
+ *
+ * The phrase is taken from the stored file when it has one, so a hostile query
+ * string cannot smuggle itself into a prompt by slug-matching a real cache.
+ */
+export async function cachedNicheResearch(
+  query: string,
+  handle?: string,
+): Promise<NicheResearch | null> {
+  const phrase = typeof query === "string" ? query.trim() : "";
+  if (!phrase) return null;
+
+  const slug = slugify(phrase);
+  const stored = await readStored(slug);
+  if (!stored?.payload?.length) return null;
+
+  const h = handle ? cleanHandle(handle) : undefined;
+  if ((stored.handle ?? undefined) !== h) return null;
+
+  const ageHours = (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5;
+  if (!(ageHours >= 0) || ageHours >= cacheTtlHours()) return null;
+
+  return researchFromCache(
+    stored.query?.trim() || slug.replace(/-/g, " "),
+    stored.payload,
+    {
+      handle: h,
+      fetchedAt: stored.fetchedAt,
+      errors: stored.errors ?? [],
+    },
+  );
 }
 
 /**
@@ -768,7 +882,7 @@ export async function researchNiche(opts: {
       ? (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5
       : Infinity;
     const sameHandle = (stored?.handle ?? undefined) === handle;
-    if (stored && sameHandle && ageHours < CACHE_TTL_HOURS) {
+    if (stored && sameHandle && ageHours < cacheTtlHours()) {
       return shape(query, handle, stored.payload, stored.errors, {
         cached: true,
         fetchedAt: stored.fetchedAt,
@@ -779,23 +893,38 @@ export async function researchNiche(opts: {
     }
   }
 
-  // Any configured vendor will do — the router picks the cheapest one.
-  if (!availableProviders().length) {
-    throw new Error(
-      "No data vendor is configured — set HIKERAPI_KEY or SOCIALCRAWL_API_KEY in .env.local. Niche search needs live data.",
-    );
+  /**
+   * A niche is an Instagram question, so an Instagram vendor has to exist before
+   * anything is attempted. The free YouTube reader used to stand in here; it
+   * cannot, and pretending "no vendor at all" or "out of credits" would hide the
+   * actual problem from a creator.
+   */
+  if (!providersFor("/instagram/search/reels", "instagram").length) {
+    throw new Error(NO_INSTAGRAM_DATA_SOURCE);
   }
 
   /**
-   * Pre-flight: can anyone serve this search, and can anyone *pay* for the
-   * extras?
+   * Pre-flight: can an Instagram vendor serve this search, and can anyone *pay*
+   * for the extras?
    *
    * The old gate read `checkBalance()`, which reports the active vendor's
    * credit count. That made "the paid key is empty" look like "the search is
    * impossible", and the page answered "we are at capacity" for a call the free
-   * vendor would have served for nothing. Price the extras instead of the
-   * search: free-only runs skip cohort top-ups and comment reads, which are the
-   * only things that actually cost money.
+   * vendor would have served for nothing.
+   *
+   * The search itself is attempted whenever an Instagram vendor exists. The
+   * extras are priced separately: when no paid vendor reports a usable balance
+   * (`freeOnly`), `enrichCohort` is called with `freeOnly` and keeps no
+   * Instagram candidates, so no cohort top-ups are read, and the bought-comment
+   * budget is zero. There is no free Instagram reader to stand in.
+   *
+   * `readiness()` below is a separate answer, and it is about money rather than
+   * capability. If no paid vendor reports a usable balance, `ready.any` is false
+   * and this entry point throws "Not enough credits: no vendor can serve this
+   * search right now."; `friendly()` maps that to the capacity sentence on the
+   * page. That is deliberately different from the no-vendor case above (which
+   * throws the no-Instagram-source sentence): here the source exists, its
+   * account is just empty.
    */
   const cost = handle ? 2 : 1;
   const ready = await readiness("/instagram/search/reels", cost);
@@ -863,6 +992,39 @@ export async function researchNiche(opts: {
         ? errors.join(" · ")
         : `No reels came back for "${query}". Try a broader phrase.`,
     );
+  }
+
+  /**
+   * Sizes for the accounts that came back without one.
+   *
+   * A keyword search names the owner of every row but never says how big that
+   * account is, which leaves every "this reel beat their usual" claim without
+   * its denominator. The counts are bought here, after the search and the
+   * baselines (the profile pulls already carry their own), capped per niche and
+   * cached for a week. The reads go through the router, so the ledger counts
+   * them: `/api/niche` refunds a pull whose `spent` is zero, and a search that
+   * bought twelve profiles is not free.
+   *
+   * Never in a free-only run: there is no free profile reader, so the attempt
+   * would only produce vendor errors and a file of false negatives.
+   */
+  if (payload.length) {
+    const followers = knownFollowerCounts(payload);
+    if (!freeOnly) {
+      const owners = ownerHandlesByReach(payload, followers);
+      if (owners.length) {
+        for (const [handle, count] of await resolveOwnerFollowers(owners)) {
+          followers.set(handle, count);
+        }
+      }
+    }
+    if (followers.size) {
+      for (const reel of payload) {
+        if (typeof reel.followers === "number" && reel.followers > 0) continue;
+        const count = followers.get(normaliseOwnerHandle(reel.account ?? ""));
+        if (typeof count === "number") reel.followers = count;
+      }
+    }
   }
 
   /**
@@ -962,7 +1124,7 @@ export function researchFromCache(
 function shape(
   query: string,
   handle: string | undefined,
-  payload: RawReel[],
+  rawPayload: RawReel[],
   errors: string[],
   meta: {
     cached: boolean;
@@ -973,6 +1135,27 @@ function shape(
     verified?: WatchStats;
   },
 ): NicheResearch {
+  /**
+   * Instagram rows only, whatever a vendor or an old cache handed over.
+   *
+   * This is the last line of defence for the product rule: a niche view may not
+   * contain a row from another network, because every median, account and idea
+   * below is presented as an Instagram measurement. The router and the platform
+   * filter should make this a no-op; a cached pull written before the filter
+   * existed, or a vendor that ignored the request, must still not leak through.
+   *
+   * Reported once, with a count, rather than once per row: this is an operator
+   * signal, not a per-reel event.
+   */
+  const payload = rawPayload.filter(
+    (r) => (r.platform ?? "instagram") === "instagram",
+  );
+  if (payload.length !== rawPayload.length) {
+    console.warn(
+      `[niche] dropped ${rawPayload.length - payload.length} row(s) not from Instagram; a niche view is Instagram-only`,
+    );
+  }
+
   const ownReels = handle
     ? payload.filter((r) => r.account.toLowerCase() === handle.toLowerCase())
     : [];
@@ -1247,9 +1430,29 @@ export function profileFromNiche(
 }
 
 /**
+ * The reel-level row the niche dossier ranks.
+ *
+ * Deliberately small: the dossier needs the owner, the link, the caption
+ * excerpt, the view count and the owner's size, and nothing else. It is built
+ * only when `nicheView` is asked for a dossier, so the API's normal view stays
+ * the lightweight account summary it was.
+ */
+export interface NicheReelRow {
+  account: string;
+  platform?: Platform;
+  url: string;
+  caption: string;
+  views: number;
+  followers?: number;
+}
+
+/**
  * What the browser is allowed to see of a niche pull. Deliberately not the raw
  * payload: that is every caption of every reel, hundreds of kilobytes the page
  * has no use for. The numbers and the handful of accounts are the whole point.
+ *
+ * `reelRows` is the one exception, and only when `nicheView` is asked for a
+ * dossier: it is still a cut-down row, never the raw payload.
  */
 export interface NicheView {
   query: string;
@@ -1302,9 +1505,29 @@ export interface NicheView {
     judged: { scored: number; of: number };
     reason?: string;
   };
+  /**
+   * The room's reels, for the dossier page only.
+   *
+   * Absent from the API's view on purpose: the account summary above is the
+   * public shape, while the dossier needs one row per reel to rank breakouts by
+   * views per follower. Captions are cut to an excerpt-sized string.
+   */
+  reelRows?: NicheReelRow[];
 }
 
-export function nicheView(research: NicheResearch, limit = 8): NicheView {
+export interface NicheViewOptions {
+  /**
+   * Include the reel-level rows a dossier ranks. Off by default so the API
+   * response does not grow back into the raw payload it was built to avoid.
+   */
+  dossier?: boolean;
+}
+
+export function nicheView(
+  research: NicheResearch,
+  limit = 8,
+  opts: NicheViewOptions = {},
+): NicheView {
   /**
    * Which rooms were left out, in words.
    *
@@ -1358,6 +1581,20 @@ export function nicheView(research: NicheResearch, limit = 8): NicheView {
       judged: research.subject?.judged ?? { scored: 0, of: 0 },
       reason: research.subject?.reason,
     },
+    ...(opts.dossier
+      ? {
+          reelRows: (research.payload ?? []).map((reel) => ({
+            account: reel.account,
+            platform: reel.platform,
+            url: reel.url,
+            caption: (reel.caption ?? "").slice(0, 200),
+            views: reel.views,
+            ...(typeof reel.followers === "number" && reel.followers > 0
+              ? { followers: reel.followers }
+              : {}),
+          })),
+        }
+      : {}),
   };
 }
 
@@ -1370,6 +1607,14 @@ export interface CachedNiche {
   accounts: number;
   /** older than the TTL, so opening it would re-pull and spend a credit */
   stale: boolean;
+  /**
+   * The stored reels, only when the caller asked for them.
+   *
+   * Listing the cache for a page needs the summary fields only; ranking the
+   * rooms by opportunity needs the pulls themselves. Keeping this optional lets
+   * both callers reuse this one reader instead of re-reading every file.
+   */
+  payload?: RawReel[];
 }
 
 /**
@@ -1377,10 +1622,12 @@ export interface CachedNiche {
  * which is what makes the discover page usable without spending anything: the
  * work was already paid for once.
  */
-export async function cachedNiches(): Promise<CachedNiche[]> {
+export async function cachedNiches(
+  opts: { withPayload?: boolean } = {},
+): Promise<CachedNiche[]> {
   let files: string[];
   try {
-    files = await fs.readdir(NICHE_DIR);
+    files = await fs.readdir(nicheDir());
   } catch {
     return [];
   }
@@ -1399,9 +1646,54 @@ export async function cachedNiches(): Promise<CachedNiche[]> {
       ageHours: Math.round(ageHours * 10) / 10,
       reels: stored.payload.length,
       accounts: new Set(stored.payload.map((r) => r.account.toLowerCase())).size,
-      stale: ageHours >= CACHE_TTL_HOURS,
+      stale: ageHours >= cacheTtlHours(),
+      ...(opts.withPayload ? { payload: stored.payload } : {}),
     });
   }
 
   return out.sort((a, b) => b.reels - a.reels);
+}
+
+export interface CachedNichePull {
+  slug: string;
+  /** the phrase as it was stored, falling back to the slug in words */
+  query: string;
+  fetchedAt: string;
+  ageHours: number;
+  /** older than NICHE_CACHE_HOURS; still free to read, labelled "as of" */
+  stale: boolean;
+  payload: RawReel[];
+  errors: string[];
+}
+
+/**
+ * One cached room by phrase, payload included.
+ *
+ * The niche page needs the reels behind a room, not a list of every room on
+ * disk, so this reads exactly the file the shared `slugify` names. Unlike
+ * `cachedNicheResearch` it deliberately ignores the TTL: an old-but-paid-for
+ * room stays readable for free and the page says how old it is. The lookup uses
+ * the same slug function as the writer, so a hostile phrase can never name a
+ * path.
+ */
+export async function cachedNichePull(
+  query: string,
+): Promise<CachedNichePull | null> {
+  const phrase = typeof query === "string" ? query.trim() : "";
+  if (!phrase) return null;
+
+  const slug = slugify(phrase);
+  const stored = await readStored(slug);
+  if (!stored?.payload?.length) return null;
+
+  const ageHours = (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5;
+  return {
+    slug,
+    query: stored.query?.trim() || slug.replace(/-/g, " "),
+    fetchedAt: stored.fetchedAt,
+    ageHours: Number.isFinite(ageHours) ? Math.max(0, ageHours) : 0,
+    stale: !(ageHours < cacheTtlHours()),
+    payload: stored.payload,
+    errors: stored.errors ?? [],
+  };
 }

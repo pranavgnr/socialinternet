@@ -1,0 +1,29 @@
+# Keep the build context small and free of secrets and local state.
+node_modules
+.next
+out
+build
+
+# Secrets and local env files. .env.example is documentation only; it is not
+# needed inside the image either.
+.env
+.env.*
+*.pem
+
+# Local data: plans, caches, media. A volume supplies this at runtime.
+data
+
+# Agent scratch and planning files.
+.superpowers
+.tmp-build
+.tmp-*
+.probe
+.start*.log
+.dev.log
+
+# Repo metadata and test output.
+.git
+.gitignore
+coverage
+.DS_Store
+*.tsbuildinfo

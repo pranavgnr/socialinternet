@@ -4,6 +4,7 @@
  * so every string that reaches a page goes through here first. One list to
  * maintain, and no internal word can leak because someone forgot a template.
  */
+import { compact, times as fmtTimes } from "./fmt";
 
 const SWAPS: [RegExp, string][] = [
   [/\bproven outlier\b/gi, "big hit"],
@@ -84,12 +85,17 @@ export function titleCase(input: string): string {
     .join(" ");
 }
 
-/** 1.4 -> "1.4x", 3 -> "3x", 51.2 -> "51.2x", 250.6 -> "251x" */
+/**
+ * One rounding rule for every multiple on the site.
+ *
+ * This used to round differently from `lib/fmt` (250.6 -> "251x" on a card,
+ * "250x" in the sentence beside it). Significant figures live in `fmt.times`;
+ * delegating means a plan and its cards cannot quote two versions of the same
+ * number.
+ */
 export function times(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "—";
-  const rounded =
-    n >= 100 ? Math.round(n) : Math.round(n * 10) / 10;
-  return `${rounded}x`;
+  return fmtTimes(n);
 }
 
 const SMALL = new Set([
@@ -131,13 +137,8 @@ export function lowerFirst(input: string): string {
   return s[0].toLowerCase() + s.slice(1);
 }
 
-/** "x" instead of "×" in generated text, for consistency with the above. */
+/** View counts share `fmt.compact`, so a number looks the same on every page. */
 export function fmtViews(n: number): string {
   if (!n || n <= 0) return "0";
-  if (n >= 1_000_000) {
-    const m = n / 1_000_000;
-    return `${m >= 10 ? Math.round(m) : m.toFixed(1).replace(/\.0$/, "")}M`;
-  }
-  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
-  return String(Math.round(n));
+  return compact(n);
 }

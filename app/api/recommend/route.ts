@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { currentUser } from "@/lib/auth";
 import { take, tooMany, refund } from "@/lib/limits";
 import { researchNiche } from "@/lib/niche";
 import { resolveIntent } from "@/lib/nicheIntent";
 import { INTERESTS, candidatesFor, wordsFor } from "@/lib/nicheSeeds";
-import { rankNiches, scoreNiche, signalsFrom } from "@/lib/opportunity";
+import { runRecommendPulls } from "@/lib/recommendRequest";
 import { availableProviders } from "@/lib/providers";
 import { attachCookie, ensureAccount } from "@/lib/session";
 import { friendly } from "@/lib/userError";
@@ -137,65 +138,42 @@ export async function POST(req: Request) {
      */
     const fitWords = intent?.words.length ? intent.words : wordsFor(pickedIds);
 
-    const results = [];
-    const errors: string[] = [];
-    let spent = 0;
+    const outcome = await runRecommendPulls(
+      {
+        candidates: toPrice,
+        handle: body.handle?.trim() || undefined,
+        fitWords,
+        user: await currentUser(),
+      },
+      { researchNiche },
+    );
 
-    /**
-     * Sequential on purpose: these are paid calls to a vendor with per-minute
-     * limits, and a burst of five parallel searches is how a demo turns into a
-     * 429 that looks like "the site is broken".
-     */
-    for (const c of toPrice) {
-      try {
-        const research = await researchNiche({
-          query: c.query,
-          handle: body.handle?.trim() || undefined,
-          // Breadth over depth: two baseline top-ups per room, not six.
-          enrichMax: 2,
-        });
-        spent += research.credits.spent;
-
-        const signals = signalsFrom(research);
-        if (!signals.reels.length) {
-          errors.push(`${c.query}: nothing came back`);
-          continue;
-        }
-
-        const scored = scoreNiche(signals, { interests: fitWords });
-        results.push({ ...scored, interest: c.interest, cached: research.cached });
-      } catch (err) {
-        errors.push(`${c.query}: ${(err as Error).message}`);
-      }
-    }
-
-    /** Free runs must not eat the daily cap — re-reading is not spending. */
-    if (spent === 0 && results.length) refund(limitKey);
-
-    if (!results.length) {
+    if (outcome.status !== 200) {
+      /** A refused comparison pulled nothing, so the slot goes back. */
+      if (outcome.status === 401 || outcome.status === 402) refund(limitKey);
       return NextResponse.json(
         {
           ok: false,
-          error:
-            errors[0]?.replace(/^[^:]+:\s*/, "") ??
-            "None of those rooms returned data. Try different interests.",
-          tried: toPrice.map((c) => c.query),
-          errors,
+          error: outcome.error,
+          ...(outcome.status === 400
+            ? { tried: toPrice.map((c) => c.query), errors: outcome.errors }
+            : {}),
         },
-        { status: 400 },
+        { status: outcome.status },
       );
     }
 
-    const ranked = rankNiches(results);
+    /** Free runs must not eat the daily cap — re-reading is not spending. */
+    if (outcome.spent === 0) refund(limitKey);
 
     return await attachCookie(
       NextResponse.json({
         ok: true,
-        ranked: ranked.map((r, i) => ({ rank: i + 1, ...r })),
+        ranked: outcome.ranked.map((r, i) => ({ rank: i + 1, ...r })),
         /** the best room, so the page can lead with one recommendation */
-        best: ranked[0].query,
-        planHref: `/?new=1&niche=${encodeURIComponent(ranked[0].query)}`,
-        spent,
+        best: outcome.ranked[0].query,
+        planHref: `/?new=1&niche=${encodeURIComponent(outcome.ranked[0].query)}`,
+        spent: outcome.spent,
         /**
          * Neighbouring rooms worth entering later. Not priced, so they cost
          * nothing — they are the answer to "what else could I post about",
@@ -204,7 +182,9 @@ export async function POST(req: Request) {
         adjacent: intent?.adjacent ?? [],
         /** what the engine understood, so a wrong answer is visible not silent */
         heard: intent ? { input: intent.input, via: intent.via } : null,
-        partial: errors.length ? errors : undefined,
+        partial: outcome.errors.length ? outcome.errors : undefined,
+        /** the loop ran out of credits but kept the rooms already paid for */
+        note: outcome.note,
       }),
       account,
     );

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { take, tooMany } from "@/lib/limits";
+import { take, tooMany, refund } from "@/lib/limits";
 import { currentAccount } from "@/lib/session";
+import { currentUser } from "@/lib/auth";
 import { friendly } from "@/lib/userError";
 import { runWeekly } from "@/lib/weekly";
+import { runWeeklyRequest } from "@/lib/weeklyRequest";
 
 export const maxDuration = 300;
 
@@ -20,8 +22,21 @@ export async function GET() {
  *
  * This is a real re-pull, so it is allowed once a day: the cron job is the
  * normal path, and a person pressing the button is a correction, not a loop.
+ *
+ * It is also a paid, signed-in action exactly like an own plan: the handle
+ * charge is taken up front and settled against the measured vendor spend, so a
+ * run that threw or bought nothing is refunded. The gate and settle live in
+ * `runWeeklyRequest` so they can be tested without Next.
  */
 export async function POST() {
+  const user = await currentUser();
+  if (!user) {
+    return NextResponse.json(
+      { ok: false, error: "Sign in to refresh this week." },
+      { status: 401 },
+    );
+  }
+
   const account = await currentAccount();
   if (!account) {
     return NextResponse.json(
@@ -36,17 +51,23 @@ export async function POST() {
     return tooMany(budget.retryAfter, "This week's plan is already made. The next one is due Monday.");
   }
 
-  const plan = await account.store.getPlan();
-  if (!plan?.handle) {
-    return NextResponse.json(
-      { ok: false, error: "Analyse a handle first — there is nothing to refresh yet." },
-      { status: 400 },
-    );
-  }
-
   try {
-    const { digest } = await runWeekly(plan.handle, account.store);
-    return NextResponse.json({ ok: true, digest });
+    const outcome = await runWeeklyRequest({
+      store: account.store,
+      user,
+      runWeekly,
+    });
+
+    if (outcome.status !== 200) {
+      /** Nothing was pulled, so the once-a-day slot goes straight back. */
+      refund(key);
+      return NextResponse.json(
+        { ok: false, error: outcome.error },
+        { status: outcome.status },
+      );
+    }
+
+    return NextResponse.json({ ok: true, digest: outcome.digest });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: friendly(err, "That did not work. Try again in a moment.") },

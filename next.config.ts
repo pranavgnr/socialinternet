@@ -20,6 +20,22 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  /**
+   * The worker updates itself through the registration code, so the browser
+   * must revalidate `/sw.js` on every check rather than serving a cached copy
+   * for the lifetime of the deploy. Scope is the whole origin.
+   */
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

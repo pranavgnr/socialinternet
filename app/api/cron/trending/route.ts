@@ -1,0 +1,55 @@
+import { NextResponse } from "next/server";
+
+import { redactSecrets } from "@/lib/canary";
+import { runCron } from "@/lib/cron";
+import {
+  refreshTrending,
+  researchStalest,
+} from "@/lib/trending";
+
+export const maxDuration = 800;
+
+/**
+ * GET /api/cron/trending  (header `x-cron-secret` only)
+ *
+ * The free half runs every time: rebuild `trending_niches` from the pulls
+ * already on disk, which costs nothing. `?refresh=1` adds the paid half —
+ * re-research the five stalest rooms through `researchNiche`, whose own
+ * readiness and balance guards decide whether each call is affordable. It is
+ * off by default so a routine cron cannot quietly spend credits, and the batch
+ * stops at the first budget error instead of asking an empty account five times.
+ */
+async function run(req: Request) {
+  const url = new URL(req.url);
+  const refresh = url.searchParams.get("refresh") === "1";
+
+  try {
+    let table = await refreshTrending();
+    const work = refresh ? await researchStalest(5) : null;
+
+    // New pulls change the ranking, so write the table once more when the paid
+    // step actually bought something.
+    if (work?.refreshed.length) table = await refreshTrending();
+
+    return NextResponse.json({
+      ok: true,
+      written: table.written,
+      researched: work?.refreshed ?? [],
+      failed: work?.failed ?? [],
+      stopped: work?.stopped ?? null,
+    });
+  } catch (err) {
+    console.error(
+      "[cron/trending] refresh failed:",
+      redactSecrets((err as Error).message),
+    );
+    return NextResponse.json(
+      { ok: false, error: "Trending refresh failed" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function GET(req: Request) {
+  return runCron(req, "trending job", () => run(req), { dynamic: true });
+}

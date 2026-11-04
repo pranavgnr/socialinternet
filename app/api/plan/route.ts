@@ -1,9 +1,18 @@
 import { NextResponse, after } from "next/server";
 
-import { take, tooMany, refund } from "@/lib/limits";
-import { profileFromNiche } from "@/lib/niche";
+import { currentUser } from "@/lib/auth";
+import { saveCreatorProfile } from "@/lib/creatorProfile";
+import { gate, settleAfter } from "@/lib/gate";
+import { normalizeHandle } from "@/lib/handle";
+import { take, tooMany, refund, refundSlotIfFree } from "@/lib/limits";
 import { runPipeline } from "@/lib/pipeline";
-import { analyseHandle, cleanHandle, ownWinnerCaptions } from "@/lib/plan";
+import { creditLedger } from "@/lib/providers";
+import { analyseHandle } from "@/lib/plan";
+import {
+  parsePlanMode,
+  planModeRejection,
+  runPlanBuild,
+} from "@/lib/planRequest";
 import { attachCookie, currentAccount, ensureAccount } from "@/lib/session";
 import { friendly } from "@/lib/userError";
 
@@ -19,11 +28,16 @@ export async function GET() {
 }
 
 /**
- * POST /api/plan  { handle, niche?, force? }
+ * POST /api/plan  { handle, niche?, force?, mode? }
  *
  * One handle in: read the account, work out the niche from its own posts, pull
  * what is working there, compare against size-matched peers, write a plan where
  * every move cites a reel. Everything lands in that visitor's own directory.
+ *
+ * `mode: "competitor"` runs the same read of a public account, but returns it in
+ * the response body with the advice stripped and writes nothing to the visitor:
+ * no plan, no profile, no idea feed, no remembered niche. It is charged and
+ * settled exactly like an own plan.
  */
 export async function POST(req: Request) {
   try {
@@ -33,9 +47,24 @@ export async function POST(req: Request) {
       niche?: string;
       /** skip transcript/OCR so a plan costs nothing — used by tests and retries */
       shallow?: boolean;
+      /** "own" (default) keeps the plan; "competitor" only reads a public account */
+      mode?: unknown;
     };
 
-    const handle = cleanHandle(body.handle ?? "");
+    /**
+     * Refuse an unknown mode before the rate limiter, the gate or any pull, so
+     * a typo cannot charge a credit or write a partial account.
+     */
+    const rejection = planModeRejection(body.mode);
+    if (rejection) {
+      return NextResponse.json(
+        { ok: false, error: rejection.error },
+        { status: rejection.status },
+      );
+    }
+    const mode = parsePlanMode(body.mode)!;
+
+    const handle = normalizeHandle(body.handle ?? "");
     if (!handle) throw new Error("handle is required");
 
     const account = await ensureAccount();
@@ -58,82 +87,133 @@ export async function POST(req: Request) {
     }
 
     /**
-     * The deep pass runs on every plan, not behind a flag: six posts, one
-     * credit each, cached for a week. It is the only way to answer whether the
-     * scroll was stopped by a sentence, a caption, or the picture itself — and
-     * that answer decides which of the moves is worth doing first.
+     * The credit gate, decided before anything is pulled. A plan is always a
+     * signed-in, paid action — cache or no cache — because even when the
+     * handle's own feed is already on disk, the run still buys vendor work the
+     * visitor steers (a fresh search on the phrase they typed, a profile read,
+     * the deep enrich pass). So strangers are refused here, and the day's
+     * credits are charged up front; whether the charge survives is decided
+     * after the run by what the vendor ledger says it cost. A refusal means
+     * nothing was read, so the rate-limit slot is handed straight back too.
      */
-    const { plan, research, seedReels, archetype, own } = await analyseHandle(handle, {
-      force,
-      niche: body.niche?.trim() || undefined,
-      deep: !body.shallow,
+    /**
+     * Resolve the account and let the gate use that same signed-in user, so the
+     * creator profile is written for the id the charge was made against.
+     */
+    const user = await currentUser();
+    const verdict = await gate("handle", {
+      key: handle,
+      getUser: async () => user,
     });
-
-    /** Nothing was bought, so nothing is charged: a handle already on disk is
-     * free to open, and the allowance is there to cap spending, not visits. */
-    if (research.credits.spent === 0) refund(limitKey);
-
-    await account.store.savePlan(plan);
-
-    // The idea feed is rebuilt from the reels the analysis already paid for,
-    // so this never pulls anything twice.
-    const previous = await account.store.getProfile();
-    const profile = profileFromNiche(research, previous, archetype);
+    if (!verdict.ok) {
+      refund(limitKey);
+      return NextResponse.json(
+        { ok: false, error: verdict.message },
+        { status: verdict.status },
+      );
+    }
 
     /**
-     * Winners are the creator's own posts, so they come from the creator's own
-     * feed — never from the room or from a previous record.
-     *
-     * `profileFromNiche` falls back to the previous profile when the pull found
-     * no row for this handle, and that fallback is how a benchmark creator's
-     * caption ("Ali Sigma slapped us for Range Rover") was being listed as
-     * natgeo's own winning post. The feed is on disk and already paid for, so
-     * there is no reason to inherit a claim about whose post it was.
+     * What the run is about to spend sits on a process-wide vendor ledger, so
+     * the settle below compares a snapshot taken now against one taken after.
      */
-    profile.ownWinners = ownWinnerCaptions(own.reels);
+    const vendorUsdAtStart = creditLedger().lifetimeUsd;
+    /** Filled in once the build ends, so the settle and the slot refund read
+     * the exact same measurement. */
+    let vendorUsdSpent: number | null = null;
 
-    /**
-     * The songs the plan named are the songs the idea feed has to be built on:
-     * a singer's reels are covers, and a cover idea without a song is not an
-     * idea. Kept on the profile so a later refresh does not lose them.
-     */
-    profile.songs = plan.songs?.map((s) => s.title) ?? previous?.songs;
+    /** `settleAfter` runs the whole build, then settles the charge: a throw
+     * after the charge refunds it in full, and a run the ledger measured as
+     * free is refunded too. */
+    return await settleAfter(
+      verdict.entryId,
+      async () => {
+        const { plan } = await runPlanBuild(
+          {
+            mode,
+            handle,
+            force,
+            niche: body.niche?.trim() || undefined,
+            shallow: body.shallow,
+            store: account.store,
+          },
+          {
+            analyseHandle,
+            savePlan: (p) => account.store.savePlan(p),
+            /**
+             * Own mode only (competitor mode never reaches this dep): remember
+             * who the creator is for the later marketplace. The gate above
+             * guarantees a signed-in user, so `user.id` is the id that was
+             * charged. A failure is caught and logged inside `runPlanBuild`.
+             */
+            saveCreatorProfile: async (plan) => {
+              if (!user) return;
+              await saveCreatorProfile(user.id, {
+                handle: plan.handle,
+                niche: plan.niche,
+                followers: plan.account?.followers,
+                platform:
+                  plan.platform === "youtube"
+                    ? "youtube"
+                    : plan.platform === "instagram"
+                      ? "instagram"
+                      : undefined,
+              });
+            },
+            getProfile: () => account.store.getProfile(),
+            runPipeline,
+            /**
+             * Own mode queues the idea feed; competitor mode never reaches this
+             * dep, so no profile, signal or idea is written for the visitor.
+             * `after` runs the work once the response has been sent — see the
+             * note in `lib/planRequest.ts`.
+             */
+            scheduleAfter: (fn) => after(fn),
+            logError: (err) =>
+              console.error(
+                "[plan] post-build work failed:",
+                (err as Error).message,
+              ),
+          },
+        );
 
-    /**
-     * Same rule for video shapes: when the plan named shapes, the idea feed is
-     * built on exactly those. Cleared for a song-led account, so a stale vlog
-     * shape can never leak into a singer's covers.
-     */
-    if (plan.formats?.length) profile.formats = plan.formats.map((f) => f.label);
-    else if (archetype.songLed) profile.formats = undefined;
+        /**
+         * Nothing was bought, so nothing is charged: a handle already on disk is
+         * free to open, and the allowance is there to cap spending, not visits.
+         * Measured the same way the gem settle measures it — real vendor money,
+         * not the result's unit counter.
+         */
+        const vendorUsdSpentNow = creditLedger().lifetimeUsd - vendorUsdAtStart;
+        vendorUsdSpent = vendorUsdSpentNow;
+        refundSlotIfFree(limitKey, vendorUsdSpentNow);
 
-    // Captions from posts that worked for accounts this size become the
-    // strongest grounding signal the idea generator has.
-    profile.ownWinners = plan.moves
-      .flatMap((m) => m.evidence.map((e) => e.caption ?? ""))
-      .filter(Boolean)
-      .slice(0, 3);
-
-    /**
-     * The plan is saved, so the visitor can be shown it now. Writing the idea
-     * feed is the long half — a model call per card plus a copy audit — and
-     * holding the response open for it meant a save took 10s on a warm cache
-     * and over two minutes cold. On a phone that is a dropped request and a
-     * spent credit with nothing to show.
-     *
-     * `after` runs it once the response has been sent, so the same work happens
-     * and lands in the same place; the ideas page shows the plan immediately and
-     * refreshes itself until the feed arrives.
-     */
-    after(async () => {
-      try {
-        await runPipeline({ profile, seedReels, db: account.store, ownHandle: handle });
-      } catch (err) {
-        console.error("[plan] idea feed failed:", (err as Error).message);
-      }
-    });
-
-    return await attachCookie(NextResponse.json({ ok: true }), account);
+        /**
+         * Own mode keeps its existing response (the plan is on disk). Competitor
+         * mode wrote nothing, so the body is the only place the read can live.
+         */
+        const payload =
+          mode === "competitor" ? { ok: true, plan } : { ok: true };
+        return await attachCookie(NextResponse.json(payload), account);
+      },
+      () => {
+        /**
+         * Measured in real vendor money (`CreditLedger.usd`), not in the result's
+         * unit counter: that counter misses the handle's own pull, the profile
+         * read and the deep enrich pass, and a cached room resets it to zero —
+         * refunding on it gave a fresh paid pull away as a free plan.
+         *
+         * The ledger is process-wide, not per request. `lifetimeUsd` is used
+         * rather than `usd` because a fresh niche pull resets `usd` mid-run:
+         * a reset between this snapshot and the settle would otherwise read as
+         * zero spend and refund a plan that really cost money. `lifetimeUsd`
+         * only ever grows, so our own spend is always inside our own
+         * before/after pair; a concurrent request's spend can only push the
+         * measured cost up, which keeps the charge (conservative, never a free
+         * plan).
+         */
+        return vendorUsdSpent ?? creditLedger().lifetimeUsd - vendorUsdAtStart;
+      },
+    );
   } catch (err) {
     return NextResponse.json(
       {

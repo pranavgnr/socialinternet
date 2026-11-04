@@ -42,6 +42,26 @@ export function refund(key: string): void {
   if (entry && entry.used > 0) entry.used -= 1;
 }
 
+/**
+ * Hand a slot back only when the run measured no vendor spend.
+ *
+ * A route's own unit counter is not the spend decision: a niche pull can report
+ * zero research credits while still buying owner profiles, and a plan's counter
+ * misses its own handle pull and the deep pass. `usdSpent` is the
+ * `lifetimeUsd` delta the gem settle uses, so the limiter and the gem can never
+ * disagree about whether a read was free.
+ */
+export function refundSlotIfFree(key: string, usdSpent: number): boolean {
+  if (usdSpent !== 0) return false;
+  refund(key);
+  return true;
+}
+
+/** Test hook: clear every window so a suite starts from a known state. */
+export function resetLimitsForTests(): void {
+  windows.clear();
+}
+
 function sweep(now: number) {
   for (const [key, entry] of windows) {
     if (now >= entry.resetAt) windows.delete(key);

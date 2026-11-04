@@ -4,10 +4,10 @@
  * Three jobs:
  *
  *  1. **Pick a vendor.** `DATA_PROVIDER` names one ("hikerapi" | "socialcrawl"),
- *     or "auto" picks the cheapest configured vendor. Cheapest-first is the
- *     default because the four calls the pipeline makes are substitutable: the
- *     plan does not care which vendor returned the reels, only that they are
- *     real.
+ *     or "auto" sorts by the vendor's own preference for the call and then by
+ *     the rate it will actually charge. Price alone is not the answer: the plan
+ *     wants HikerAPI first for every Instagram path even when Apify's next call
+ *     is free, because Apify has no keyword search at all.
  *
  *  2. **Fail over.** A vendor that is out of credits (402), rate-limited or
  *     down is skipped for the rest of the run, not retried on every call. This
@@ -24,6 +24,7 @@ import { scrapecreators } from "./scrapecreators";
 import { call as socialcrawlCall, socialcrawl } from "./socialcrawl";
 import { youtube } from "./youtube";
 import { youtubeweb } from "./youtubeweb";
+import { redactSecrets } from "../env";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -53,6 +54,23 @@ const ALL: DataProvider[] = [
 /** Vendors that failed this run, with the reason, so we stop retrying them. */
 const benched = new Map<ProviderId, string>();
 
+/**
+ * "Nothing could take this call" — as opposed to "the vendor tried and said
+ * something specific".
+ *
+ * The router has always answered with plain messages, and the texts stay the
+ * same. The *type* matters to the Instagram product paths: only this class means
+ * "there is no source to ask", so only this class may be translated into the
+ * one honest sentence a creator sees. A 404 for a misspelled handle is a
+ * `ProviderUnavailable` from a real attempt and must keep its own message.
+ */
+export class NoDataVendor extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoDataVendor";
+  }
+}
+
 export type { ProviderId, DataProvider, PullResult } from "./types";
 
 export interface CreditLedger {
@@ -63,6 +81,19 @@ export interface CreditLedger {
   byEndpoint: Record<string, number>;
   /** real money spent since process start, USD */
   usd: number;
+  /**
+   * Real money spent since process start, USD — **never reset**.
+   *
+   * `usd` is per-run: `researchNiche` zeroes it before a fresh pull so each
+   * run starts from a clean ceiling. A request that snapshot `usd` before its
+   * work and reads it after can therefore see a reset in between and compute a
+   * negative or zero delta even though its own vendor call really cost money.
+   * This counter only ever grows, so a measured before/after pair is immune to
+   * another request's reset.
+   */
+  lifetimeUsd: number;
+  /** Vendor units spent since process start — never reset, for the same reason. */
+  lifetimeSpent: number;
   /** which vendor served each logical call, for the audit line */
   servedBy: Record<string, number>;
   /**
@@ -86,6 +117,8 @@ const ledger: CreditLedger = {
   budget: Number(process.env.CREDIT_BUDGET ?? process.env.SOCIALCRAWL_CREDIT_BUDGET ?? 40),
   byEndpoint: {},
   usd: 0,
+  lifetimeUsd: 0,
+  lifetimeSpent: 0,
   servedBy: {},
   byVendor: {},
 };
@@ -112,10 +145,11 @@ export function resetCreditLedger(): void {
 /**
  * The vendors that could serve a call right now, best first.
  *
- * `path` is optional but changes the answer substantially: a free keyword
- * search should try YouTube before a paid Instagram vendor, while an Instagram
- * handle should not. Without the path this falls back to pure cost order, which
- * is correct for the UI's "what can I afford" question.
+ * `path` is optional but changes the answer substantially: a path that promises
+ * Instagram data must not be answered by the free YouTube reader, while an
+ * explicit YouTube read still wants the free channel page first. Without the
+ * path this falls back to pure cost order, which is correct for the UI's "what
+ * can I afford" question.
  */
 export function availableProviders(path?: string): DataProvider[] {
   const preferred = (process.env.DATA_PROVIDER ?? "auto").toLowerCase();
@@ -128,7 +162,14 @@ export function availableProviders(path?: string): DataProvider[] {
     const pa = path ? (a.preference?.(path) ?? 0) : 0;
     const pb = path ? (b.preference?.(path) ?? 0) : 0;
     if (pa !== pb) return pa - pb;
-    return a.cost.usdPerCall - b.cost.usdPerCall || a.id.localeCompare(b.id);
+    /**
+     * Marginal price, not headline price. A vendor inside a free allowance (or
+     * below a volume tier) charges nothing for the next call, and that is the
+     * number that should decide which one answers.
+     */
+    const ca = a.cost.effectiveUsdPerCall?.() ?? a.cost.usdPerCall;
+    const cb = b.cost.effectiveUsdPerCall?.() ?? b.cost.usdPerCall;
+    return ca - cb || a.id.localeCompare(b.id);
   });
   const live = configured.filter((p) => !benched.has(p.id));
   if (preferred !== "auto") {
@@ -138,6 +179,57 @@ export function availableProviders(path?: string): DataProvider[] {
     if (hit) return [hit, ...live.filter((p) => p.id !== hit.id)];
   }
   return live;
+}
+
+/**
+ * The vendors that could serve a call on one platform right now, best first.
+ *
+ * `availableProviders()` deliberately does not know about platforms: it answers
+ * "what would be tried", including the free YouTube reader. Product paths that
+ * promise Instagram data need the filtered list *before* spending or searching,
+ * so they can refuse honestly instead of discovering the mismatch inside the
+ * router.
+ */
+export function providersFor(path: string, platform?: string): DataProvider[] {
+  const list = availableProviders(path);
+  return platform ? list.filter((p) => readsPlatform(p, platform)) : list;
+}
+
+/**
+ * Every configured vendor, in the router's own order and *without* the run-time
+ * bench list.
+ *
+ * `availableProviders()` answers "what should serve the next call", which is
+ * the wrong question for the canary: it has to test each vendor individually,
+ * including one the router benched earlier in the process. Deliberately not
+ * sorted by price — a health check is not choosing a winner.
+ */
+/**
+ * Every known vendor, configured or not. The canary uses this so a requested
+ * vendor with no key can be reported as skipped instead of silently looking
+ * like a name that does not exist.
+ */
+export function allProviders(): DataProvider[] {
+  return [...ALL];
+}
+
+/**
+ * Record a vendor call made outside the router (the canary deliberately calls
+ * adapters directly, bypassing failover). Without this the shared ledger would
+ * claim a canary run cost nothing, and the per-run spend ceiling could never
+ * see the money it had just spent.
+ */
+export function recordDirectSpend(
+  providerId: ProviderId,
+  result: Pick<PullResult, "usd" | "units">,
+): void {
+  ledger.spent += result.units;
+  ledger.lifetimeSpent += result.units;
+  ledger.calls += 1;
+  ledger.usd += result.usd;
+  ledger.lifetimeUsd += result.usd;
+  ledger.byVendor[providerId] = (ledger.byVendor[providerId] ?? 0) + result.units;
+  ledger.servedBy[providerId] = (ledger.servedBy[providerId] ?? 0) + 1;
 }
 
 export function providerSummary() {
@@ -282,6 +374,7 @@ export type LogicalCall =
   | { path: "/account/reels"; handle: string; platform: "instagram" | "youtube" }
   | { path: "/instagram/search/reels"; query: string }
   | { path: "/instagram/search/accounts"; query: string }
+  | { path: "/instagram/related/profiles"; handle: string }
   | { path: "/instagram/post"; url: string }
   | { path: "/instagram/profile"; handle: string }
   | { path: string; [k: string]: string };
@@ -328,7 +421,33 @@ export async function request(
   if (path === "/instagram/search/accounts") {
     providers = providers.filter((p) => typeof p.searchAccounts === "function");
     if (!providers.length) {
-      throw new Error("no configured vendor can search Instagram accounts");
+      throw new NoDataVendor("no configured vendor can search Instagram accounts");
+    }
+  }
+  /**
+   * Instagram's similar accounts are their own capability, not a profile read.
+   *
+   * HikerAPI's endpoint is currently broken (and refuses with `unsupported`),
+   * Apify carries the list on its details payload, and the free YouTube reader
+   * has no notion of it at all. Filtering first keeps the refusal honest when
+   * no configured vendor can answer, instead of handing the call to a vendor
+   * that would fail with something unrelated.
+   */
+  if (path === "/instagram/related/profiles") {
+    providers = providers.filter((p) => typeof p.relatedProfiles === "function");
+    if (!providers.length) {
+      throw new NoDataVendor("no configured vendor can read Instagram's similar accounts");
+    }
+  }
+  /**
+   * A follower sample is its own capability, like similar accounts. Only a
+   * vendor with a verified followers endpoint may be asked; the rest would fail
+   * with something unrelated (or, worse, charge for a call they cannot answer).
+   */
+  if (path === "/instagram/followers/sample") {
+    providers = providers.filter((p) => typeof p.followersSample === "function");
+    if (!providers.length) {
+      throw new NoDataVendor("no configured vendor can sample Instagram followers");
     }
   }
   if (platform) {
@@ -336,7 +455,7 @@ export async function request(
     // Free vendors are gated by their own switches; if filtering left nothing,
     // say so plainly rather than blaming a credit balance the caller can fix.
     if (!providers.length) {
-      throw new Error(
+      throw new NoDataVendor(
         platform === "youtube" && process.env.YOUTUBE_WEB === "0"
           ? "the free YouTube reader is switched off (YOUTUBE_WEB=0)"
           : `no configured vendor reads ${platform} data`,
@@ -345,7 +464,7 @@ export async function request(
   }
   if (!providers.length) {
     const why = [...benched.entries()].map(([id, r]) => `${id}: ${r}`).join("; ");
-    throw new Error(
+    throw new NoDataVendor(
       why
         ? `no data vendor available (${why})`
         : "no data vendor configured — set HIKERAPI_KEY or SOCIALCRAWL_API_KEY",
@@ -353,6 +472,8 @@ export async function request(
   }
 
   let lastError: Error | null = null;
+  /** Every attempted vendor's error, so the final answer can tell the two cases apart. */
+  const attempts: Error[] = [];
 
   for (const provider of providers) {
     try {
@@ -361,8 +482,10 @@ export async function request(
       result.provider = provider.id;
 
       ledger.spent += result.units;
+      ledger.lifetimeSpent += result.units;
       ledger.calls += 1;
       ledger.usd += result.usd;
+      ledger.lifetimeUsd += result.usd;
       ledger.byEndpoint[path] = (ledger.byEndpoint[path] ?? 0) + result.units;
       ledger.servedBy[provider.id] = (ledger.servedBy[provider.id] ?? 0) + 1;
       ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + result.units;
@@ -372,8 +495,29 @@ export async function request(
     } catch (err) {
       const e = err as Error;
       lastError = e;
+      attempts.push(e);
 
+      /**
+       * A billed failure is still money.
+       *
+       * HikerAPI charges for 400/403/404 answers, and a 404 is exactly what a
+       * mistyped handle costs. Before this, the ledger recorded only successful
+       * dispatches, so the live cost report (and `/api/plan`'s measured settle,
+       * which reads the `lifetimeUsd` delta) could report a paid run as free.
+       * One unit per billed call, the adapter's own USD figure, then fail over
+       * exactly as before — the error thrown to the caller is unchanged.
+       */
       if (err instanceof ProviderUnavailable) {
+        const billed = err.billedUsd ?? 0;
+        if (billed > 0) {
+          ledger.spent += 1;
+          ledger.lifetimeSpent += 1;
+          ledger.calls += 1;
+          ledger.usd += billed;
+          ledger.lifetimeUsd += billed;
+          ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + 1;
+        }
+
         /**
          * Bench the vendor for the rest of the run only when it is *spent* or
          * rejected — not for a per-call miss.
@@ -394,9 +538,47 @@ export async function request(
     }
   }
 
-  throw new Error(
-    `every data vendor failed: ${lastError?.message ?? "unknown error"}`,
-  );
+  /**
+   * All attempts were "cannot serve" rather than "asked and got an answer"?
+   *
+   * Then the call has no data source: every configured vendor is either spent or
+   * lacks the capability. The Instagram product paths translate exactly this
+   * case into their own sentence. A real vendor error (404 for a handle, a 500
+   * after the retry) is not in this set, so it keeps its own message.
+   */
+  const onlyUnavailable =
+    attempts.length > 0 &&
+    attempts.every(
+      (e) => e instanceof ProviderUnavailable && (e.exhausted || e.unsupported),
+    );
+  /**
+   * The creator sees only the generic sentence, so the operator's only trace of
+   * the real cause is this one warning: vendor ids plus vendor messages, never a
+   * key or token. Vendor bodies can echo the request URL, so the detail goes
+   * through the same redaction the canary uses.
+   */
+  if (onlyUnavailable) {
+    const detail = attempts
+      .map((e) =>
+        e instanceof ProviderUnavailable ? `${e.provider}: ${e.message}` : e.message,
+      )
+      .join("; ");
+    console.warn(`[providers] no vendor could serve ${path}: ${redactSecrets(detail)}`);
+  }
+  /**
+   * When a vendor gave a real answer (a 404, a malformed payload), that message
+   * is the useful one — even if a later vendor was merely out of credit. Taking
+   * only the last error would let "payment required" bury " @handle not found".
+   */
+  const real = [...attempts]
+    .reverse()
+    .find(
+      (e) => !(e instanceof ProviderUnavailable && (e.exhausted || e.unsupported)),
+    );
+  const message = `every data vendor failed: ${
+    (real ?? lastError)?.message ?? "unknown error"
+  }`;
+  throw onlyUnavailable ? new NoDataVendor(message) : new Error(message);
 }
 
 async function dispatch(
@@ -433,6 +615,38 @@ async function dispatch(
         );
       }
       return provider.searchAccounts(params.query ?? "");
+    case "/instagram/related/profiles":
+      /**
+       * Guaranteed present by the filter in `request()`; the guard covers a
+       * direct `dispatch()` call and reports a capability gap, not a failure.
+       */
+      if (!provider.relatedProfiles) {
+        throw new ProviderUnavailable(
+          provider.id,
+          `${provider.id} cannot read Instagram's similar accounts`,
+          false,
+          true,
+        );
+      }
+      return provider.relatedProfiles(params.handle ?? "");
+    case "/instagram/followers/sample":
+      /**
+       * Same contract as similar accounts: a vendor that has never had a
+       * follower endpoint refuses as a capability gap (`unsupported: true`)
+       * rather than spending a call on the wrong resource.
+       */
+      if (!provider.followersSample) {
+        throw new ProviderUnavailable(
+          provider.id,
+          `${provider.id} cannot sample Instagram followers`,
+          false,
+          true,
+        );
+      }
+      return provider.followersSample(
+        params.userId ?? "",
+        Number(params.pages ?? 1),
+      );
     case "/instagram/post":
       return provider.post(params.url ?? "");
     case "/instagram/profile":
@@ -442,7 +656,20 @@ async function dispatch(
        * Endpoints outside the shared surface (transcript, comment pages) only
        * exist on SocialCrawl. They are deliberate, rare and expensive, so they
        * are sent straight there rather than being pretended to be portable.
+       *
+       * The guard is not cosmetic any more: Instagram vendors now sort ahead of
+       * SocialCrawl, so without it the first vendor in line would be asked and
+       * the call would be made against SocialCrawl under that vendor's name —
+       * recording HikerAPI money for a SocialCrawl call.
        */
+      if (provider.id !== "socialcrawl") {
+        throw new ProviderUnavailable(
+          provider.id,
+          `${provider.id} cannot serve ${path}`,
+          false,
+          true,
+        );
+      }
       if (!socialcrawl.configured()) {
         throw new ProviderUnavailable(
           "socialcrawl",
@@ -475,8 +702,10 @@ export async function fetchComments(
     try {
       const result = await provider.comments(url, limit);
       ledger.spent += result.units;
+      ledger.lifetimeSpent += result.units;
       ledger.calls += 1;
       ledger.usd += result.usd;
+      ledger.lifetimeUsd += result.usd;
       ledger.byEndpoint["/instagram/post/comments"] =
         (ledger.byEndpoint["/instagram/post/comments"] ?? 0) + result.units;
       ledger.byVendor[provider.id] = (ledger.byVendor[provider.id] ?? 0) + result.units;

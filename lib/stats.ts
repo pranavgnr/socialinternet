@@ -1,3 +1,4 @@
+import { compact } from "./fmt";
 import type { NicheAccount, NicheResearch } from "./niche";
 import { tokens } from "./text";
 import type { PlanEvidence, RawReel } from "./types";
@@ -8,10 +9,12 @@ import type { PlanEvidence, RawReel } from "./types";
  * how a reel is described.
  */
 
+/**
+ * View counts in prose. Delegates to `fmt.compact` for the same reason
+ * `plain.times` delegates to `fmt.times`: engine copy and UI must not disagree.
+ */
 export function fmt(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
-  return String(Math.round(n));
+  return compact(n);
 }
 
 export function median(values: number[]): number {

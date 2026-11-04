@@ -10,23 +10,56 @@
  * reads. Doing the translation here — rather than teaching the harvester a
  * second dialect — keeps the ranking maths vendor-neutral.
  *
- * STATUS (checked 27 Oct 2026): every path below was verified against
- * `https://api.hikerapi.com/openapi.json` (167 paths). Six were wrong when this
- * file first landed and all would have failed on a real account:
- *   - `/v1/user/medias/chunk` is marked "Deprecated: may return 404 for existing
- *     accounts" — the main media pull, i.e. the whole adapter. Now `/g2/user/medias`.
- *   - `/v1/hashtag/medias/top` says "use /v2/hashtag/medias/top instead".
- *   - `/v1/media/by/code` is superseded by `/v2/media/info/by/code`.
- *   - `/v1/sys/balance` does not exist; balance lives at `/sys/balance`.
- *   - `/v1/user/by/username` → `/v2/user/by/username`.
- * Stills and MP4s also arrive nested (`image_versions2.candidates`,
- * `video_versions`), not as flat keys, so every reel came back with no media URL
- * and the deep pass silently watched nothing.
+ * STATUS (verified against live responses, 3 Nov 2026 — fixtures in
+ * `lib/providers/__fixtures__/hikerapi/`):
+ *   - `/v2/user/by/username` answers `{status, user}` with `pk` (number),
+ *     `id` (string) and `follower_count`. A missing handle is HTTP 404 with
+ *     `{detail, exc_type}`.
+ *   - `/v2/user/clips` answers `{next_page_id, response: {items: [{media}],
+ *     paging_info}}` — items are wrapped in `media`, and each media carries
+ *     play_count, ig_play_count, like_count, comment_count, reshare_count,
+ *     video_duration, taken_at, code, `video_versions[].url`,
+ *     `image_versions2.candidates[].url` and `clips_metadata`.
+ *   - `/v2/search/reels` answers
+ *     `{reels_serp_modules: [{module_type: "clips", clips: [{media}]}], …}`.
+ *     The query is sent exactly as typed (native script works).
+ *   - `/v2/search/accounts?query=` answers `{num_results, users[]}`; users
+ *     carry `username`, `is_private`, `is_verified` and `latest_reel_media`
+ *     (epoch seconds) but **no follower count**. The displayed
+ *     `social_context` ("43.5K followers") is rounded marketing text, not a
+ *     measurement, and is deliberately not parsed as one.
+ *   - `/v1/user/followers/chunk?user_id=` answers with an array of chunks; the
+ *     first is a list of ~25 follower objects. The recorded fixture keeps 12
+ *     per chunk and its second element is empty, so no cursor can be derived
+ *     from it. `followersSample` makes exactly one request and parses every
+ *     chunk the response carries; it never guesses a pagination parameter.
+ *   - `/gql/user/related/profiles?id=` is the right endpoint and parameter
+ *     (a `user_id`-only request is a 422 asking for `id`), but it returned
+ *     HTTP 500 `InstagramServerError` on all three live probes (2026-11-03).
+ *     The adapter refuses it with `unsupported: true`; Apify's profile payload
+ *     is the working source.
+ *   - `/v2/media/info/by/code` answers `{status, media_or_ad: {media}}`.
+ *     The media carries a valid `id` (`<pk>_<owner>`) and `user.pk`. The old
+ *     adapter looked for `data.media` only, so it read the wrapper as the post,
+ *     lost `id`, and skipped every comments call. `mediaOf` unwraps the live
+ *     shape and the older wrappers.
+ *   - `/v2/media/comments?id=<media id>` is the working comments call.
+ *     The old `/v1/media/comments/chunk?media_id=` was a 422: it requires
+ *     `id`, and the value must be the media's `id` (`<pk>_<owner>`), not the
+ *     shortcode. When `id` is missing, the shortcode is decoded to the exact pk
+ *     with `pkFromShortcode` and `user.pk` supplies the owner; the rounded
+ *     `pk` number is never used. Comments are read on every `post()` by
+ *     default (one extra call, +$0.02 at the Start rate); `HIKERAPI_COMMENTS=0`
+ *     disables them.
+ *   - A 500 "Instagram did not respond" (`exc_type: InstagramServerError`) is
+ *     transient; `getWithRetry` tries once more after 800 ms. 4xx is never
+ *     retried.
  *
- * Still NOT exercised against a live key. `scripts/probe-vendor.ts` is the
- * integration test — run it against the 100 free signup requests before
- * trusting a paid pull.
+ * Still worth re-running `scripts/probe-vendor.ts --live` against a paid key
+ * before trusting a large pull: `/sys/balance` is the only path without a
+ * recorded fixture here (`media_info.json` records the live post wrapper).
  */
+import { pkFromShortcode } from "../instagramId";
 import {
   ProviderUnavailable,
   type DataProvider,
@@ -59,6 +92,8 @@ const obj = (v: unknown): Record<string, unknown> =>
 const arr = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
 
+const hasKeys = (v: Record<string, unknown>): boolean => Object.keys(v).length > 0;
+
 const num = (v: unknown): number => {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   if (typeof v === "string") {
@@ -70,6 +105,107 @@ const num = (v: unknown): number => {
 
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.length > 0 ? v : undefined;
+
+/**
+ * Ids arrive as strings on some paths and as big numbers on others (`user.pk`
+ * is a number, `user.id` its string form). Losing one to `str()` would make the
+ * next call go out without an id at all.
+ */
+const idStr = (v: unknown): string | undefined =>
+  str(v) ?? (typeof v === "number" && Number.isFinite(v) ? String(v) : undefined);
+
+/**
+ * Unwrap the media object from `/v2/media/info/by/code`.
+ *
+ * Live shape (2026-11-03): `{status, media_or_ad: {...}}`. The old code only
+ * knew `{media}` and treated the wrapper as the media, so `media.id` was
+ * missing and every post read silently skipped the comments call. Keep the
+ * other known wrappers too, so a vendor field rename does not reintroduce the
+ * same bug.
+ */
+function mediaOf(data: Record<string, unknown>): Record<string, unknown> {
+  const response = obj(data.response);
+  const candidates = [
+    data.media_or_ad,
+    data.media,
+    response.media_or_ad,
+    response.media,
+    obj(arr(data.items)[0]).media,
+    obj(arr(response.items)[0]).media,
+    arr(data.items)[0],
+    arr(response.items)[0],
+  ];
+  for (const candidate of candidates) {
+    const media = obj(candidate);
+    if (hasKeys(media)) return media;
+  }
+  return obj(data);
+}
+
+/** A decimal id from either the string or the safe-number form. */
+function decimalId(v: unknown): string | undefined {
+  if (typeof v === "string") {
+    const m = /^(\d+)(?:_\d+)?$/.exec(v.trim());
+    return m?.[1];
+  }
+  /**
+   * Only a safe number is trustworthy. Above 2^53 JSON.parse has already
+   * rounded it, and stringifying the rounded value produces a wrong id.
+   */
+  if (typeof v === "number" && Number.isSafeInteger(v) && v > 0) {
+    return String(v);
+  }
+  return undefined;
+}
+
+/** The owner pk in `<mediaPk>_<ownerPk>`, from the media's user envelope. */
+function ownerPkOf(media: Record<string, unknown>): string | undefined {
+  const user = obj(media.user ?? media.owner);
+  return (
+    decimalId(user.pk) ??
+    decimalId(user.id) ??
+    decimalId(media.user_id) ??
+    decimalId(obj(media.owner).pk) ??
+    decimalId(obj(media.owner).id)
+  );
+}
+
+/**
+ * The id `/v2/media/comments` wants: `<media pk>_<owner pk>`.
+ *
+ * A valid `media.id` is preferred (it is exact). When the payload has lost it,
+ * decode the shortcode — never trust the rounded `pk` number. Returns undefined
+ * when neither path is available, so the caller can skip the call instead of
+ * buying a 422.
+ */
+function commentsIdFor(
+  media: Record<string, unknown>,
+  code: string,
+): string | undefined {
+  const direct = idStr(media.id);
+  if (direct && /^\d+_\d+$/.test(direct)) return direct;
+  const owner = ownerPkOf(media);
+  if (!owner) return undefined;
+  try {
+    return `${pkFromShortcode(code)}_${owner}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One warning per process, not per post.
+ *
+ * The pre-fix behaviour swallowed a missing comments id, which is why a live
+ * run bought four post reads and not one comment. The warning names the
+ * degraded read without a URL, a handle or any signed data.
+ */
+let warnedComments = false;
+function warnCommentsOnce(message: string): void {
+  if (warnedComments) return;
+  warnedComments = true;
+  console.warn(`[hikerapi] ${message}`);
+}
 
 const key = () => process.env.HIKERAPI_KEY;
 
@@ -88,6 +224,42 @@ function unwrap(json: Record<string, unknown>): Record<string, unknown> {
   return inner && typeof inner === "object" ? obj(inner) : json;
 }
 
+/**
+ * A failed HTTP call, with the two details the retry policy needs.
+ *
+ * `status` distinguishes a transient 5xx from a permanent 4xx, and `excType`
+ * is HikerAPI's own reason (`InstagramServerError` means Instagram refused the
+ * scrape, not that the account is empty). Both would be lost if this threw a
+ * bare `ProviderUnavailable`.
+ */
+class HikerHttpError extends ProviderUnavailable {
+  constructor(
+    message: string,
+    exhausted: boolean,
+    readonly status: number,
+    readonly excType?: string,
+    billedUsd?: number,
+  ) {
+    super("hikerapi", message, exhausted, false, billedUsd);
+    this.name = "ProviderUnavailable";
+  }
+}
+
+/**
+ * Does HikerAPI charge for this response?
+ *
+ * Per its docs, responses with HTTP 200, 400, 403 and 404 are billable; 5xx are
+ * not, and 422 is a validation error answered before Instagram is called. A
+ * 200 can still be a soft failure (`status: false`), which is why this is keyed
+ * on the status the vendor answered rather than on our own success test.
+ */
+function billedFor(status: number): number | undefined {
+  return status === 200 || status === 400 || status === 403 || status === 404
+    ? usdPerCall()
+    : undefined;
+}
+
+/** One HTTP request. No retry — `getWithRetry` owns that decision. */
 async function get(
   path: string,
   params: Record<string, string> = {},
@@ -115,10 +287,75 @@ async function get(
       res.status === 402 ||
       res.status === 403 ||
       /credit|balance|quota|limit/i.test(message);
-    throw new ProviderUnavailable("hikerapi", message, exhausted);
+    throw new HikerHttpError(
+      message,
+      exhausted,
+      res.status,
+      str(json.exc_type),
+      billedFor(res.status),
+    );
   }
 
   return { data: unwrap(json), usd: usdPerCall() };
+}
+
+/**
+ * One retry for a transient failure, never for a 4xx.
+ *
+ * A 500 "Instagram did not respond" is usually the scrape being throttled and
+ * the same read succeeds a second later. A 404/422 will answer the same way
+ * forever, and a 402/403 means the balance is gone — retrying either only
+ * spends more of the founder's money.
+ */
+const realSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The pause is a seam, not a constant, so tests can prove the retry happens
+ * without spending 800 ms of wall clock per failure. Production always uses
+ * the real timer below; `setRetrySleepForTests(undefined)` restores it.
+ */
+let retrySleep: (ms: number) => Promise<void> = realSleep;
+
+export function setRetrySleepForTests(
+  sleep?: (ms: number) => Promise<void>,
+): void {
+  retrySleep = sleep ?? realSleep;
+}
+
+async function getWithRetry(
+  path: string,
+  params: Record<string, string> = {},
+): Promise<{ data: Record<string, unknown>; usd: number }> {
+  try {
+    return await get(path, params);
+  } catch (err) {
+    if (!(err instanceof HikerHttpError)) throw err;
+    const transient =
+      err.status >= 500 ||
+      (err.excType === "InstagramServerError" && err.status < 400);
+    if (!transient) throw err;
+    await retrySleep(800);
+    return get(path, params);
+  }
+}
+
+/**
+ * Name the handle on a 404. "Not found" alone leaves the creator wondering
+ * whether the app broke or the handle is wrong; the review focus asks for a
+ * clear error and no invented rows.
+ */
+function withHandle(err: unknown, handle: string): Error {
+  if (err instanceof HikerHttpError && err.status === 404) {
+    return new ProviderUnavailable(
+      "hikerapi",
+      `@${handle} not found on Instagram`,
+      false,
+      false,
+      err.billedUsd,
+    );
+  }
+  return err as Error;
 }
 
 /**
@@ -145,6 +382,69 @@ function firstUrl(...candidates: unknown[]): string | undefined {
   return undefined;
 }
 
+/** Instagram reels only: the product's rows are clips, not feed photos. */
+function isClip(media: Record<string, unknown>): boolean {
+  return str(media.product_type) === "clips";
+}
+
+/**
+ * A media object, whether the endpoint wrapped it as `{ media: {...} }`
+ * (`/v2/user/clips`) or returned it directly.
+ */
+function asMedia(item: Record<string, unknown>): Record<string, unknown> {
+  const inner = obj(item.media);
+  return hasKeys(inner) ? inner : item;
+}
+
+/** Media list from whichever envelope the endpoint returned. */
+function mediaList(data: Record<string, unknown>): Record<string, unknown>[] {
+  return arr(data.items ?? data.medias ?? data.media ?? data).map(asMedia);
+}
+
+/**
+ * The search shelf is triple-nested:
+ * `reels_serp_modules[].clips[].media`. Flattening here keeps the caller from
+ * depending on the module type or the page shape.
+ */
+function searchMedia(data: Record<string, unknown>): Record<string, unknown>[] {
+  const modules = arr(data.reels_serp_modules);
+  if (!modules.length) return mediaList(data);
+  return modules.flatMap((module) => arr(obj(module).clips).map(asMedia));
+}
+
+/**
+ * Follower rows out of `/v1/user/followers/chunk`.
+ *
+ * The live body is an array of chunk lists (`[[follower, …], …]`); a wrapper
+ * (`{response: [...]}`) is accepted too so a vendor rename cannot silently turn
+ * the sample into zero rows. Every chunk is read because the recorded response
+ * really carried more than one, and rows are de-duplicated: a chunk boundary
+ * must never count the same person twice.
+ */
+function followerRows(data: Record<string, unknown>): Record<string, unknown>[] {
+  const inner = Array.isArray(data)
+    ? (data as unknown[])
+    : Array.isArray((data as { response?: unknown }).response)
+      ? ((data as { response: unknown[] }).response)
+      : [];
+
+  const rows: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const chunk of inner) {
+    if (!Array.isArray(chunk)) continue;
+    for (const item of chunk) {
+      const row = obj(item);
+      const username = str(row.username);
+      if (!username) continue;
+      const key = idStr(row.pk) ?? idStr(row.id) ?? username.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
 /** One Instagram media object -> the unified row `fromUnified()` reads. */
 function toUnified(
   media: Record<string, unknown>,
@@ -152,7 +452,10 @@ function toUnified(
 ): Record<string, unknown> | null {
   const user = obj(media.user ?? media.owner ?? media.author);
   const code =
-    str(media.code) ?? str(media.shortcode) ?? str(media.pk) ?? str(media.id);
+    str(media.code) ??
+    str(media.shortcode) ??
+    idStr(media.pk) ??
+    idStr(media.id);
   if (!code) return null;
 
   const caption = obj(media.caption);
@@ -164,13 +467,13 @@ function toUnified(
   const commentCount = num(
     media.comment_count ?? media.comments_count ?? obj(media.edge_media_to_comment).count,
   );
-  const playCount = num(
-    media.play_count ??
-      media.view_count ??
-      media.video_view_count ??
-      media.video_play_count ??
-      media.ig_play_count,
-  );
+  /**
+   * `play_count` is the number the live reel endpoint reports (and equals
+   * `ig_play_count`). It is deliberately the only field read here: a reel whose
+   * play_count is missing must read as "no views known" (0), not silently take
+   * a different, possibly unrepresentative counter such as view_count.
+   */
+  const playCount = num(media.play_count);
   const takenAt =
     media.taken_at ??
     media.taken_at_timestamp ??
@@ -187,17 +490,27 @@ function toUnified(
     firstUrl(media.video_versions) ??
     firstUrl(stills);
 
-  /** Audio: HikerAPI exposes it as `music_metadata` on newer endpoints. */
+  /**
+   * Audio: on a reel the useful data lives in
+   * `clips_metadata.original_sound_info` and `clips_metadata.music_info`;
+   * `music_metadata` is null on the live clips response. `music_canonical_id`
+   * is top-level and works as the stable audio id.
+   */
+  const clipsMeta = obj(media.clips_metadata);
+  const originalSound = obj(clipsMeta.original_sound_info);
   const music = obj(media.music_metadata ?? media.music ?? media.audio);
+  const musicInfo = obj(clipsMeta.music_info ?? music.music_info);
   const musicId =
-    str(media.music_canonical_id) ??
-    str(media.audio_id) ??
-    str(obj(music.audio_asset_id).id) ??
-    str(music.id);
+    idStr(media.music_canonical_id) ??
+    idStr(clipsMeta.music_canonical_id) ??
+    idStr(media.audio_id) ??
+    idStr(originalSound.audio_asset_id) ??
+    idStr(music.audio_asset_id) ??
+    idStr(music.id);
   const track =
-    str(obj(music.music_info).title) ??
+    str(musicInfo.title) ??
+    str(originalSound.original_audio_title) ??
     str(music.title) ??
-    str(obj(music.original_audio_title).title) ??
     str(media.audio_title);
 
   const hashtags = Array.isArray(media.hashtags)
@@ -205,6 +518,12 @@ function toUnified(
     : undefined;
 
   return {
+    /**
+     * Stamped here as well as in the harvester: this adapter only ever speaks
+     * Instagram, and the plan's rule is that no row can drift to another
+     * platform. `harvest.fromUnified()` ignores the extra key.
+     */
+    platform: "instagram",
     post: {
       id: code,
       url: `https://www.instagram.com/reel/${code}/`,
@@ -217,14 +536,13 @@ function toUnified(
       },
       author: {
         username: str(user.username) ?? authorHint?.username,
-        followers: num(user.follower_count ?? obj(media.user).follower_count) ||
-          authorHint?.followers,
+        followers: num(user.follower_count) || authorHint?.followers,
       },
       engagement: {
         views: playCount,
         likes: likeCount,
         comments: commentCount,
-        shares: num(media.share_count) || undefined,
+        shares: num(media.reshare_count) || num(media.share_count) || undefined,
         saves: num(media.save_count) || undefined,
       },
       ext: {
@@ -235,13 +553,6 @@ function toUnified(
       },
     },
   };
-}
-
-/** Media list from whichever envelope the endpoint returned. */
-function mediaRows(data: Record<string, unknown>): Record<string, unknown>[] {
-  return arr(
-    data.items ?? data.medias ?? data.media ?? data.response ?? data.data,
-  );
 }
 
 export const hikerapi: DataProvider = {
@@ -265,68 +576,212 @@ export const hikerapi: DataProvider = {
   configured: () => Boolean(key()),
 
   /**
+   * First for every Instagram path — the plan's primary vendor.
+   *
+   * Explicit rather than price-led: Apify's next call can be free inside its
+   * monthly allowance while HikerAPI charges $0.02, and "cheapest next call"
+   * would then send Instagram search to a vendor that has no keyword search at
+   * all. The preference states the product decision instead of hoping the price
+   * table agrees with it.
+   */
+  preference: (p: string) => (/instagram/i.test(p) ? -3 : 0),
+
+  /**
    * Reels for an account: resolve the username to a pk, then read a page of
-   * media. Two calls ($0.002) against SocialCrawl's one credit ($0.0076) — and
-   * the profile call also yields a real follower count, which the old pipeline
-   * could only guess from reel payloads.
+   * clips. Two calls ($0.04 at the Start rate) and the profile call also yields
+   * a real follower count, which the old pipeline could only guess from reel
+   * payloads.
+   *
+   * If the clips tab is empty (a creator with no reels, or a private account)
+   * the media tab is read once and filtered to clips, so a reel that Instagram
+   * did not put on the tab is not lost. It costs a third call only in that
+   * empty case.
    */
   async profileReels(handle: string): Promise<PullResult> {
     const clean = handle.replace(/^@/, "");
-    const prof = await get("/v2/user/by/username", { username: clean });
+    const prof = await getWithRetry("/v2/user/by/username", { username: clean }).catch(
+      (err) => {
+        throw withHandle(err, clean);
+      },
+    );
     const user = obj(prof.data.user ?? prof.data);
-    const pk = str(user.pk) ?? str(user.id) ?? str(user.user_id);
+    const pk = idStr(user.pk) ?? idStr(user.id) ?? idStr(user.user_id);
     if (!pk) {
       throw new ProviderUnavailable("hikerapi", `no pk for @${clean}`, false);
     }
     const followers = num(user.follower_count) || undefined;
 
-    const media = await get("/g2/user/medias", { user_id: pk });
-    const rows = mediaRows(media.data)
+    const clips = await getWithRetry("/v2/user/clips", { user_id: pk });
+    let media = mediaList(clips.data).filter(isClip);
+    let usd = prof.usd + clips.usd;
+    let units = 2;
+
+    if (!media.length) {
+      const fallback = await getWithRetry("/v2/user/medias", { user_id: pk });
+      media = mediaList(fallback.data).filter(isClip);
+      usd += fallback.usd;
+      units += 1;
+    }
+
+    const rows = media
       .map((m) => toUnified(m, { username: clean, followers }))
       .filter((r): r is Record<string, unknown> => Boolean(r));
 
+    return { data: { items: rows }, usd, units, remaining: null };
+  },
+
+  /**
+   * Keyword search through Instagram's own reel search.
+   *
+   * The phrase is sent exactly as typed — "kannada songs" and "कन्नड़ गाने"
+   * are both valid queries, and translating them to a hashtag first was both
+   * wrong and lossy. Only when the search returns zero rows does the old tag
+   * logic run (top media, then recent), because a dead phrase is more often a
+   * different spelling than a dead niche.
+   */
+  async searchReels(query: string): Promise<PullResult> {
+    const search = await getWithRetry("/v2/search/reels", { query });
+    let rows = searchMedia(search.data)
+      .filter(isClip)
+      .map((m) => toUnified(m))
+      .filter((r): r is Record<string, unknown> => Boolean(r));
+    let usd = search.usd;
+    let units = 1;
+
+    if (!rows.length) {
+      const tag = query.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (tag) {
+        const top = await getWithRetry("/v2/hashtag/medias/top", { name: tag });
+        rows = mediaList(top.data)
+          .filter(isClip)
+          .map((m) => toUnified(m))
+          .filter((r): r is Record<string, unknown> => Boolean(r));
+        usd += top.usd;
+        units += 1;
+
+        // A tag that yields nothing is usually a different spelling, not a dead
+        // niche; try recent before declaring the room empty.
+        if (!rows.length) {
+          const recent = await getWithRetry("/v2/hashtag/medias/recent", { name: tag });
+          rows = mediaList(recent.data)
+            .filter(isClip)
+            .map((m) => toUnified(m))
+            .filter((r): r is Record<string, unknown> => Boolean(r));
+          usd += recent.usd;
+          units += 1;
+        }
+      }
+    }
+
+    return { data: { items: rows }, usd, units, remaining: null };
+  },
+
+  /**
+   * Accounts matching a phrase — the cohort's other half.
+   *
+   * `/v2/search/accounts?query=` returns `{num_results, users[]}` with the
+   * handle, `is_private`, `is_verified` and `latest_reel_media` (epoch
+   * seconds). It does **not** carry a follower count: `social_context` is a
+   * rounded display string ("43.5K followers"), and treating that as the
+   * account's size would print a number nobody read. The size is bought later
+   * by `resolveOwnerFollowers`, which caches it for a week.
+   */
+  async searchAccounts(query: string): Promise<PullResult> {
+    const { data, usd } = await getWithRetry("/v2/search/accounts", { query });
+    const users = arr(data.users)
+      .map((u) => {
+        const username = str(u.username);
+        if (!username) return null;
+        const latest = num(u.latest_reel_media);
+        return {
+          username,
+          private: Boolean(u.is_private),
+          verified: Boolean(u.is_verified),
+          /** ms since epoch, or undefined when Instagram reports no activity */
+          lastActiveAt: latest > 0 ? latest * 1000 : undefined,
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => Boolean(u));
+
+    if (!users.length) {
+      throw new ProviderUnavailable(
+        "hikerapi",
+        `Instagram account search returned nothing for "${query}"`,
+        false,
+      );
+    }
+
+    return { data: { users }, usd, units: 1, remaining: null };
+  },
+
+  /**
+   * A sample of an account's followers, for the bot-to-real estimate.
+   *
+   * `/v1/user/followers/chunk?user_id=` bills one request and answers with an
+   * array of chunks. The recorded response's second element is empty, so there
+   * is no cursor to continue from; inventing one would spend money on a guess.
+   * The method therefore makes one request per sample, honours the page cap as
+   * a ceiling for any future paging, and returns every row the response
+   * actually carried.
+   */
+  async followersSample(userId: string, pages: number): Promise<PullResult> {
+    const clean = String(userId).trim();
+    if (!/^\d+$/.test(clean)) {
+      throw new ProviderUnavailable(
+        "hikerapi",
+        "a follower sample needs a numeric Instagram user id",
+        false,
+      );
+    }
+    const requested = Math.max(1, Math.floor(Number(pages) || 1));
+
+    const { data, usd } = await getWithRetry("/v1/user/followers/chunk", {
+      user_id: clean,
+    });
+
+    const followers = followerRows(data).map((row) => ({
+      username: str(row.username) ?? "",
+      full_name: str(row.full_name) ?? "",
+      is_private: Boolean(row.is_private),
+      is_verified: Boolean(row.is_verified),
+      profile_pic_url: str(row.profile_pic_url),
+    }));
+
     return {
-      data: { items: rows },
-      usd: prof.usd + media.usd,
-      units: 2,
+      data: {
+        followers,
+        pagesRead: followers.length ? 1 : 0,
+        pagesRequested: requested,
+      },
+      usd,
+      units: 1,
       remaining: null,
     };
   },
 
   /**
-   * Keyword search has no direct equivalent: Instagram exposes no public
-   * keyword->reels endpoint. Translating the phrase into a hashtag is the
-   * closest honest mapping (spaces removed, which is how the tag would be
-   * written), then reading the tag's top media for real view counts.
+   * Refused honestly, and for free.
    *
-   * Two calls. A multi-word phrase becomes one tag, so the room is narrower
-   * than SocialCrawl's relevance search — the router treats a thin result as
-   * "this vendor found little" rather than "this niche is empty".
+   * `/gql/user/related/profiles` is the endpoint, and `id` is its parameter
+   * (a `user_id`-only request is a 422 asking for `id`). Probed live three
+   * times on 2026-11-03 with the account's real id and every answer was HTTP
+   * 500 `InstagramServerError` ("Instagram did not respond"). Charging a call
+   * for a known-broken path on every plan would be worse than not offering it,
+   * so this reports a capability gap (`unsupported: true`) and the router moves
+   * to Apify, whose details payload carries the same list.
+   *
+   * The method exists rather than being omitted because omission would hide the
+   * gap: the router would silently treat HikerAPI as incapable and the reason
+   * would never reach the report. Re-implement the call here once the endpoint
+   * stops returning 500.
    */
-  async searchReels(query: string): Promise<PullResult> {
-    const tag = query.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (!tag) {
-      throw new ProviderUnavailable("hikerapi", "no searchable tag in phrase", false);
-    }
-    const first = await get("/v2/hashtag/medias/top", { name: tag });
-    let rows = mediaRows(first.data)
-      .map((m) => toUnified(m))
-      .filter((r): r is Record<string, unknown> => Boolean(r));
-    let usd = first.usd;
-    let units = 1;
-
-    // A tag that yields nothing is usually a different spelling, not a dead
-    // niche; try recent before declaring the room empty.
-    if (!rows.length) {
-      const recent = await get("/v2/hashtag/medias/recent", { name: tag });
-      rows = mediaRows(recent.data)
-        .map((m) => toUnified(m))
-        .filter((r): r is Record<string, unknown> => Boolean(r));
-      usd += recent.usd;
-      units += 1;
-    }
-
-    return { data: { items: rows }, usd, units, remaining: null };
+  async relatedProfiles(handle: string): Promise<PullResult> {
+    throw new ProviderUnavailable(
+      "hikerapi",
+      `similar accounts for @${handle.replace(/^@/, "")} are unavailable on HikerAPI (HTTP 500 on /gql/user/related/profiles)`,
+      false,
+      true,
+    );
   },
 
   async post(url: string): Promise<PullResult> {
@@ -334,32 +789,67 @@ export const hikerapi: DataProvider = {
     if (!code) {
       throw new ProviderUnavailable("hikerapi", `no media code in ${url}`, false);
     }
-    const { data, usd } = await get("/v2/media/info/by/code", { code });
-    const media = obj(data.media ?? data);
+    const { data, usd } = await getWithRetry("/v2/media/info/by/code", { code });
+    const media = mediaOf(data);
     const row = toUnified(media);
     if (!row) {
       throw new ProviderUnavailable("hikerapi", "post payload unreadable", false);
     }
 
     /**
-     * Comments arrive on a separate endpoint. They are valuable (what the
-     * audience asks) but not worth a second call per post for the core plan,
-     * so the same endpoint is read only when `HIKERAPI_COMMENTS=1`.
+     * Comments are core to the plan ("what people asked for"), so the post
+     * read fetches them by default: this is the second call of a post pull and
+     * adds one call (+$0.02 at the Start rate). `HIKERAPI_COMMENTS=0` turns it
+     * off for a caller that only wants the post itself.
+     *
+     * Live verification (2026-11-03): `/v2/media/comments?id=<media id>` works
+     * and returns `response.comments`. The parameter is `id`; `media_id` is a
+     * 422, and the value is the media's `id` (`<pk>_<owner>`), not the code.
+     *
+     * The live media-info payload wraps the media in `media_or_ad`, and that is
+     * where this used to lose `id`: the adapter treated the wrapper as the post
+     * and skipped comments on every read. `mediaOf` unwraps it now. If a future
+     * payload still has no usable id, the shortcode decodes to the exact pk and
+     * `user.pk` supplies the owner — never the parsed `pk` number, which is
+     * already rounded above 2^53.
      */
-    if (process.env.HIKERAPI_COMMENTS === "1") {
+    const commentsMediaId = commentsIdFor(media, code);
+    if (process.env.HIKERAPI_COMMENTS !== "0" && !commentsMediaId) {
+      warnCommentsOnce(
+        "comments enabled but no usable media id; comments skipped for this run",
+      );
+    }
+    if (process.env.HIKERAPI_COMMENTS !== "0" && commentsMediaId) {
       try {
-        const c = await get("/v1/media/comments/chunk", { media_id: code });
-        const list = arr(c.data.items ?? c.data.comments ?? c.data);
+        const c = await get("/v2/media/comments", { id: commentsMediaId });
+        const list = arr(c.data.comments ?? c.data.items ?? c.data);
         const post = obj(row.post);
-        post.top_comments = list.slice(0, 20).map((x) => ({
-          text: str(x.text) ?? "",
-          likes: num(x.like_count ?? x.likes),
-          username: str(obj(x.user).username) ?? str(x.username),
-          published_at: x.created_at ?? x.taken_at,
-        }));
+        /**
+         * `post.ext.top_comments`, not `post.top_comments`.
+         *
+         * `fetchInstagramPost` reads the vendor-neutral envelope
+         * (`post.ext.top_comments`) that every other adapter writes and that
+         * SocialCrawl's own payload uses. Writing one level higher meant the
+         * comments were bought, parsed and then silently dropped: the plan's
+         * "what people asked for" section was empty on a pull that had them.
+         */
+        const ext = obj(post.ext);
+        post.ext = {
+          ...ext,
+          top_comments: list.slice(0, 20).map((x) => ({
+            text: str(x.text) ?? "",
+            likes: num(x.comment_like_count ?? x.like_count ?? x.likes),
+            author: str(obj(x.user).username) ?? str(x.username),
+            published_at: x.created_at ?? x.taken_at,
+          })),
+        };
         return { data: row, usd: usd + c.usd, units: 2, remaining: null };
       } catch {
-        /* comments are optional: the post itself already succeeded */
+        /* Comments are optional: the post itself already succeeded. Say so
+           once per run rather than swallowing the degradation silently. */
+        warnCommentsOnce(
+          "comments call failed; the post was still read and comments were skipped for this run",
+        );
       }
     }
 
@@ -368,16 +858,22 @@ export const hikerapi: DataProvider = {
 
   async profile(handle: string): Promise<PullResult> {
     const clean = handle.replace(/^@/, "");
-    const { data, usd } = await get("/v1/user/by/username", { username: clean });
+    const { data, usd } = await getWithRetry("/v2/user/by/username", {
+      username: clean,
+    }).catch((err) => {
+      throw withHandle(err, clean);
+    });
     const user = obj(data.user ?? data);
-    if (!user.username && !user.follower_count) {
+    if (!user.username && user.follower_count == null) {
       throw new ProviderUnavailable("hikerapi", `@${clean} not found`, false);
     }
     return {
       data: {
         user: {
           username: str(user.username) ?? clean,
+          pk: idStr(user.pk) ?? idStr(user.id),
           follower_count: num(user.follower_count),
+          is_private: Boolean(user.is_private),
           media_count: num(user.media_count),
           biography: str(user.biography),
           category: str(user.category) ?? str(user.business_category),

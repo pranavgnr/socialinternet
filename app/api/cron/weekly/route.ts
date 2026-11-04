@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { runCron } from "@/lib/cron";
 import { listAccounts, mondayOf, runWeekly, storeAt, dataRoot } from "@/lib/weekly";
 
 export const maxDuration = 800;
 
 /**
- * GET /api/cron/weekly?secret=…  (or header `x-cron-secret`)
+ * GET /api/cron/weekly  (header `x-cron-secret` only)
  *
  * The Monday job: for every account that has ever had a plan, re-read it and
  * record what changed. Nothing here is free — each account is a real pull — so
@@ -15,20 +16,7 @@ export const maxDuration = 800;
  * other creators their Monday.
  */
 async function run(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json(
-      { ok: false, error: "Set CRON_SECRET to enable the weekly job." },
-      { status: 503 },
-    );
-  }
-
   const url = new URL(req.url);
-  const given = req.headers.get("x-cron-secret") ?? url.searchParams.get("secret") ?? "";
-  if (given !== secret) {
-    return NextResponse.json({ ok: false, error: "Bad secret." }, { status: 401 });
-  }
-
   const week = mondayOf();
   const cap = Number(process.env.WEEKLY_MAX ?? 3);
   const forceWeek = url.searchParams.get("force") === "1";
@@ -74,9 +62,9 @@ async function run(req: Request) {
 }
 
 export async function GET(req: Request) {
-  return run(req);
+  return runCron(req, "weekly job", () => run(req), { dynamic: true });
 }
 
 export async function POST(req: Request) {
-  return run(req);
+  return runCron(req, "weekly job", () => run(req));
 }

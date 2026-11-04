@@ -1,0 +1,78 @@
+# Local and VPS parity for Creators 101.
+#
+#   cp .env.example .env.production        # fill in secrets
+#   docker compose up -d --build           # managed/external DATABASE_URL
+#   docker compose --profile local-db up -d --build   # bundled Postgres
+#
+# `web` runs on http://localhost:3000. `migrate` applies db/migrations once
+# before `web` starts. The `db` service is optional and only starts with the
+# `local-db` profile: leave DATABASE_URL pointing at it for a laptop run, or
+# point DATABASE_URL at the managed Postgres (Supabase's Mumbai pooler for
+# production). See docs/deploy.md.
+
+x-app: &app
+  build:
+    context: .
+  image: creators101-web:local
+  env_file:
+    - .env.production
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16
+    # Optional: only needed for a laptop run. A VPS uses the managed
+    # DATABASE_URL and starts Compose without the `local-db` profile.
+    profiles: ["local-db"]
+    environment:
+      POSTGRES_USER: creators
+      POSTGRES_PASSWORD: creators
+      POSTGRES_DB: creators101
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U creators -d creators101"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # One-shot: applies db/migrations/*.sql and exits. `web` waits for it to
+  # finish. Run with `docker compose run --rm migrate` to migrate by hand.
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["npm", "run", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+
+  web:
+    <<: *app
+    ports:
+      - "3000:3000"
+    environment:
+      # Compose passes these through; the rest come from .env.production.
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      # Override in .env.production if you keep JSON plans elsewhere.
+      CREATORS_DATA_DIR: /app/data
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # /api/status answers ok even when some vendors are unconfigured; a
+      # non-200 means the server itself is not serving.
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:3000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  app_data:
+  db_data:

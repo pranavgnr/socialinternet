@@ -10,8 +10,10 @@ import {
 import { buildAudit, hookVerdict } from "./audit";
 import { times } from "./fmt";
 import { cachedCommentsByUrl, mineComments, normaliseUrl } from "./comments";
+import { dataPath } from "./dataDir";
 import { enrich, pickForEnrichment, type EnrichReport } from "./enrich";
 import { buildNextMove } from "./nextMove";
+import { hoursFromEnv } from "./env";
 import {
   harvestAccountReels,
   harvestInstagramAccount,
@@ -25,12 +27,14 @@ import { cohortFitness, pruneCohort } from "./cohort";
 import { instagramPeers } from "./peers";
 import { languageName, readLanguage } from "./lang";
 import { coherentLabel, labelFromCaptions, nicheQuality, normaliseNiche } from "./nicheLabel";
+import { plain } from "./plain";
 import { buildPlay, topSongTitle } from "./playbook";
 import { buildRows, fmt, median, medianGapDays, peersMedian, titleCase } from "./stats";
 import { contentWords } from "./text";
 import type {
   CohortFit,
   GrowthPlan,
+  PlanCompetitor,
   PlanFormat,
   PlanHook,
   PlanGap,
@@ -54,8 +58,24 @@ import type {
  *    (lib/playbook.ts).
  */
 
-const HANDLE_DIR = path.join(process.cwd(), "data", "handles");
-const HANDLE_TTL_HOURS = 12;
+/**
+ * Where handle reads live.
+ *
+ * Resolved per call through the shared data root, so `CREATORS_DATA_DIR` points
+ * the whole data layer at one directory. Before this the handle directory
+ * ignored it and a live run from a worktree wrote its handle reads under the
+ * worktree while the shared preview read the other directory — the plan rebuilt
+ * on every open and the warmed cache was never the one served.
+ */
+export function handleDir(): string {
+  return dataPath("handles");
+}
+/**
+ * How long a handle read stays fresh. Read per call rather than captured at
+ * import, so a test (or a restart-free `.env.local` change) can move it. Empty,
+ * invalid, zero and negative values fall back to twelve hours.
+ */
+const handleTtlHours = (): number => hoursFromEnv("HANDLE_CACHE_HOURS", 12);
 const MAX_COHORT_ACCOUNTS = 40;
 
 /**
@@ -160,7 +180,7 @@ async function readHandle(
 ): Promise<StoredHandle | null> {
   try {
     const raw = await fs.readFile(
-      path.join(HANDLE_DIR, `${handleKey(handle, platform)}.json`),
+      path.join(handleDir(), `${handleKey(handle, platform)}.json`),
       "utf8",
     );
     const parsed = JSON.parse(raw) as StoredHandle;
@@ -184,10 +204,19 @@ async function readHandle(
   }
 }
 
-async function writeHandle(value: StoredHandle): Promise<void> {
-  await fs.mkdir(HANDLE_DIR, { recursive: true });
+/**
+ * Persist one handle record. `platform` is required, not optional.
+ *
+ * Leaving it out is not a cosmetic omission: `handleKey` files a YouTube read
+ * under `<slug>--yt`, so a record written without the field lands in the bare
+ * Instagram slot and is then rejected by `readHandle(..., "youtube")` forever.
+ * The type makes that mistake a compile error instead of a permanent cache miss.
+ */
+async function writeHandle(value: StoredHandle & { platform: Platform }): Promise<void> {
+  const dir = handleDir();
+  await fs.mkdir(dir, { recursive: true });
   const target = path.join(
-    HANDLE_DIR,
+    dir,
     `${handleKey(value.handle, value.platform ?? "instagram")}.json`,
   );
   const tmp = `${target}.tmp`;
@@ -255,7 +284,7 @@ async function cachedProfile(
     /* Only write back onto a handle file that already exists — writing one here
        would create an empty-reel record that pullOwn would later trust. */
     if (stored) {
-      await writeHandle({ ...stored, profile: fresh, profileAt: new Date().toISOString() });
+      await writeHandle({ ...stored, platform, profile: fresh, profileAt: new Date().toISOString() });
     }
     return fresh;
   } catch {
@@ -268,10 +297,9 @@ export interface OwnPull {
   /** The network this feed was actually read from. */
   platform: Platform;
   /**
-   * Set when the caller named no platform and Instagram could not be read, so
-   * the channel of the same name was used instead. The plan says so out loud:
-   * a creator who typed an Instagram handle must never be shown YouTube numbers
-   * as their own without being told which network was measured.
+   * Retained for compatibility with older callers; the automatic fallback that
+   * used to set it has been removed. A plan never builds itself from another
+   * network's channel now, so this should always be undefined for a fresh read.
    */
   fellBackFrom?: Platform;
   reels: RawReel[];
@@ -294,7 +322,7 @@ export async function pullOwn(
     ? (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5
     : Infinity;
 
-  if (!force && stored && ageHours < HANDLE_TTL_HOURS) {
+  if (!force && stored && ageHours < handleTtlHours()) {
     return {
       handle: clean,
       platform,
@@ -307,24 +335,12 @@ export async function pullOwn(
   }
 
   /**
-   * The free YouTube reader always exists, so only the Instagram path can be
-   * missing a vendor — and saying which one is the difference between a creator
-   * who can fix it and one who is told to check their spelling.
-   */
-  if (platform !== "youtube" && !availableProviders().length) {
-    throw new Error(
-      "No Instagram data source is configured — add HIKERAPI_KEY, APIFY_TOKEN or SOCIALCRAWL_API_KEY.",
-    );
-  }
-
-  /**
-   * Read the network the handle actually lives on.
+   * Read the network the handle lives on.
    *
-   * This used to call the Instagram reader unconditionally, so a YouTube handle
-   * was answered with an Instagram error while the free YouTube reader sat
-   * unused beside it. `harvestAccountReels` also goes through the provider
-   * router, so a spent paid balance now falls through to the free reader
-   * instead of killing the build.
+   * The Instagram path names its platform through `harvestInstagramAccount`, so
+   * the router refuses ("No Instagram data source is available right now") rather
+   * than answering with a same-named YouTube channel. `harvestAccountReels` also
+   * goes through the provider router for an explicit YouTube read.
    */
   const reels =
     platform === "youtube"
@@ -350,6 +366,31 @@ export async function pullOwn(
     profileAt: stored?.profileAt,
   });
   return { handle: clean, platform, reels, cached: false };
+}
+
+/**
+ * Would this handle be read off disk rather than bought?
+ *
+ * The credit gate asks this before any pull, so a handle whose feed is already
+ * on disk and inside the TTL opens for free even for a stranger who has not
+ * signed in. Same test `pullOwn` applies when deciding to serve from disk — a
+ * stored feed inside the configured `HANDLE_CACHE_HOURS` window — so the answer
+ * here always agrees with what the pull would do. A deliberate refresh
+ * (`force: true`) is decided by the caller, not here: the gate refuses to treat
+ * a forced read as cached.
+ * With no platform named, Instagram is assumed — the same default `pullOwn`
+ * starts from.
+ */
+export async function handleIsCached(
+  handle: string,
+  platform: Platform = "instagram",
+): Promise<boolean> {
+  const clean = cleanHandle(handle);
+  if (!clean) return false;
+  const stored = await readHandle(clean, platform);
+  if (!stored) return false;
+  const ageHours = (Date.now() - new Date(stored.fetchedAt).getTime()) / 36e5;
+  return ageHours < handleTtlHours();
 }
 
 /* ------------------------------------------------------------------ *
@@ -565,12 +606,22 @@ function shapeMovedOn(guess: NicheGuess, archetype: ArchetypeGuess): boolean {
  * Without this the improved shape reading is worked out again on every build,
  * and — worse — the stale phrase stays on disk to be trusted by the next run.
  */
-async function rememberNiche(handle: string, guess: NicheGuess): Promise<void> {
+export async function rememberNiche(
+  handle: string,
+  guess: NicheGuess,
+  platform: Platform = "instagram",
+): Promise<void> {
   try {
-    const stored = await readHandle(handle);
+    /**
+     * Read the slot for the network the posts actually came from. The default
+     * is Instagram only for old callers; a YouTube handle read from the bare
+     * key misses or, worse, edits an unrelated Instagram record.
+     */
+    const stored = await readHandle(handle, platform);
     if (!stored) return;
     await writeHandle({
       ...stored,
+      platform,
       niche: guess.query,
       nicheSource: guess.source,
       nicheAt: new Date().toISOString(),
@@ -647,7 +698,22 @@ export interface PlanInput {
    * same whether they are the right size or not, and that difference is the
    * whole claim.
    */
-  peerRoom?: { basis: string; sizeMatched: boolean; accounts: number; band?: { low: number; high: number } };
+  peerRoom?: {
+    basis: string;
+    sizeMatched: boolean;
+    accounts: number;
+    band?: { low: number; high: number };
+    /**
+     * The peers module's own reasons, keyed by lower-cased handle.
+     *
+     * The profile page's competitor section prints "why this account was
+     * chosen", and those sentences are written next to the evidence in
+     * `lib/peers.ts` — "owns one of the top reels in this niche", "same
+     * language", "about your size". Re-deriving them later from a metric would
+     * invent a weaker claim, so they ride along with the room verdict.
+     */
+    reasons?: Record<string, string[]>;
+  };
 }
 
 /**
@@ -1216,6 +1282,52 @@ export function buildPlan({
         : undefined;
   if (roomNote) diagnosis.push(roomNote);
 
+  /**
+   * The top niche competitors the lead moves cite, kept so the profile page can
+   * show "3 next reel ideas" without a second vendor pull. Each entry is
+   * evidence — the competitor's handle, their winning reel's views, and why
+   * they were chosen — and the caption is the competitor's own words, never
+   * rewritten. Views come from the reel payload the research already holds.
+   */
+  const payloadViews = new Map(
+    (research.payload ?? []).map((r) => [r.url, r.views] as const),
+  );
+  /**
+   * The network each evidence reel was actually measured on. A competitor
+   * without a platform is not evidence for an Instagram profile, so the entry
+   * is skipped rather than defaulted to Instagram.
+   */
+  const payloadPlatforms = new Map(
+    (research.payload ?? []).map((r) => [r.url, r.platform] as const),
+  );
+  const competitors: PlanCompetitor[] = [];
+  for (const move of play.moves) {
+    for (const e of move.evidence) {
+      if (!e.url) continue;
+      const platform = payloadPlatforms.get(e.url);
+      if (!platform) continue;
+      const handle = e.handle.replace(/^@/, "");
+      if (handle.toLowerCase() === clean.toLowerCase()) continue;
+      if (competitors.some((c) => c.url === e.url)) continue;
+      const peerReasons = peerRoom?.reasons?.[handle.toLowerCase()];
+      competitors.push({
+        handle,
+        platform,
+        views: payloadViews.get(e.url) ?? 0,
+        url: e.url,
+        caption: e.caption ?? move.title,
+        // Prefer the peers module's own reasons ("owns one of the top reels in
+        // this niche", "same language"); fall back to the metric that put the
+        // reel on the page when this account came from the room rather than
+        // the peer builder.
+        reasons:
+          peerReasons?.length ? peerReasons.map((r) => plain(r)) : [plain(e.metric)],
+      });
+      if (competitors.length >= 3) break;
+    }
+    if (competitors.length >= 3) break;
+  }
+
   return {
     language:
       research.language.dropped || evidence
@@ -1312,6 +1424,14 @@ export function buildPlan({
     moves: play.moves,
     questions: [],
     audit: audit ?? undefined,
+    /**
+     * The account's own reels actually read, retained so the profile page can
+     * show top-3/bottom-3 reels and the likes/comment ratios from posts that
+     * were really measured. Kept on the plan (rather than only in the handle
+     * cache) so a saved plan is self-contained for the profile render.
+     */
+    reels: mineReels,
+    competitors: competitors.length ? competitors : undefined,
     nextMove: buildNextMove({
       plan: { handle: clean, moves: play.moves, standing: {
         followers, medianViews: ownMedian, bestViews: ownBest,
@@ -1376,41 +1496,22 @@ const VERDICT_RANK: Record<CohortFit["verdict"], number> = {
 };
 
 /**
- * Read the account from the network it lives on, and say so when that turned
- * out to be a different one than the caller assumed.
+ * Read the account from the network it lives on.
  *
- * The rule when no platform was named: try Instagram first, because that is the
- * product's primary source and the only network where a typed handle is
- * unambiguous to most creators. Fall back to YouTube *only* when Instagram
- * genuinely could not be read and a channel of that name exists — then the
- * whole plan is built from the channel, and `fellBackFrom` makes the plan say it
- * out loud instead of quietly printing YouTube numbers under an Instagram name.
+ * Instagram is the default and the only network the UI asks for. When a caller
+ * names a platform, that network is read; otherwise the handle is an Instagram
+ * handle, full stop. There is deliberately no "try Instagram, then YouTube"
+ * fallback here: a same-named channel is a different creator, and using one for
+ * the other installs a stranger's numbers as the creator's own baseline.
+ * YouTube remains callable only through an explicit `platform: "youtube"`,
+ * which no UI does.
  */
-async function readOwnAccount(
+export async function readOwnAccount(
   handle: string,
   force: boolean,
   platform?: Platform,
 ): Promise<OwnPull> {
-  if (platform) return pullOwn(handle, force, platform);
-
-  let instagramError: unknown = null;
-  try {
-    return await pullOwn(handle, force, "instagram");
-  } catch (err) {
-    instagramError = err;
-  }
-
-  /**
-   * A channel of the same name is only worth trusting as *this* creator when it
-   * has an audience. Without a floor, any handle with no Instagram account fell
-   * through to a 435-subscriber squatter and printed their numbers as yours.
-   */
-  const channel = await fetchYouTubeProfile(handle).catch(() => null);
-  if (!channel?.followers || channel.followers < 1000) throw instagramError;
-
-  const own = await pullOwn(handle, force, "youtube");
-  own.fellBackFrom = "instagram";
-  return own;
+  return pullOwn(handle, force, platform ?? "instagram");
 }
 
 export async function analyseHandle(
@@ -1451,7 +1552,7 @@ export async function analyseHandle(
         });
 
   /** Keep the corrected phrase, so the improved reading is not recomputed. */
-  if (stale) await rememberNiche(own.handle, guess);
+  if (stale) await rememberNiche(own.handle, guess, own.platform);
 
   /**
    * Last gate before the phrase is allowed to pick a cohort: it has to be a
@@ -1588,6 +1689,8 @@ export async function analyseHandle(
         followers: account?.followers,
         related: account?.related,
         query,
+        /** already bought for the niche: their owners are free candidates */
+        reels: base.payload ?? [],
       });
       if (!peers.reels.length) {
         dbg("rebuild FAILED (no reels)", query, peers.errors.slice(0, 2));
@@ -1621,6 +1724,12 @@ export async function analyseHandle(
         sizeMatched: peers.sizeMatched,
         accounts: peers.accounts.length,
         band: peers.band,
+        reasons: Object.fromEntries(
+          peers.accounts.map((account) => [
+            account.handle.toLowerCase(),
+            account.reasons,
+          ]),
+        ),
       };
       dbg("rebuild OK", query, "peerReels", peers.reels.length, "accounts", peers.accounts.map((a) => a.handle).join(","), "shaped", rebuilt.payload?.length);
       return rebuilt;
@@ -1769,7 +1878,7 @@ export async function analyseHandle(
         guess.query = fallback;
         guess.source = "shape";
         nicheFit = recheck;
-        await rememberNiche(own.handle, guess);
+        await rememberNiche(own.handle, guess, own.platform);
       } else {
         nicheNext = fallback;
         guess.next = fallback;
@@ -1833,7 +1942,8 @@ export async function analyseHandle(
     await writeHandle({
       fetchedAt: new Date().toISOString(),
       handle: own.handle,
-      reels: own.reels,
+      platform: own.platform,
+      reels: ownReels,
       niche: storedNiche,
       nicheSource: storedSource,
       nicheAt: new Date().toISOString(),

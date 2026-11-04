@@ -1,0 +1,839 @@
+{
+  "status": "ok",
+  "has_more": true,
+  "page_index": 12,
+  "reels_serp_modules": [
+    {
+      "module_type": "clips",
+      "clips": [
+        {
+          "media": {
+            "id": "3956274275812303258_50209521143",
+            "music_metadata": null,
+            "taken_at": 1785844713,
+            "pk": 3956274275812303400,
+            "product_type": "clips",
+            "save_count": 1000,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQO2komiDVGzbv8PTom-WqFwM9Sm1bBkNjobk0fob_TIdNlpfMaJTQmeVwelyoJ0B084JQwMhGqK4MVDAS5HzJT4FEtrByG7dikNJhQ.mp4",
+                "width": 716,
+                "height": 1274,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQO2komiDVGzbv8PTom-WqFwM9Sm1bBkNjobk0fob_TIdNlpfMaJTQmeVwelyoJ0B084JQwMhGqK4MVDAS5HzJT4FEtrByG7dikNJhQ.mp4",
+                "width": 716,
+                "height": 1274,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQO2komiDVGzbv8PTom-WqFwM9Sm1bBkNjobk0fob_TIdNlpfMaJTQmeVwelyoJ0B084JQwMhGqK4MVDAS5HzJT4FEtrByG7dikNJhQ.mp4",
+                "width": 716,
+                "height": 1274,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.82787-15/763333795_18080182340673144_574700107629115329_n.jpg",
+                  "width": 540,
+                  "height": 960
+                }
+              ]
+            },
+            "reshare_count": 2351,
+            "clips_metadata": {
+              "music_canonical_id": "18478333873109222",
+              "original_sound_info": {
+                "audio_asset_id": 27794653480143850,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "mrkannadiga.256",
+                  "pk": 50209521143,
+                  "id": "50209521143",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 3,
+            "caption": {
+              "text": "🎬 Romeo (2012) is a Kannada romantic comedy-drama directed by P. C. Shekar, starring Ganesh and Bhavana. The film tells a heartwarming story of love, hope, second chances, and the power of never giving up on the people you care about.\n\nThe story follows Romeo (Ganesh), a cheerful and fun-loving young man whose life changes after he meets Pooja (Bhavana), a woman struggling with painful memories from her past. Determined to bring happiness back into her life, Romeo stands by her through every challenge, hoping to heal her emotional wounds with kindness, patience, and unconditional love.\n\nAs the story unfolds, misunderstandings, emotional struggles, and unexpected situations put their relationship to the test. Despite every obstacle, Romeo never loses hope and continues to fight for love, proving that true affection can overcome even the deepest pain.\n\nThe film beautifully blends romance, comedy, emotion, and family values. With Ganesh's charming performance, heartfelt moments, soulful songs, and engaging storytelling, Romeo remains one of Golden Star Ganesh's most loved romantic entertainers. ❤️🎶✨"
+            },
+            "comment_count": 7,
+            "play_count": 176879,
+            "ig_play_count": 176879,
+            "video_duration": 38.85900115966797,
+            "user": {
+              "username": "mrkannadiga.256",
+              "pk": 50209521143,
+              "id": "50209521143",
+              "is_verified": false
+            },
+            "code": "Dbngn4bzuGa",
+            "device_timestamp": 13283000430483
+          }
+        },
+        {
+          "media": {
+            "id": "3966826009989868934_75926418084",
+            "music_metadata": null,
+            "taken_at": 1787102572,
+            "pk": 3966826009989869000,
+            "product_type": "clips",
+            "save_count": 14916,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNSgZhysYhfAILzk99gTdMyz7PoS7Kj6QZLd3FAUCf9vR-0WSLpJ9uTrZ8gxnKZwVH3tUneUyU3J4D6xiKMEl04bPtH5B_TqEl4x08.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNSgZhysYhfAILzk99gTdMyz7PoS7Kj6QZLd3FAUCf9vR-0WSLpJ9uTrZ8gxnKZwVH3tUneUyU3J4D6xiKMEl04bPtH5B_TqEl4x08.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNSgZhysYhfAILzk99gTdMyz7PoS7Kj6QZLd3FAUCf9vR-0WSLpJ9uTrZ8gxnKZwVH3tUneUyU3J4D6xiKMEl04bPtH5B_TqEl4x08.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.82787-15/780374471_17905751346530085_4856276853929676017_n.jpg",
+                  "width": 750,
+                  "height": 1333
+                }
+              ]
+            },
+            "reshare_count": 12856,
+            "clips_metadata": {
+              "music_canonical_id": "18628404217032616",
+              "original_sound_info": {
+                "audio_asset_id": 27647204368303332,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "payaniga_nb_",
+                  "pk": 15245705950,
+                  "id": "15245705950",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 161082,
+            "caption": {
+              "text": "💀❤️‍🔥📈\n.\n.\n.\n.\n#kannada #instagram #kannadasong #viral #fyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+            },
+            "comment_count": 94,
+            "play_count": 1982012,
+            "ig_play_count": 1982012,
+            "video_duration": 23.101999282836914,
+            "user": {
+              "username": "randomclicks.__",
+              "pk": 75926418084,
+              "id": "75926418084",
+              "is_verified": false
+            },
+            "code": "DcM_z0rOe2G",
+            "device_timestamp": 1787102525929137
+          }
+        },
+        {
+          "media": {
+            "id": "3993992774938129133_31041373207",
+            "music_metadata": null,
+            "taken_at": 1790341087,
+            "pk": 3993992774938129000,
+            "product_type": "clips",
+            "save_count": 11985,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQO-Ct8242QShfxaYeV6ieZEGsQs7NuZE1MyNfpu-cXut8Xa63vZ7wNSTj_Tk3UBVEvXyJg5slr3eu2QDiCpV5BwfYejPH9OlTR1jCA.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQO-Ct8242QShfxaYeV6ieZEGsQs7NuZE1MyNfpu-cXut8Xa63vZ7wNSTj_Tk3UBVEvXyJg5slr3eu2QDiCpV5BwfYejPH9OlTR1jCA.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQO-Ct8242QShfxaYeV6ieZEGsQs7NuZE1MyNfpu-cXut8Xa63vZ7wNSTj_Tk3UBVEvXyJg5slr3eu2QDiCpV5BwfYejPH9OlTR1jCA.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.71878-15/825322188_1411862790277446_5054893578339175900_n.jpg",
+                  "width": 640,
+                  "height": 1136
+                }
+              ]
+            },
+            "clips_metadata": {
+              "music_canonical_id": "18484158391105546",
+              "original_sound_info": {
+                "audio_asset_id": 28396670023318564,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "cineworld.fx",
+                  "pk": 31041373207,
+                  "id": "31041373207",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 143749,
+            "caption": {
+              "text": "🎬 Mr. and Mrs. Ramachari (2014)\n\n• Mr. and Mrs. Ramachari is more than just a romantic entertainer—it's an emotional tale of love, family, and redemption. Ramachari (Yash), a hot-headed college student inspired by the legendary Dr. Rajkumar's iconic character, falls deeply in love with Divya (Radhika Pandit). As their relationship faces opposition, misunderstandings, and personal struggles, the couple must fight for their love while learning the true meaning of responsibility and sacrifice.\n\n• Directed by Santosh Ananddram, the film perfectly blends romance, comedy, action, and family emotions with powerful storytelling. Yash's electrifying performance, Radhika Pandit's graceful charm, memorable dialogues, V. Harikrishna's chartbuster soundtrack, and emotionally charged moments made Mr. and Mrs. Ramachari one of the biggest blockbusters in Kannada cinema and a modern classic.\n\nDirector: Santosh Ananddram\nCast: Yash, Radhika Pandit, Achyuth Kumar, Srinath, Malavika Avinash\nMusic: V. Harikrishna\nRelease Date: 25 December 2014\nGenre: Romance • Action • Drama • Family\n\n[Yash, Ramayana, Toxic, ramachari, Radhika Pandit, Yash, Kannada Songs, Kannada Movie, sandalwood]\n\n#yashboss #yash #radhikapandith #sandalwood #kannadasongs"
+            },
+            "comment_count": 171,
+            "play_count": 1297364,
+            "ig_play_count": 1297364,
+            "video_duration": 33.20399856567383,
+            "user": {
+              "username": "cineworld.fx",
+              "pk": 31041373207,
+              "id": "31041373207",
+              "is_verified": false
+            },
+            "code": "Ddtg0SJqfLt",
+            "device_timestamp": 34136855911341
+          }
+        },
+        {
+          "media": {
+            "id": "4012079466116452098_42298081080",
+            "music_metadata": null,
+            "taken_at": 1792497782,
+            "pk": 4012079466116452400,
+            "product_type": "clips",
+            "save_count": 9388,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNRwCGfYp5FmyfrC7Gle3W1Jl7UKcWC0L05RuUZNHdasEw-RImKQGI5p8wmTMNFp8GKqESdvOPciBVYeoR24hwghaFzb3aR5dlC_Uo.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNRwCGfYp5FmyfrC7Gle3W1Jl7UKcWC0L05RuUZNHdasEw-RImKQGI5p8wmTMNFp8GKqESdvOPciBVYeoR24hwghaFzb3aR5dlC_Uo.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNRwCGfYp5FmyfrC7Gle3W1Jl7UKcWC0L05RuUZNHdasEw-RImKQGI5p8wmTMNFp8GKqESdvOPciBVYeoR24hwghaFzb3aR5dlC_Uo.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.82787-15/849211802_18096351977409081_8174363696949461387_n.jpg",
+                  "width": 540,
+                  "height": 960
+                }
+              ]
+            },
+            "reshare_count": 13959,
+            "clips_metadata": {
+              "music_canonical_id": "18639167554044735",
+              "original_sound_info": {
+                "audio_asset_id": 29373812585544704,
+                "original_audio_title": "Sukoon 404",
+                "ig_artist": {
+                  "username": "sukoon____404",
+                  "pk": 42298081080,
+                  "id": "42298081080",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 72378,
+            "caption": {
+              "text": "💗😍!! 🎬 Kutumba (2003)\n\n\"Family is not just about blood, it is about the people who stand by you when life gets difficult.\"\n\nKutumba (2003) is a Kannada action drama directed by Naganna, starring Upendra, Natanya Singh, Ashok, Gurukiran and B.C. Patil. The film was released on 18 April 2003, with music composed by Gurukiran.\n\nThe story revolves around family, love, loyalty and the struggles faced by those who put their family before everything else. With Upendra's energetic performance, emotional family moments, action, comedy and romance, Kutumba became a memorable entertainer for Kannada audiences.\n\nThe film's soundtrack includes popular songs like \"Jai Ganesha\", \"Mujhe Kuchu Kuchu\", \"Hele Meenakshi\", \"Allukku Balikinalli\" and \"Nee Nanna Appikolalavva\".\n\n#reelsinstagram #kannadafilms #kutumba #trendingreels #explorepage"
+            },
+            "comment_count": 41,
+            "play_count": 812857,
+            "ig_play_count": 812857,
+            "video_duration": 23.899999618530273,
+            "user": {
+              "username": "sukoon____404",
+              "pk": 42298081080,
+              "id": "42298081080",
+              "is_verified": false
+            },
+            "code": "DetxQR8go8C",
+            "device_timestamp": 6965840950934
+          }
+        },
+        {
+          "media": {
+            "id": "4016864282347833810_17422460728",
+            "music_metadata": null,
+            "taken_at": 1793067605,
+            "pk": 4016864282347834000,
+            "product_type": "clips",
+            "save_count": 5576,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQMnJ_wHuCJhHeA2bjMSkhfshBBtflU5NsO5vSSBIv9ZYHhhMv0W6Sdi1guFciyJVv0oj3n9dnQIf_TJnfJIKOz-H-NVEj2s-C46x10.mp4",
+                "width": 960,
+                "height": 720,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQMnJ_wHuCJhHeA2bjMSkhfshBBtflU5NsO5vSSBIv9ZYHhhMv0W6Sdi1guFciyJVv0oj3n9dnQIf_TJnfJIKOz-H-NVEj2s-C46x10.mp4",
+                "width": 960,
+                "height": 720,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQMnJ_wHuCJhHeA2bjMSkhfshBBtflU5NsO5vSSBIv9ZYHhhMv0W6Sdi1guFciyJVv0oj3n9dnQIf_TJnfJIKOz-H-NVEj2s-C46x10.mp4",
+                "width": 960,
+                "height": 720,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.71878-15/864620932_2373232820175560_3978746337291306493_n.jpg",
+                  "width": 640,
+                  "height": 480
+                }
+              ]
+            },
+            "reshare_count": 9421,
+            "clips_metadata": {
+              "music_canonical_id": "18502348147102253",
+              "original_sound_info": {
+                "audio_asset_id": 28851270774524890,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "saregamapa__68",
+                  "pk": 17422460728,
+                  "id": "17422460728",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 3,
+            "caption": {
+              "text": "😮‍💨💯👈🏻"
+            },
+            "comment_count": 46,
+            "play_count": 701284,
+            "ig_play_count": 701284,
+            "video_duration": 29.2810001373291,
+            "user": {
+              "username": "saregamapa__68",
+              "pk": 17422460728,
+              "id": "17422460728",
+              "is_verified": false
+            },
+            "code": "De-xMhUTAnS",
+            "device_timestamp": 167503288649539
+          }
+        },
+        {
+          "media": {
+            "id": "4000235765434332346_24988981225",
+            "music_metadata": null,
+            "taken_at": 1791085327,
+            "pk": 4000235765434332000,
+            "product_type": "clips",
+            "save_count": 1801,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQPDO0fPdgUSUh1TAD7HorYB3ohmb6H5nO1vH01jqYVHfi02MYZTsB96NU-ur1me7eHrXlV786ELpGjurD5wlEgJZE-Gia7turNogp8.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQPDO0fPdgUSUh1TAD7HorYB3ohmb6H5nO1vH01jqYVHfi02MYZTsB96NU-ur1me7eHrXlV786ELpGjurD5wlEgJZE-Gia7turNogp8.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQPDO0fPdgUSUh1TAD7HorYB3ohmb6H5nO1vH01jqYVHfi02MYZTsB96NU-ur1me7eHrXlV786ELpGjurD5wlEgJZE-Gia7turNogp8.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.82787-15/834084375_18125470072837226_6452566116511727469_n.jpg",
+                  "width": 720,
+                  "height": 1280
+                }
+              ]
+            },
+            "reshare_count": 2004,
+            "clips_metadata": {
+              "music_canonical_id": "18630224158042322",
+              "original_sound_info": {
+                "audio_asset_id": 28724764777172584,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "kusuma_g0wdaa",
+                  "pk": 24988981225,
+                  "id": "24988981225",
+                  "is_verified": true
+                }
+              }
+            },
+            "like_count": 24163,
+            "caption": {
+              "text": "Really??\n.\n.\n.\n.\n.\n#explorepage #fyp #viralreels #fypppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp #reelsinstagram"
+            },
+            "comment_count": 86,
+            "play_count": 453363,
+            "ig_play_count": 397555,
+            "video_duration": 19.766000747680664,
+            "user": {
+              "username": "kusuma_g0wdaa",
+              "pk": 24988981225,
+              "id": "24988981225",
+              "is_verified": true
+            },
+            "code": "DeDsTwIhrS6",
+            "device_timestamp": 1791085277314733
+          }
+        },
+        {
+          "media": {
+            "id": "4002364625462312051_1601364501",
+            "music_metadata": null,
+            "taken_at": 1791339097,
+            "pk": 4002364625462312000,
+            "product_type": "clips",
+            "save_count": 972,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t16/f2/m84/AQMqccHKHKulUans8bclA2yFM53noDBkKLzifprm4P2B1TiZDplbHVsS9h3xyZEEQ413xck5kpm-L4iXrkaibvy5WB-PEVS-A5_tsDk.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t16/f2/m84/AQMqccHKHKulUans8bclA2yFM53noDBkKLzifprm4P2B1TiZDplbHVsS9h3xyZEEQ413xck5kpm-L4iXrkaibvy5WB-PEVS-A5_tsDk.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t16/f2/m84/AQMqccHKHKulUans8bclA2yFM53noDBkKLzifprm4P2B1TiZDplbHVsS9h3xyZEEQ413xck5kpm-L4iXrkaibvy5WB-PEVS-A5_tsDk.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.82787-15/839032355_18637459834020502_7085243301033010204_n.jpg",
+                  "width": 720,
+                  "height": 1280
+                }
+              ]
+            },
+            "reshare_count": 1837,
+            "clips_metadata": {
+              "music_canonical_id": "18565871296077661",
+              "original_sound_info": {
+                "audio_asset_id": 28538791452426390,
+                "original_audio_title": "Anumanave illa - cover song",
+                "ig_artist": {
+                  "username": "vinyasmusical",
+                  "pk": 7476994271,
+                  "id": "7476994271",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 3,
+            "caption": {
+              "text": "🫠❤️\n\n.\n.\n.\n.\n#kannada #kannadastatusvideos #love #waterfall #kannadasongs"
+            },
+            "comment_count": 15,
+            "play_count": 291931,
+            "ig_play_count": 291931,
+            "video_duration": 12.675999641418457,
+            "user": {
+              "username": "wanderer_shetty",
+              "pk": 1601364501,
+              "id": "1601364501",
+              "is_verified": false
+            },
+            "code": "DeLQWviRTxz",
+            "device_timestamp": 1791339064994463
+          }
+        },
+        {
+          "media": {
+            "id": "3972931329699933389_65092295570",
+            "music_metadata": null,
+            "taken_at": 1787830484,
+            "pk": 3972931329699933000,
+            "product_type": "clips",
+            "save_count": 6979,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQOY7s_2eqRYiZiQJhCOx6f-YvXyLeFxJCohMhJjVzcy8PiYU7YsAjEgE6gmgs-kmnTJrrrmF5bHoKtM1e_bL20ma2TWqZAPnEGsRX0.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQOY7s_2eqRYiZiQJhCOx6f-YvXyLeFxJCohMhJjVzcy8PiYU7YsAjEgE6gmgs-kmnTJrrrmF5bHoKtM1e_bL20ma2TWqZAPnEGsRX0.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQOY7s_2eqRYiZiQJhCOx6f-YvXyLeFxJCohMhJjVzcy8PiYU7YsAjEgE6gmgs-kmnTJrrrmF5bHoKtM1e_bL20ma2TWqZAPnEGsRX0.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.82787-15/786578248_17967222378175571_704202808213154081_n.jpg",
+                  "width": 750,
+                  "height": 1333
+                }
+              ]
+            },
+            "reshare_count": 6331,
+            "clips_metadata": {
+              "music_canonical_id": "18614202673014926",
+              "original_sound_info": {
+                "audio_asset_id": 29218589461074332,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "toxic_music__1",
+                  "pk": 65092295570,
+                  "id": "65092295570",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 52114,
+            "caption": {
+              "text": "💯❤️‍🩹\n.\nAmerica! America!! (1997)\nAmerica! America!! is a family drama directed by Nagathihalli Chandrashekhar. The story revolves around three childhood friends from coastal Karnataka-Shashank, Surya, and Bhumika.\nShashank dreams of going to America and believes success and happiness lie abroad. Surya values Indian culture, family bonds, and traditional values.\nBhumika is the friend who connects both of them despite their different views on life.\nAs Shashank moves to the United States, he faces the realities of life abroad, including loneliness, cultural differences, and personal struggles. The film contrasts the dream of settling in America with the importance of relationships, identity, and emotional fulfillment.\nMeanwhile, Surya’s life in India follows a different path, highlighting the conflict between modern ambitions and traditional values.\nThe movie ultimately shows that true happiness is not determined by where one lives, but by the relationships, values, and choices one makes in life.\nMain Cast\nRamesh Aravind\nAkshay Anand\nHema Panchamukhi\nFamous Song: Nooru Janmaku, which became one of the most loved songs in Kannada cinema.\n\n.\n#kannadasongs #kannada #karnataka #sandalwood #kannadaactress kannadamusically kannadamovies kannadadubsmash yash kannadatrolls dboss kicchasudeep mysore tumkur"
+            },
+            "comment_count": 89,
+            "play_count": 621373,
+            "ig_play_count": 621373,
+            "video_duration": 17.969999313354492,
+            "user": {
+              "username": "toxic_music__1",
+              "pk": 65092295570,
+              "id": "65092295570",
+              "is_verified": false
+            },
+            "code": "Dcir_6vyOzN",
+            "device_timestamp": 1787830328874603
+          }
+        },
+        {
+          "media": {
+            "id": "4016565190337089291_32185282228",
+            "music_metadata": null,
+            "taken_at": 1793032513,
+            "pk": 4016565190337089500,
+            "product_type": "clips",
+            "save_count": 1758,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQOunUEcPo9ar1IDr7rbLWRksRRqIV4hElIzabyFM9W_gzYV8USFADQXjGjvu9dS09juTzR6IBAklT_wv0dVnez1y3KQr91ySS7CHT8.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQOunUEcPo9ar1IDr7rbLWRksRRqIV4hElIzabyFM9W_gzYV8USFADQXjGjvu9dS09juTzR6IBAklT_wv0dVnez1y3KQr91ySS7CHT8.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQOunUEcPo9ar1IDr7rbLWRksRRqIV4hElIzabyFM9W_gzYV8USFADQXjGjvu9dS09juTzR6IBAklT_wv0dVnez1y3KQr91ySS7CHT8.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.82787-15/865561289_18121481360074229_4922403540294833984_n.jpg",
+                  "width": 750,
+                  "height": 1333
+                }
+              ]
+            },
+            "reshare_count": 2027,
+            "clips_metadata": {
+              "music_canonical_id": "18639968200061734",
+              "original_sound_info": {
+                "audio_asset_id": 29405249162416330,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "sagar_toyscity67",
+                  "pk": 32185282228,
+                  "id": "32185282228",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 38003,
+            "caption": {
+              "text": "ಪ್ರತಿಯೊಬ್ಬರಲೂ ಕಾಣುವಳು ಅವಳು….🥺💔\n.\n.\n.\n.\n.\n.\n.\n#sagartoyscity67 #viral #explore #love #inthininnapreethiya"
+            },
+            "comment_count": 18,
+            "play_count": 263847,
+            "ig_play_count": 259320,
+            "video_duration": 47.33300018310547,
+            "user": {
+              "username": "sagar_toyscity67",
+              "pk": 32185282228,
+              "id": "32185282228",
+              "is_verified": false
+            },
+            "code": "De9tMKLPc8L",
+            "device_timestamp": 1793031885158162
+          }
+        },
+        {
+          "media": {
+            "id": "3995477985165896912_49822392953",
+            "music_metadata": null,
+            "taken_at": 1790518213,
+            "pk": 3995477985165896700,
+            "product_type": "clips",
+            "save_count": 13872,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t16/f2/m84/AQPHDdP1Nuv0IHIThmx5fit5XnSxVYUBd0kfPXCf7KCZgyor1DLKucpsAfpgpn7zROUsClEKClK73HFVRGp1WZ-oCXfmruBGe3v3tJQ.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t16/f2/m84/AQPHDdP1Nuv0IHIThmx5fit5XnSxVYUBd0kfPXCf7KCZgyor1DLKucpsAfpgpn7zROUsClEKClK73HFVRGp1WZ-oCXfmruBGe3v3tJQ.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t16/f2/m84/AQPHDdP1Nuv0IHIThmx5fit5XnSxVYUBd0kfPXCf7KCZgyor1DLKucpsAfpgpn7zROUsClEKClK73HFVRGp1WZ-oCXfmruBGe3v3tJQ.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t15.5256-10/828938767_2249380618971431_3444851060576482878_n.jpg",
+                  "width": 640,
+                  "height": 1136
+                }
+              ]
+            },
+            "reshare_count": 41102,
+            "clips_metadata": {
+              "music_canonical_id": "18487851178111063",
+              "original_sound_info": {
+                "audio_asset_id": 39037647675881670,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "thanu_gowda_________",
+                  "pk": 49822392953,
+                  "id": "49822392953",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 151837,
+            "caption": {
+              "text": "💗🫠\n.\n.\n.\n.\n.\n.\n.\n.\n.\n.\n.\n#reelsinstagram #fyp #viral #ᴋᴀɴɴᴀᴅᴀsᴏɴɢs #kannadafilm"
+            },
+            "comment_count": 72,
+            "play_count": 1502573,
+            "ig_play_count": 1502573,
+            "video_duration": 29.95199966430664,
+            "user": {
+              "username": "thanu_gowda_________",
+              "pk": 49822392953,
+              "id": "49822392953",
+              "is_verified": false
+            },
+            "code": "Ddyyg79tOzQ",
+            "device_timestamp": 179051811314060
+          }
+        },
+        {
+          "media": {
+            "id": "4018051629320142056_23608681300",
+            "music_metadata": null,
+            "taken_at": 1793209411,
+            "pk": 4018051629320142000,
+            "product_type": "clips",
+            "save_count": 1630,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNtJMlK879SaMhyeSdOvf3mbcB0H3WzievXVzXfyCzXolHUqsI2wqFaKQtk9LixPbhhaRrfG8Pu9zIrBac9W6ayIqgboSUT2BEAyS0.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNtJMlK879SaMhyeSdOvf3mbcB0H3WzievXVzXfyCzXolHUqsI2wqFaKQtk9LixPbhhaRrfG8Pu9zIrBac9W6ayIqgboSUT2BEAyS0.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQNtJMlK879SaMhyeSdOvf3mbcB0H3WzievXVzXfyCzXolHUqsI2wqFaKQtk9LixPbhhaRrfG8Pu9zIrBac9W6ayIqgboSUT2BEAyS0.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.71878-15/870344446_1780701636484480_6576475977422782399_n.jpg",
+                  "width": 640,
+                  "height": 1136
+                }
+              ]
+            },
+            "reshare_count": 5098,
+            "clips_metadata": {
+              "music_canonical_id": "18491940448105352",
+              "original_sound_info": {
+                "audio_asset_id": 28171429992530150,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "gow_da_editz",
+                  "pk": 23608681300,
+                  "id": "23608681300",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 22804,
+            "caption": {
+              "text": "🫶🏻❤️\n\n#kannadalove #kannadasongs #kannada #kannadareels"
+            },
+            "comment_count": 21,
+            "play_count": 256186,
+            "ig_play_count": 256186,
+            "video_duration": 30,
+            "user": {
+              "username": "gow_da_editz",
+              "pk": 23608681300,
+              "id": "23608681300",
+              "is_verified": false
+            },
+            "code": "DfC_KsWznzo",
+            "device_timestamp": 367762346197304
+          }
+        },
+        {
+          "media": {
+            "id": "4009202825310988094_33800758976",
+            "music_metadata": null,
+            "taken_at": 1792155257,
+            "pk": 4009202825310988300,
+            "product_type": "clips",
+            "save_count": 234,
+            "video_versions": [
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQMQDApoRiQ06PFQGshGydu1z1KneWQebnuLFgF14nWhp16iEiogyaDIZ83RvCzOrcYsVbJIp-ob55taX-dH8KdccJAgFSGn2WZ9BwU.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 101
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQMQDApoRiQ06PFQGshGydu1z1KneWQebnuLFgF14nWhp16iEiogyaDIZ83RvCzOrcYsVbJIp-ob55taX-dH8KdccJAgFSGn2WZ9BwU.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 102
+              },
+              {
+                "url": "https://instagram.fsjc1-4.fna.fbcdn.net/o1/v/t2/f2/m86/AQMQDApoRiQ06PFQGshGydu1z1KneWQebnuLFgF14nWhp16iEiogyaDIZ83RvCzOrcYsVbJIp-ob55taX-dH8KdccJAgFSGn2WZ9BwU.mp4",
+                "width": 720,
+                "height": 1280,
+                "type": 103
+              }
+            ],
+            "image_versions2": {
+              "candidates": [
+                {
+                  "url": "https://instagram.fsjc1-4.fna.fbcdn.net/v/t51.71878-15/849016118_1641271567784289_607911722702572577_n.jpg",
+                  "width": 640,
+                  "height": 1136
+                }
+              ]
+            },
+            "reshare_count": 653,
+            "clips_metadata": {
+              "music_canonical_id": "18631724077005594",
+              "original_sound_info": {
+                "audio_asset_id": 28863737689959416,
+                "original_audio_title": "Original audio",
+                "ig_artist": {
+                  "username": "manju_programs_kukanoor",
+                  "pk": 33800758976,
+                  "id": "33800758976",
+                  "is_verified": false
+                }
+              }
+            },
+            "like_count": 11203,
+            "caption": {
+              "text": "Janapada❤️‍🔥📈\n\n#fypppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp #manjukukanoorsinger🤍 #janapadlovers❤️🔥😎 da"
+            },
+            "comment_count": 71,
+            "play_count": 117465,
+            "ig_play_count": 117114,
+            "video_duration": 60,
+            "user": {
+              "username": "manju_programs_kukanoor",
+              "pk": 33800758976,
+              "id": "33800758976",
+              "is_verified": false
+            },
+            "code": "DejjLpbJ2c-",
+            "device_timestamp": 1792154205845759
+          }
+        }
+      ]
+    }
+  ]
+}

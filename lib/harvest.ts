@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import {
   accountProfile,
   inLanguage,
@@ -20,6 +19,7 @@ import {
   availableProviders,
   checkBalance as providerBalance,
   creditLedger,
+  NoDataVendor,
   paidReady,
   request,
   resetCreditLedger,
@@ -27,8 +27,40 @@ import {
   type LogicalCall,
   type ProviderId,
 } from "./providers";
+import { dataPath } from "./dataDir";
+import { hoursFromEnv } from "./env";
 
 const SOCIALCRAWL = "https://www.socialcrawl.dev/v1";
+
+/**
+ * The one sentence a creator sees when no Instagram vendor can answer.
+ *
+ * Deliberately not the router's own wording ("no configured vendor reads
+ * instagram data", "every data vendor failed: …"): those are operator
+ * diagnostics. A creator only needs to know the product has no Instagram source
+ * right now — and must never be quietly handed another network's numbers
+ * instead.
+ */
+export const NO_INSTAGRAM_DATA_SOURCE =
+  "No Instagram data source is available right now";
+
+/**
+ * Translate the router's "nothing could take this call" answer, and only that.
+ *
+ * `NoDataVendor` means every configured Instagram vendor is spent or cannot
+ * serve the call. A 404 for a missing handle, a 500 after the retry, or a
+ * malformed payload are real answers from a real vendor and keep their own
+ * messages; masking those would tell a creator their handle is fine when it is
+ * not.
+ */
+async function onInstagram<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof NoDataVendor) throw new Error(NO_INSTAGRAM_DATA_SOURCE);
+    throw err;
+  }
+}
 
 /**
  * Spend accounting moved to the provider router (lib/providers), which counts
@@ -242,6 +274,25 @@ function normalise(
     : fromLegacy(row, platform, fallbackAccount);
 }
 
+/**
+ * A provider's `{ items }` payload in the rows the rest of the pipeline reads.
+ *
+ * Exported for the vendor canary. The canary must judge what the harvester
+ * would actually see — normalised `views` and `followers`, not whichever field
+ * name a vendor happened to use — otherwise a vendor could pass the health
+ * check while every reel it served scored zero downstream.
+ */
+export function normaliseProviderRows(
+  data: Record<string, unknown>,
+  platform: Platform,
+  fallbackAccount?: string,
+  baselineMedianViews?: number,
+): RawReel[] {
+  return items(data)
+    .map((row) => normalise(row, platform, fallbackAccount, baselineMedianViews))
+    .filter((r): r is RawReel => Boolean(r));
+}
+
 interface CallResult {
   data: Record<string, unknown>;
   creditsUsed: number;
@@ -367,7 +418,18 @@ export async function harvestAccountReels(
 }
 
 export async function harvestInstagramAccount(handle: string): Promise<RawReel[]> {
-  const { data, provider } = await socialcrawl("/instagram/profile/reels", { handle }, 1);
+  /**
+   * `platform` is a filter, not a hint: without it the router may serve this
+   * call from the free YouTube reader once the paid vendors are benched, and a
+   * same-named channel's posts become the Instagram account's baseline.
+   */
+  const { data, provider } = await onInstagram(() =>
+    socialcrawl(
+      "/instagram/profile/reels",
+      { handle, platform: "instagram" },
+      1,
+    ),
+  );
   const baseline = num(obj(obj(data.creator_baseline).baseline).median_views) || undefined;
   return items(data)
     .map((row) => normalise(row, platformFor(provider), handle, baseline))
@@ -380,7 +442,7 @@ export async function harvestInstagramAccount(handle: string): Promise<RawReel[]
  */
 export async function harvestInstagramSearch(query: string): Promise<RawReel[]> {
   const { reels } = await searchReelsWithMeta(query);
-  return reels;
+  return reels.filter((r) => r.platform === "instagram");
 }
 
 /** What the vendor's own judge did with a page, when it reports it. */
@@ -425,10 +487,18 @@ export function relevanceCoverage(data: Record<string, unknown>): RelevanceCover
 export async function searchReelsWithMeta(
   query: string,
 ): Promise<{ data: Record<string, unknown>; reels: RawReel[]; judged: RelevanceCoverage | null }> {
-  const { data, provider } = await socialcrawl(
-    "/instagram/search/reels",
-    { query, relevance: "score" },
-    1,
+  const { data, provider } = await onInstagram(() =>
+    socialcrawl(
+      "/instagram/search/reels",
+      /**
+       * `platform` is a filter, not a hint. Without it the router is free to
+       * answer a keyword search from the free YouTube reader, and that is how an
+       * Instagram creator's niche evidence — and the cohort built from it — came
+       * from a network they are not on.
+       */
+      { query, platform: "instagram", relevance: "score" },
+      1,
+    ),
   );
   const reels = items(data)
     .map((row) => normalise(row, platformFor(provider)))
@@ -463,7 +533,9 @@ export interface PostPayload {
  * kept for depth later; this is the bang-for-buck one.
  */
 export async function fetchInstagramPost(url: string): Promise<PostPayload> {
-  const { data } = await socialcrawl("/instagram/post", { url }, 1);
+  const { data } = await onInstagram(() =>
+    socialcrawl("/instagram/post", { url, platform: "instagram" }, 1),
+  );
   /**
    * The post, from whichever envelope the vendor used.
    *
@@ -651,11 +723,13 @@ export async function fetchInstagramProfile(handle: string): Promise<AccountProf
    * the router for `platform: "instagram"` means every configured Instagram
    * vendor gets a turn and none of them can be the single point of failure.
    */
-  const { data } = await request({
-    path: "/instagram/profile",
-    handle: handle.replace(/^@/, ""),
-    platform: "instagram",
-  });
+  const { data } = await onInstagram(() =>
+    request({
+      path: "/instagram/profile",
+      handle: handle.replace(/^@/, ""),
+      platform: "instagram",
+    }),
+  );
   const user = obj(data.user ?? data.author ?? data);
   const followers = num(user.followers ?? user.follower_count) || undefined;
   if (!followers && !str(user.biography)) return null;
@@ -688,56 +762,33 @@ export async function fetchInstagramProfile(handle: string): Promise<AccountProf
  */
 export async function searchInstagramAccounts(
   query: string,
-): Promise<{ handle: string; followers?: number; verified?: boolean; private?: boolean }[]> {
-  const { data } = await request({ path: "/instagram/search/accounts", query });
+): Promise<
+  { handle: string; followers?: number; verified?: boolean; private?: boolean; lastActiveAt?: number }[]
+> {
+  const { data } = await onInstagram(() =>
+    request({
+      path: "/instagram/search/accounts",
+      query,
+      platform: "instagram",
+    }),
+  );
   const rows = Array.isArray(data.users) ? (data.users as unknown[]) : [];
   return rows
     .map((r) => {
       const u = obj(r);
       const handle = str(u.username);
       if (!handle) return null;
+      const lastActive = num(u.lastActiveAt);
       return {
         handle,
         followers: num(u.followers) || undefined,
         verified: Boolean(u.verified),
         private: Boolean(u.private),
+        /** ms since epoch, when the vendor reports the newest reel */
+        lastActiveAt: lastActive > 0 ? lastActive : undefined,
       };
     })
     .filter((u): u is NonNullable<typeof u> => Boolean(u));
-}
-
-/**
- * More comments than the post payload carries — 5 credits a page.
- *
- * Only worth it when the free ~15 under a post were too thin to answer "what is
- * my audience actually asking". Capped at two pages by the caller, because this
- * is the most expensive per-useful-fact call on the shelf.
- */
-export async function fetchPostComments(url: string, pages = 1): Promise<RawComment[]> {
-  const out: RawComment[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < Math.min(2, Math.max(1, pages)); page += 1) {
-    const { data } = await socialcrawl(
-      "/instagram/post/comments",
-      cursor ? { url, cursor } : { url },
-      5,
-    );
-    const rows = items(data);
-    for (const c of rows) {
-      const text = String(c.text ?? "").trim();
-      if (!text) continue;
-      out.push({
-        text,
-        likes: num(c.likes),
-        username: str(obj(c.author).username) ?? str(c.username),
-        publishedAt: c.published_at ? toIso(c.published_at) : undefined,
-      });
-    }
-    const pg = obj(data.pagination);
-    if (!pg.has_more || typeof pg.next_cursor !== "string") break;
-    cursor = pg.next_cursor;
-  }
-  return out;
 }
 
 /**
@@ -749,7 +800,9 @@ export async function fetchPostComments(url: string, pages = 1): Promise<RawComm
  * reading at all. Never call it in a loop.
  */
 export async function fetchTranscript(url: string): Promise<string | null> {
-  const { data } = await socialcrawl("/instagram/media/transcript", { url }, 10);
+  const { data } = await onInstagram(() =>
+    socialcrawl("/instagram/media/transcript", { url, platform: "instagram" }, 10),
+  );
   const text = str(data.transcript ?? data.text ?? obj(data.caption).text);
   return text ? text.slice(0, 4_000) : null;
 }
@@ -906,8 +959,15 @@ export interface HarvestResult {
  * pipeline many times. With a warm cache a re-run costs 0 credits and the data
  * is identical, so only the code changes.
  */
-const CACHE_PATH = path.join(process.cwd(), "data", "_raw_cache.json");
-const CACHE_TTL_HOURS = Number(process.env.HARVEST_CACHE_HOURS ?? 12);
+export function rawCachePath(): string {
+  return dataPath("_raw_cache.json");
+}
+/**
+ * How long a raw pull stays warm. Read per call, and through the shared reader so
+ * an empty/invalid/zero/negative value falls back to twelve hours instead of
+ * disabling the cache or making it permanent.
+ */
+const cacheTtlHours = (): number => hoursFromEnv("HARVEST_CACHE_HOURS", 12);
 
 interface CacheFile {
   fetchedAt: string;
@@ -927,10 +987,10 @@ function profileKey(profile: Profile, live: string): string {
 
 function readCache(key: string): CacheFile | null {
   try {
-    const raw = JSON.parse(readFileSync(CACHE_PATH, "utf8")) as CacheFile;
+    const raw = JSON.parse(readFileSync(rawCachePath(), "utf8")) as CacheFile;
     if (raw.key !== key) return null;
     const ageH = (Date.now() - +new Date(raw.fetchedAt)) / 3_600_000;
-    if (!(ageH >= 0 && ageH <= CACHE_TTL_HOURS)) return null;
+    if (!(ageH >= 0 && ageH <= cacheTtlHours())) return null;
     return raw;
   } catch {
     return null;
@@ -939,7 +999,7 @@ function readCache(key: string): CacheFile | null {
 
 function writeCache(file: CacheFile): void {
   try {
-    writeFileSync(CACHE_PATH, JSON.stringify(file), "utf8");
+    writeFileSync(rawCachePath(), JSON.stringify(file), "utf8");
   } catch {
     /* a cache miss is not a run failure */
   }
@@ -1023,43 +1083,6 @@ export function estimateFreshPull(profile: Profile): CostEstimate {
     credits: lines.reduce((n, l) => n + l.credits, 0),
     lines,
   };
-}
-
-export interface CacheStatus {
-  /** true when a re-run would be served from disk and cost nothing */
-  warm: boolean;
-  /** true when the cached pull was made for this exact profile */
-  keyMatches: boolean;
-  ageHours: number | null;
-  ttlHours: number;
-  fetchedAt: string | null;
-  reels: number | null;
-}
-
-export function cacheStatus(profile: Profile): CacheStatus {
-  const key = profileKey(profile, process.env.SOCIALCRAWL_API_KEY ? "live" : "demo");
-  try {
-    const raw = JSON.parse(readFileSync(CACHE_PATH, "utf8")) as CacheFile;
-    const ageH = (Date.now() - +new Date(raw.fetchedAt)) / 3_600_000;
-    const keyMatches = raw.key === key;
-    return {
-      warm: keyMatches && ageH >= 0 && ageH <= CACHE_TTL_HOURS,
-      keyMatches,
-      ageHours: Math.round(ageH * 100) / 100,
-      ttlHours: CACHE_TTL_HOURS,
-      fetchedAt: raw.fetchedAt,
-      reels: raw.reels.length,
-    };
-  } catch {
-    return {
-      warm: false,
-      keyMatches: false,
-      ageHours: null,
-      ttlHours: CACHE_TTL_HOURS,
-      fetchedAt: null,
-      reels: null,
-    };
-  }
 }
 
 /**

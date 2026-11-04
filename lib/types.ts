@@ -636,6 +636,24 @@ export interface GrowthPlan {
   /** whether the thing that stops the scroll is in the picture or in the sound */
   hookRead?: HookVerdict;
   /**
+   * The account's own reels actually read, with per-reel views, likes and
+   * comments. Retained so the profile page can show top-3/bottom-3 reels and the
+   * likes/comment ratios from the posts that were really measured, instead of
+   * inventing numbers for a feed it no longer holds. Optional: plans written
+   * before the profile page existed carry no reels, and a profile built from
+   * one of those shows an empty state rather than a made-up reel.
+   */
+  reels?: RawReel[];
+  /**
+   * The top niche competitors with a reel worth scripting (profile section 06).
+   *
+   * Each entry is evidence — a real competitor, their winning reel, and the
+   * reason they were chosen — not advice addressed to the account's owner, so
+   * it survives the competitor read. Populated from the peers that proved the
+   * plan's lead move; absent for plans built before peers carried this shape.
+   */
+  competitors?: PlanCompetitor[];
+  /**
    * The language gate, when it had anything to do. `kept` of `seen` reels in the
    * pull were in the room's language; the rest were another language and never
    * reached the maths. Carried so the page can say the number out loud instead
@@ -697,6 +715,35 @@ export interface HookVerdict {
   sentence: string;
   /** the strongest openings, to be read back as evidence */
   examples: { text: string; views: number; url: string }[];
+}
+
+/**
+ * One top niche competitor with a reel worth scripting.
+ *
+ * Carried on the plan so the profile page's "next reel ideas" section can name
+ * the competitor, their reel's views, why they were chosen and the concept
+ * (their caption) without a second vendor pull. The `caption` is the
+ * competitor's own words — verbatim evidence, never rewritten.
+ */
+export interface PlanCompetitor {
+  handle: string;
+  /**
+   * The network the evidence reel was measured on.
+   *
+   * Required, because a competitor read is Instagram-only: a YouTube reel must
+   * never reach the profile's "next reel ideas" section. Legacy plans have no
+   * platform on their competitor entries, so they are treated as not Instagram
+   * and the section shows its empty state instead.
+   */
+  platform: Platform;
+  /** views on their winning reel; 0 when the source did not report a number */
+  views: number;
+  /** the reel that proved the point */
+  url: string;
+  /** the competitor's own caption — the concept to script */
+  caption: string;
+  /** why this account was chosen, in plain words a creator can check */
+  reasons: string[];
 }
 
 /** One difference between what worked for this account and what did not. */

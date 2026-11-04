@@ -1,19 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import path from "node:path";
 
 import { NextResponse } from "next/server";
 
+import { dataPath } from "@/lib/dataDir";
 import { COOKIE, COOKIE_OPTIONS } from "@/lib/session";
 import { accountDir } from "@/lib/store";
 
 /**
  * The demo is a finished, real account kept outside data/accounts: a plan, a
  * decoded space, and a full week of ideas. It exists so the product can be
- * judged without spending a single credit — a live analysis costs credits the
- * moment a handle is submitted.
+ * judged without spending anything — a live analysis costs the moment a handle
+ * is submitted.
+ *
+ * The path is resolved per request through `dataPath`, so the demo follows
+ * `CREATORS_DATA_DIR` like every other cache.
  */
-const SOURCE = path.join(process.cwd(), "data", "demo");
 
 /**
  * A visitor arriving here gets their own copy of the demo account rather than
@@ -58,7 +60,7 @@ export async function GET(request: Request) {
   const id = randomUUID();
 
   try {
-    await fs.cp(SOURCE, accountDir(id), { recursive: true });
+    await fs.cp(dataPath("demo"), accountDir(id), { recursive: true });
   } catch {
     // No demo data on disk: send them to the form rather than a dead link.
     return NextResponse.redirect(backTo(request, "/"));
